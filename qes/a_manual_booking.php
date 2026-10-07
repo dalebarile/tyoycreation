@@ -30,62 +30,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $special_notes = trim($_POST['special_notes'] ?? '');
     $send_notice = isset($_POST['send_notice']);
 
-    if (empty($client_name) || empty($client_phone) || empty($event_title) || empty($event_date) || empty($location_venue)) {
-        $error_msg = "Please fill in all required fields (Client Name, Phone, Event Title, Date, and Venue).";
+    $createResult = create_booking_inquiry($conn, [
+        'client_name'          => $client_name,
+        'client_email'         => $client_email,
+        'client_phone'         => $client_phone,
+        'client_address'       => $client_address,
+        'event_title'          => $event_title,
+        'event_type'           => $event_type,
+        'event_date'           => $event_date,
+        'event_time'           => $event_time,
+        'guest_count'          => $guest_count,
+        'location_venue'       => $location_venue,
+        'service_requirements' => $service_requirements,
+        'special_notes'        => $special_notes,
+        'status'               => 'approved',
+        'source'               => 'manual_entry',
+        'check_conflict'       => true,
+        'send_notice'          => $send_notice ? 'approval' : 'none',
+        'ref_prefix'           => "EV-" . date('Y') . "-M"
+    ]);
+
+    if ($createResult['success']) {
+        $success_msg = "Manual booking '{$event_title}' (Ref: {$createResult['reference_no']}) was successfully saved as APPROVED and added directly to the Master Calendar!";
     } else {
-        // Validate lead time dynamically
-        $dateValidation = validate_event_booking_date($event_type, $event_date);
-        if (!$dateValidation['valid']) {
-            $error_msg = $dateValidation['message'];
-        } else {
-            // Generate unique reference
-            $year = date('Y');
-            $reference_no = "EV-{$year}-M" . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
-            $event_start = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time}"));
-            $event_end = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time} + 5 hours"));
-
-            // Check for conflict against existing approved events
-            $conflict = check_booking_conflict($conn, $event_start, $event_end);
-            if ($conflict['conflict']) {
-                $error_msg = $conflict['message'];
-            } else {
-                $stmt = $conn->prepare("INSERT INTO bookings (reference_no, client_name, client_email, client_phone, client_address, event_title, event_type, event_start, event_end, guest_count, location_venue, service_requirements, special_notes, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', 'manual_entry')");
-
-                if ($stmt) {
-                    $enc_client_name    = qes_encrypt($client_name, false);
-                    $enc_client_email   = qes_encrypt($client_email, true);
-                    $enc_client_phone   = qes_encrypt($client_phone, true);
-                    $enc_client_address = qes_encrypt($client_address, false);
-
-                    $stmt->bind_param("sssssssssisss", 
-                        $reference_no, 
-                        $enc_client_name, 
-                        $enc_client_email, 
-                        $enc_client_phone, 
-                        $enc_client_address, 
-                        $event_title, 
-                        $event_type, 
-                        $event_start, 
-                        $event_end, 
-                        $guest_count, 
-                        $location_venue, 
-                        $service_requirements, 
-                        $special_notes
-                    );
-
-                    if ($stmt->execute()) {
-                        $new_id = $conn->insert_id;
-                        if ($send_notice) {
-                            NotificationHelper::sendApprovalNotice($conn, $new_id);
-                        }
-                        $success_msg = "Manual booking '{$event_title}' (Ref: {$reference_no}) was successfully saved as APPROVED and added directly to the Master Calendar!";
-                    } else {
-                        $error_msg = "Error inserting booking: " . $stmt->error;
-                    }
-                    $stmt->close();
-                }
-            }
-        }
+        $error_msg = $createResult['message'];
     }
 }
 ?>
@@ -94,7 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCHEDFIX - Manual Booking Entry</title>
+    <title>Tyoy Creation - Manual Booking Entry</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>

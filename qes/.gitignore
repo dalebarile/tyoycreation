@@ -20,3 +20,11 @@ desktop.ini
 *.log
 /logs/
 /cache/
+
+# ============================================================
+# Composer & PHPUnit
+# ============================================================
+/vendor/*
+!/vendor/phpmailer
+composer.lock
+.phpunit.cache/

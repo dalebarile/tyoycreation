@@ -61,32 +61,41 @@ if ($has_wedding) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($business_name) ?> - Event Management, Styling &amp; Floral Creations</title>
-    <meta name="description" content="Tyoy Creation is a premier event management, event styling, and floral creation business established in 2020. We transform your vision into an unforgettable celebration.">
+    <title><?= htmlspecialchars($business_name) ?> - Event Management &amp; Styling</title>
+    <meta name="description" content="Tyoy Creation is a premier event management and styling business specializing in unforgettable Kids Party celebrations and bespoke Weddings.">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
+    <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         :root {
-            --primary: #364735;
-            --primary-hover: #2b392a;
-            --primary-dark: #232f22;
-            --primary-light: #eef2ee;
-            --accent-gold: #d97706;
-            --border-color: #e5e7eb;
-            --text-primary: #1f2937;
-            --text-secondary: #4b5563;
-            --text-muted: #6b7280;
+            /* Primary Botanical Emerald */
+            --primary: #18392b;
+            --primary-hover: #122c21;
+            --primary-dark: #0d2018;
+            --primary-light: #eaf2ec;
+            --accent-gold: #c5a059;
+            --accent-gold-soft: #f7f1e4;
+            --bg-cream: #f7f9f7;
+            --bg-cream-dark: #eff4f0;
+            --border-color: #dbe5de;
+            --border-subtle: #e6ede8;
+            --text-primary: #14261c;
+            --text-secondary: #3d5345;
+            --text-muted: #667d6f;
         }
 
         /* Navigation Bar */
         .public-nav {
-            background: #364735;
+            background: #18392b;
             position: sticky;
             top: 0;
             z-index: 1000;
             border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-            padding: 12px 0;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+            padding: 14px 0;
+            box-shadow: 0 4px 20px rgba(24, 57, 43, 0.15);
         }
 
         .public-nav-content {
@@ -100,50 +109,56 @@ if ($has_wedding) {
             height: 44px;
             width: auto;
             border-radius: 6px;
-            background: #ffffff;
-            padding: 2px;
             display: block;
+            transition: transform 0.2s ease;
+        }
+
+        .brand-logo-img:hover {
+            transform: scale(1.02);
         }
 
         .public-nav-links {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 24px;
             flex-wrap: wrap;
         }
 
         .public-nav-links a {
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255, 255, 255, 0.88);
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 500;
             text-decoration: none;
+            letter-spacing: 0.01em;
             transition: color 0.2s ease;
         }
 
         .public-nav-links a:hover,
         .public-nav-links a.active {
             color: #ffffff;
+            font-weight: 600;
         }
 
         .btn-nav-book {
             background: #ffffff !important;
-            color: #364735 !important;
+            color: var(--primary) !important;
             font-weight: 700 !important;
             font-size: 13px !important;
-            padding: 9px 20px !important;
+            padding: 9px 22px !important;
             border-radius: 9999px !important;
             text-decoration: none !important;
             display: inline-flex !important;
             align-items: center !important;
             gap: 6px !important;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+            box-shadow: 0 3px 10px rgba(24, 57, 43, 0.18) !important;
             transition: all 0.2s ease !important;
         }
 
         .btn-nav-book:hover {
-            background: #eef2ee !important;
-            color: #232f22 !important;
+            background: var(--primary-light) !important;
+            color: var(--primary-hover) !important;
             transform: translateY(-1px);
+            box-shadow: 0 5px 14px rgba(24, 57, 43, 0.25) !important;
         }
 
 
@@ -213,6 +228,185 @@ if ($has_wedding) {
             margin-top: 2px;
         }
 
+        /* Services - 2-Package Showcase */
+        .services-2-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 32px;
+            max-width: 1040px;
+            margin: 0 auto 36px;
+        }
+        @media (max-width: 768px) {
+            .services-2-grid {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+        }
+        .service-package-card {
+            background: #ffffff;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(24, 57, 43, 0.06);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+        .service-package-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 16px 36px rgba(24, 57, 43, 0.12);
+            border-color: #5b826d;
+        }
+        .svc-card-media {
+            position: relative;
+            height: 230px;
+            overflow: hidden;
+            background: #18392b;
+        }
+        .svc-card-media img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+            display: block;
+        }
+        .service-package-card:hover .svc-card-media img {
+            transform: scale(1.05);
+        }
+        .svc-badge {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            background: rgba(24, 57, 43, 0.90);
+            backdrop-filter: blur(8px);
+            color: #ffffff;
+            font-size: 11.5px;
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 9999px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .svc-badge.wedding {
+            background: rgba(197, 160, 89, 0.94);
+            color: #18392b;
+            border-color: rgba(24, 57, 43, 0.2);
+        }
+        .svc-card-content {
+            padding: 28px 26px;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .svc-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 12px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .svc-title-row h3 {
+            font-family: 'Playfair Display', Georgia, serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 0;
+        }
+        .svc-price-pill {
+            font-size: 13px;
+            font-weight: 800;
+            color: #18392b;
+            background: #eaf2ec;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            border: 1px solid rgba(24, 57, 43, 0.12);
+            white-space: nowrap;
+        }
+        .svc-description {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin: 0 0 18px 0;
+        }
+        .svc-feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 24px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .svc-feature-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 13.5px;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+        .svc-feature-list li i {
+            color: #18392b;
+            font-size: 13px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+        .svc-actions {
+            margin-top: auto;
+            display: grid;
+            grid-template-columns: 1fr 1.3fr;
+            gap: 12px;
+        }
+        @media (max-width: 480px) {
+            .svc-actions {
+                grid-template-columns: 1fr;
+            }
+        }
+        .btn-svc-details {
+            background: transparent;
+            color: var(--primary);
+            border: 1.5px solid var(--border-color);
+            padding: 11px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .btn-svc-details:hover {
+            background: #eaf2ec;
+            border-color: #18392b;
+        }
+        .btn-svc-book {
+            background: #18392b;
+            color: #ffffff !important;
+            padding: 11px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            box-shadow: 0 3px 10px rgba(24, 57, 43, 0.22);
+            transition: all 0.2s;
+        }
+        .btn-svc-book:hover {
+            background: #122c21;
+            transform: translateY(-1px);
+            box-shadow: 0 5px 14px rgba(24, 57, 43, 0.32);
+        }
+
         /* Services - 3-pillar layout */
         .services-3-grid {
             display: grid;
@@ -229,11 +423,6 @@ if ($has_wedding) {
             transition: all 0.3s ease;
             display: flex;
             flex-direction: column;
-        }
-        .service-pillar-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 16px 36px rgba(54,71,53,0.12);
-            border-color: #b0c4ae;
         }
         .service-pillar-header {
             background: linear-gradient(135deg, #364735 0%, #2b392a 100%);
@@ -1107,82 +1296,138 @@ if ($has_wedding) {
         }
         .chatbot-messages {
             flex: 1;
-            padding: 16px;
+            padding: 16px 14px;
             overflow-y: auto;
-            background: #fbfcfb;
+            background: #f8faf8;
             display: flex;
             flex-direction: column;
             gap: 12px;
+            scroll-behavior: smooth;
+        }
+        .chatbot-messages::-webkit-scrollbar {
+            width: 5px;
+        }
+        .chatbot-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .chatbot-messages::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 10px;
+        }
+        .chatbot-messages::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
         }
         .chat-bubble {
-            max-width: 84%;
-            padding: 10px 14px;
-            border-radius: 14px;
-            font-size: 13px;
-            line-height: 1.45;
+            max-width: 85%;
+            padding: 11px 15px;
+            border-radius: 16px;
+            font-size: 13.5px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .chat-bubble strong {
+            font-weight: 700;
+        }
+        .chat-bubble em {
+            font-style: italic;
         }
         .chat-bubble.bot {
             align-self: flex-start;
             background: #ffffff;
-            color: var(--text-primary);
+            color: #1f2937;
             border: 1px solid #e5e7eb;
             border-bottom-left-radius: 4px;
         }
         .chat-bubble.user {
             align-self: flex-end;
-            background: #364735;
+            background: #2a3c29;
             color: #ffffff;
             border-bottom-right-radius: 4px;
+            box-shadow: 0 2px 6px rgba(42, 60, 41, 0.2);
         }
         .quick-chips-wrapper {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            margin-top: 10px;
+            gap: 5px;
+            margin-top: 8px;
+            white-space: normal;
         }
         .quick-chip {
             background: #f3f6f3;
-            border: 1px solid #dce5dc;
-            border-radius: 8px;
+            border: 1px solid #d4dfd4;
+            border-radius: 6px;
             padding: 6px 10px;
-            font-size: 11px;
-            font-weight: 600;
-            color: #364735;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: #2a3c29;
             cursor: pointer;
             text-align: left;
-            transition: all 0.15s;
+            transition: all 0.15s ease;
+            white-space: normal;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            width: 100%;
+            box-sizing: border-box;
+            line-height: 1.3;
+        }
+        .quick-chip i {
+            font-size: 11px;
+            color: #2a3c29;
+            flex-shrink: 0;
         }
         .quick-chip:hover {
-            background: #e4ebe4;
-            border-color: #364735;
+            background: #e2ebe2;
+            border-color: #2a3c29;
+            transform: translateX(2px);
         }
         .chatbot-footer-wrapper {
             background: #ffffff;
             border-top: 1px solid #e5e7eb;
+            padding: 9px 12px 7px;
         }
         .chatbot-footer {
-            padding: 10px 14px;
             display: flex;
             gap: 8px;
             align-items: flex-end;
         }
         .chatbot-footer textarea {
             flex: 1;
-            padding: 9px 12px;
-            border-radius: 18px;
-            border: 1px solid #d1d5db;
+            padding: 8px 12px;
+            border-radius: 19px;
+            border: 1.5px solid #d1d5db;
             font-size: 13px;
+            line-height: 1.4;
             outline: none;
             resize: none;
+            min-height: 38px;
+            max-height: 120px;
             height: 38px;
             box-sizing: border-box;
             font-family: inherit;
+            color: #1f2937;
+            background: #ffffff;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            overflow-y: hidden;
+        }
+        .chatbot-footer textarea:focus {
+            border-color: #2a3c29;
+            box-shadow: 0 0 0 2px rgba(42, 60, 41, 0.15);
+        }
+        .chatbot-footer textarea::-webkit-scrollbar {
+            width: 4px;
+        }
+        .chatbot-footer textarea::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
         }
         .chatbot-footer button {
             width: 38px;
             height: 38px;
             border-radius: 50%;
-            background: #364735;
+            background: #2a3c29;
             color: white;
             border: none;
             cursor: pointer;
@@ -1190,6 +1435,22 @@ if ($has_wedding) {
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
+            transition: all 0.15s ease;
+            box-shadow: 0 2px 6px rgba(42, 60, 41, 0.2);
+        }
+        .chatbot-footer button:hover {
+            background: #1f2d1e;
+            transform: scale(1.05);
+        }
+        .chatbot-footer button:active {
+            transform: scale(0.95);
+        }
+        .chat-input-hint {
+            font-size: 10.5px;
+            color: #9ca3af;
+            margin-top: 4px;
+            text-align: right;
+            padding-right: 4px;
         }
     </style>
 </head>
@@ -1199,7 +1460,7 @@ if ($has_wedding) {
     <nav class="public-nav">
         <div class="public-container public-nav-content">
             <a href="#home" style="display: flex; align-items: center; text-decoration: none;">
-                <img src="assets/tyoy_logo_cropped.png" alt="<?= htmlspecialchars($business_name) ?>" class="brand-logo-img">
+                <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" class="brand-logo-img">
             </a>
 
             <div class="public-nav-links">
@@ -1215,18 +1476,18 @@ if ($has_wedding) {
         </div>
     </nav>
 
-    <!-- Hero Header -->
+    <!-- Hero Header (Panel 1) -->
     <?php $hero_bg_img = get_setting($conn, 'media_hero_bg', 'assets/tyoy_creation_banner.jpg'); ?>
-    <header class="hero-section" id="home" style="background-image: linear-gradient(90deg, rgba(20, 32, 21, 0.88) 0%, rgba(20, 32, 21, 0.72) 48%, rgba(20, 32, 21, 0.28) 78%, rgba(20, 32, 21, 0.12) 100%), url('<?= htmlspecialchars($hero_bg_img) ?>');">
+    <header class="hero-section" id="home" style="background-image: linear-gradient(90deg, rgba(20, 32, 21, 0.90) 0%, rgba(20, 32, 21, 0.75) 50%, rgba(20, 32, 21, 0.35) 80%, rgba(20, 32, 21, 0.15) 100%), url('<?= htmlspecialchars($hero_bg_img) ?>');">
         <div class="public-container">
             <div class="hero-content">
-                <span class="hero-tag">EVENT MANAGEMENT &bull; EVENT STYLING &bull; FLORAL CREATIONS</span>
+                <span class="hero-tag">EVENT MANAGEMENT &bull; KIDS PARTY &bull; WEDDINGS</span>
                 <h1 class="hero-title">
-                    <span class="hero-brand-callout"><?= htmlspecialchars($business_name) ?></span>
-                    <?= htmlspecialchars($business_tagline) ?>
+                    Celebration &amp; Styling
+                    <span class="hero-subtitle-line">Event Management &amp; Coordination</span>
                 </h1>
                 <p class="hero-desc">
-                    <?= htmlspecialchars(get_setting($conn, 'hero_subtitle', 'Premier event management, creative event styling, and personalized floral creations — crafted with precision, passion, and unwavering dedication since 2020.')) ?>
+                    <?= htmlspecialchars(get_setting($conn, 'hero_subtitle', 'Premier event management and bespoke styling for magical Kids Parties and unforgettable Weddings — crafted with precision, passion, and dedication since 2020.')) ?>
                 </p>
 
                 <div class="hero-actions" style="margin-top: 28px;">
@@ -1241,216 +1502,244 @@ if ($has_wedding) {
         </div>
     </header>
 
-    <!-- Our Story Section -->
-    <section class="story-section" id="about-us">
-        <div class="public-container">
-            <div style="max-width: 760px; margin: 0 auto;">
-                <div style="text-align: center; margin-bottom: 24px;">
-                    <span class="hero-tag" style="color: var(--primary); background: var(--primary-light); border-color: var(--border-color);">OUR STORY</span>
-                    <h2 class="section-title" style="margin: 14px 0 0;">From Floral Roots to Full-Scale Event Management</h2>
-                </div>
-                <div style="text-align: justify; text-justify: inter-word; color: #4b5563; line-height: 1.85; font-size: 15px;">
-                    <?php
-                    $saved_story = get_setting($conn, 'about_story', '');
-                    if (!empty($saved_story)) {
-                        $paragraphs = explode("\n\n", str_replace(["\r\n", "\r"], "\n", $saved_story));
-                        foreach ($paragraphs as $para) {
-                            $para = trim($para);
-                            if (!empty($para)) {
-                                echo '<p style="margin-bottom: 16px;">' . nl2br(htmlspecialchars($para)) . '</p>';
-                            }
-                        }
-                    } else {
-                        echo '<p style="margin-bottom: 16px;">' . htmlspecialchars($business_name) . ' was founded in 2020 with a deep passion for flowers and wedding décor. What began as a boutique floral arrangement service quickly grew into a full-service event management and styling business.</p>';
-                        echo '<p style="margin-bottom: 16px;">Today, we design and execute weddings, kids\' parties, themed celebrations, and milestone events — delivering creative event styling, reliable day-of coordination, and personalized floral creations that speak to every client\'s unique story.</p>';
-                        echo '<p style="margin-bottom: 32px;">Every event we handle is built on our core values: <strong>creativity, professionalism, efficiency, accuracy,</strong> and <strong>personalized service</strong>.</p>';
-                    }
-                    ?>
-                </div>
-                <div class="story-milestones" style="justify-content: center;">
-                    <div class="story-milestone">
-                        <span class="story-milestone-num">2020</span>
-                        <div class="story-milestone-label">Year Founded</div>
-                    </div>
-                    <div class="story-milestone">
-                        <span class="story-milestone-num"><?= count($active_services) ?></span>
-                        <div class="story-milestone-label">Active Services</div>
-                    </div>
-                    <div class="story-milestone">
-                        <span class="story-milestone-num">100%</span>
-                        <div class="story-milestone-label">Client Dedication</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Services Section -->
-    <section class="section" id="services">
+    <!-- Services & Celebration Packages Showcase -->
+    <section class="section" id="services" style="background: #ffffff; padding: 70px 0 50px;">
         <div class="public-container">
             <div class="section-header">
                 <h2 class="section-title">Our Services</h2>
-                <p class="section-subtitle">Bespoke event packages delivered with creativity, precision, and unwavering professionalism.</p>
+                <p class="section-subtitle">Specialized celebration packages crafted to perfection.</p>
             </div>
 
-            <?php if (!empty($active_services)): ?>
-            <div class="services-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); max-width: 900px; margin: 0 auto;">
-                <?php foreach ($active_services as $svc): ?>
-                <div class="service-card" style="display: flex; flex-direction: column;">
-                    <div style="cursor: pointer;" onclick="openPackageModal('<?= htmlspecialchars($svc['modal']) ?>')">
-                        <img src="<?= htmlspecialchars(get_setting($conn, $svc['img_key'], $svc['img'])) ?>" alt="<?= htmlspecialchars(strip_tags($svc['title'])) ?>" class="service-img" onerror="this.src='<?= htmlspecialchars($svc['img']) ?>'">
-                        <div class="service-body">
-                            <div class="service-icon-wrap" style="background: #eef2ee; color: #364735;">
-                                <i class="fa-solid <?= htmlspecialchars($svc['icon']) ?>"></i>
-                            </div>
-                            <h3><?= $svc['title'] ?></h3>
-                            <p><?= $svc['desc'] ?></p>
+            <div class="services-2-grid">
+                <!-- Kids Party Package Card -->
+                <div class="service-package-card">
+                    <div class="svc-card-media">
+                        <img src="assets/portfolio/svc-kids-party.jpg" alt="Kids Party Package" onerror="this.src='assets/portfolio/portfolio-snowwhite-party.jpg'">
+                        <span class="svc-badge"><i class="fa-solid fa-cake-candles"></i> Celebrations &amp; Birthdays</span>
+                    </div>
+                    <div class="svc-card-content">
+                        <div class="svc-title-row">
+                            <h3>Kids Party Package</h3>
+                        </div>
+                        <p class="svc-description">
+                            Complete celebration packages designed for children's birthdays and family milestones. Vibrant themes, custom backdrops, balloon art, and stress-free event coordination.
+                        </p>
+                        <ul class="svc-feature-list">
+                            <li><i class="fa-solid fa-circle-check"></i> Thematic Backdrop &amp; Character Styling</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Balloon Art &amp; Ceiling / Entrance Installations</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Table Set-up, Centerpieces &amp; Cake Table</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Party Favors, Magician &amp; Entertainment Direction</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Dedicated On-the-Day Event Coordinator</li>
+                        </ul>
+                        <div class="svc-actions">
+                            <button type="button" class="btn-svc-details" onclick="openPackageModal('birthday')">
+                                <i class="fa-solid fa-circle-info"></i> View Inclusions
+                            </button>
+                            <a href="booking.php?event_type=Kids+Party" class="btn-svc-book">
+                                <i class="fa-solid fa-calendar-check"></i> Book Kids Party
+                            </a>
                         </div>
                     </div>
-                    <div style="padding: 0 24px 20px 24px; margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 1px solid #f3f4f6; padding-top: 14px;">
-                        <button type="button" class="service-link" onclick="openPackageModal('<?= htmlspecialchars($svc['modal']) ?>')" style="background: none; border: none; padding: 0; cursor: pointer; font-size: 13px; font-weight: 700; color: #364735;">
-                            <?= htmlspecialchars(strip_tags($svc['link_label'])) ?> <i class="fa-solid fa-arrow-right"></i>
-                        </button>
-                        <a href="booking.php?event_type=<?= urlencode($svc['event_type']) ?>" style="background: #364735; color: #ffffff; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
-                            <i class="fa-solid fa-calendar-check"></i> Book Now
-                        </a>
+                </div>
+
+                <!-- Wedding Package Card -->
+                <div class="service-package-card">
+                    <div class="svc-card-media">
+                        <img src="assets/portfolio/svc-wedding.jpg" alt="Wedding Package" onerror="this.src='assets/portfolio/portfolio-wedding-ceremony.jpg'">
+                        <span class="svc-badge wedding"><i class="fa-solid fa-champagne-glasses"></i> Ceremonies &amp; Receptions</span>
+                    </div>
+                    <div class="svc-card-content">
+                        <div class="svc-title-row">
+                            <h3>Wedding Package</h3>
+                        </div>
+                        <p class="svc-description">
+                            Bespoke elegance for your dream wedding. From romantic ceremony setups to lavish reception styling and seamless day-of coordination, every detail is flawlessly executed.
+                        </p>
+                        <ul class="svc-feature-list">
+                            <li><i class="fa-solid fa-circle-check"></i> Ceremony Altar, Aisle &amp; Entrance Arch Styling</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Reception Head Table &amp; Guest Tablescapes</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Bridal Entourage Arrangements &amp; Stage Backdrop</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Atmospheric Lighting, Sound &amp; Equipment Coordination</li>
+                            <li><i class="fa-solid fa-circle-check"></i> Full-Day Coordination &amp; Master of Ceremonies</li>
+                        </ul>
+                        <div class="svc-actions">
+                            <button type="button" class="btn-svc-details" onclick="openPackageModal('wedding')">
+                                <i class="fa-solid fa-circle-info"></i> View Inclusions
+                            </button>
+                            <a href="booking.php?event_type=Weddings" class="btn-svc-book">
+                                <i class="fa-solid fa-calendar-check"></i> Book Wedding
+                            </a>
+                        </div>
                     </div>
                 </div>
-                <?php endforeach; ?>
             </div>
-            <?php else: ?>
-            <p style="text-align:center; color: var(--text-muted); padding: 40px 0;">Service packages are being configured. Check back soon!</p>
-            <?php endif; ?>
+
+            <!-- Let's Plan Your Special Event Feature Card (Panel 1) -->
+            <div class="special-event-card">
+                <img src="assets/portfolio/portfolio-wedding-ceremony.jpg" alt="Special Event" class="special-event-img">
+                <div class="special-event-content">
+                    <h3>Let's Plan Your Special Event</h3>
+                    <p>Tell us your vision and we'll make it happen with unforgettable styling and coordination.</p>
+                    <a href="booking.php" class="btn-event-pill"><i class="fa-solid fa-calendar-plus"></i> Book Now</a>
+                </div>
+            </div>
+
+            <!-- Featured Portfolio Preview (Panel 1) -->
+            <div style="margin-top: 50px;">
+                <div class="section-header" style="margin-bottom: 30px;">
+                    <h2 class="section-title">Featured Portfolio</h2>
+                    <p class="section-subtitle">A glimpse of our past creations.</p>
+                </div>
+                <div class="services-4-grid" style="margin-top: 0; margin-bottom: 28px;">
+                    <?php 
+                    $default_portfolio = [
+                        ['category' => 'weddings', 'img' => 'assets/portfolio/portfolio-wedding-ceremony.jpg', 'title' => 'Ceremony Floral Arch Styling', 'location' => 'Weddings • Church Ceremony Styling'],
+                        ['category' => 'birthdays', 'img' => 'assets/portfolio/portfolio-jasmine-aladdin.jpg', 'title' => 'Arabian Nights: Jasmine & Aladdin', 'location' => 'Kids Party • Character Backdrop'],
+                        ['category' => 'weddings', 'img' => 'assets/portfolio/portfolio-wedding-couple.jpg', 'title' => 'Garden Wedding Portraits', 'location' => 'Weddings • Full Event Styling'],
+                        ['category' => 'birthdays', 'img' => 'assets/portfolio/portfolio-snowwhite-party.jpg', 'title' => 'Snow White Themed Celebration', 'location' => 'Kids Party • Character Backdrop'],
+                        ['category' => 'birthdays', 'img' => 'assets/portfolio/portfolio-elisha-carparty.jpg', 'title' => 'Vintage Car Themed 1st Birthday', 'location' => 'Kids Party • Full Event Styling'],
+                        ['category' => 'birthdays', 'img' => 'assets/portfolio/portfolio-kiara-magician.jpg', 'title' => 'Circus Magician Entertainment', 'location' => 'Kids Party • Hosts & Entertainment'],
+                        ['category' => 'birthdays', 'img' => 'assets/portfolio/portfolio-agatha-butterfly.jpg', 'title' => 'Butterfly Garden Celebration', 'location' => 'Kids Party • Full Event Styling'],
+                        ['category' => 'birthdays', 'img' => 'assets/portfolio/portfolio-rabbalucia-boho.jpg', 'title' => 'Boho Floral 1st Birthday', 'location' => 'Kids Party • Full Event Styling']
+                    ];
+                    $saved_portfolio_json = get_setting($conn, 'portfolio_items', '');
+                    $portfolio_items = !empty($saved_portfolio_json) ? json_decode($saved_portfolio_json, true) : null;
+                    if (!is_array($portfolio_items) || empty($portfolio_items)) {
+                        $portfolio_items = $default_portfolio;
+                    }
+                    $featured_slice = array_slice($portfolio_items, 0, 4);
+                    foreach ($featured_slice as $fp): 
+                    ?>
+                    <div style="border-radius: 14px; overflow: hidden; border: 1px solid var(--border-color); aspect-ratio: 4/3; box-shadow: var(--shadow-sm);">
+                        <img src="<?= htmlspecialchars($fp['img']) ?>" alt="<?= htmlspecialchars(strip_tags($fp['title'])) ?>" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.src='assets/portfolio/portfolio-wedding-ceremony.jpg'">
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <div style="text-align: center;">
+                    <a href="#portfolio" class="btn-event-pill" style="background: transparent; color: var(--primary) !important; border: 1.5px solid var(--border-color); box-shadow: none;">
+                        View More &rarr;
+                    </a>
+                </div>
+            </div>
         </div>
     </section>
 
-
-    <!-- Why Choose Tyoy Creation -->
-    <section class="why-section" id="why-us">
+    <!-- About Us Section (Panel 2) -->
+    <section class="story-section" id="about-us" style="background: var(--bg-cream); padding: 80px 0;">
         <div class="public-container">
             <div class="section-header">
-                <h2 class="section-title" style="color: #ffffff;">Why Choose <?= htmlspecialchars($business_name) ?>?</h2>
-                <p class="section-subtitle" style="color: rgba(255,255,255,0.72);">We bring together creativity, structure, and reliability to deliver events that exceed expectations every time.</p>
+                <h2 class="section-title">About Us</h2>
+                <p class="section-subtitle">Turning your vision into beautiful memories.</p>
             </div>
-            <div class="why-grid">
-                <div class="why-card">
-                    <div class="why-icon"><i class="fa-solid fa-palette"></i></div>
-                    <h4 class="why-title">Creative Excellence</h4>
-                    <p class="why-desc">Innovative designs and fresh ideas tailored to your unique vision and event theme.</p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; margin-bottom: 40px;">
+                <div style="border-radius: 18px; overflow: hidden; border: 1px solid var(--border-color); box-shadow: var(--shadow-md);">
+                    <img src="assets/portfolio/portfolio-wedding-couple.jpg" alt="About <?= htmlspecialchars($business_name) ?>" style="width: 100%; height: 380px; object-fit: cover; display: block;" onerror="this.src='assets/portfolio/portfolio-wedding-ceremony.jpg'">
                 </div>
-                <div class="why-card">
-                    <div class="why-icon"><i class="fa-solid fa-user-tie"></i></div>
-                    <h4 class="why-title">Professionalism</h4>
-                    <p class="why-desc">Organized, dependable, and client-focused from the first inquiry through to the last goodbye.</p>
+                <div style="text-align: left;">
+                    <h3 style="font-family: 'Cormorant Garamond', 'Playfair Display', serif; font-size: 32px; font-weight: 600; color: var(--primary); margin-bottom: 14px;">Our Story</h3>
+                    <p style="color: var(--text-secondary); font-size: 15px; line-height: 1.8; margin-bottom: 16px;">
+                        <?= nl2br(htmlspecialchars(get_setting($conn, 'about_story', $business_name . ' started in 2020 with a simple mission — to bring joy and beauty to every celebration. What began as a small passion for creative styling and floral designs has grown into a trusted event management and coordination service, known for quality, creativity, and personalized care.'))) ?>
+                    </p>
+                    <p style="color: var(--text-secondary); font-size: 15px; line-height: 1.8;">
+                        Today, we curate bespoke weddings, unforgettable children's parties, and milestone gatherings. Our team coordinates every vendor, handles logistical challenges, and executes stunning floral atmospheres so you can be fully present with the people who matter most.
+                    </p>
                 </div>
-                <div class="why-card">
-                    <div class="why-icon"><i class="fa-solid fa-gauge-high"></i></div>
-                    <h4 class="why-title">Efficiency &amp; Accuracy</h4>
-                    <p class="why-desc">Meticulous planning, reliable execution, and razor-sharp attention to every detail.</p>
+            </div>
+
+            <!-- 4 Stat Counters (Panel 2) -->
+            <div class="stats-wire-grid">
+                <div class="stat-wire-card">
+                    <span class="num">5+</span>
+                    <span class="label">Years of Experience</span>
                 </div>
-                <div class="why-card">
-                    <div class="why-icon"><i class="fa-solid fa-heart"></i></div>
-                    <h4 class="why-title">Personalized Service</h4>
-                    <p class="why-desc">Every event is uniquely yours. We listen, adapt, and deliver a celebration that truly reflects you.</p>
+                <div class="stat-wire-card">
+                    <span class="num">100+</span>
+                    <span class="label">Events Styled</span>
                 </div>
-                <div class="why-card">
-                    <div class="why-icon"><i class="fa-solid fa-handshake"></i></div>
-                    <h4 class="why-title">Trusted Partnerships</h4>
-                    <p class="why-desc">A curated network of reliable vendors coordinated seamlessly so you never have to worry.</p>
+                <div class="stat-wire-card">
+                    <span class="num">50+</span>
+                    <span class="label">Happy Clients</span>
                 </div>
-                <div class="why-card">
-                    <div class="why-icon"><i class="fa-solid fa-shield-halved"></i></div>
-                    <h4 class="why-title">Peace of Mind</h4>
-                    <p class="why-desc">On the day that matters most, we handle every challenge — so you can simply enjoy the moment.</p>
+                <div class="stat-wire-card">
+                    <span class="num">100%</span>
+                    <span class="label">Dedication</span>
                 </div>
+            </div>
+
+            <!-- Our Values (Panel 2) -->
+            <div style="margin-top: 50px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h3 style="font-family: 'Cormorant Garamond', 'Playfair Display', serif; font-size: 30px; font-weight: 600; color: var(--primary);">Our Values</h3>
+                </div>
+                <div class="values-wire-grid">
+                    <div class="value-wire-card">
+                        <div class="val-icon"><i class="fa-solid fa-lightbulb"></i></div>
+                        <h4>Creativity</h4>
+                        <p>Unique and fresh ideas for every event.</p>
+                    </div>
+                    <div class="value-wire-card">
+                        <div class="val-icon"><i class="fa-solid fa-award"></i></div>
+                        <h4>Quality</h4>
+                        <p>Only the best materials and designs.</p>
+                    </div>
+                    <div class="value-wire-card">
+                        <div class="val-icon"><i class="fa-solid fa-handshake"></i></div>
+                        <h4>Commitment</h4>
+                        <p>Your vision is our priority.</p>
+                    </div>
+                    <div class="value-wire-card">
+                        <div class="val-icon"><i class="fa-solid fa-face-smile"></i></div>
+                        <h4>Customer Satisfaction</h4>
+                        <p>Because every event matters.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CTA Banner (Panel 2) -->
+            <div class="cta-banner-wire">
+                <h3>Let's make your next event extra special!</h3>
+                <p>We are ready to bring your dream celebration to life with precision and flair.</p>
+                <a href="booking.php" class="btn-cta-wire-white"><i class="fa-solid fa-calendar-plus"></i> Book an Event</a>
             </div>
         </div>
     </section>
 
-    <!-- Portfolio Section -->
-    <section class="section" id="portfolio" style="background: #ffffff;">
+
+    <!-- Portfolio Section (Panel 4) -->
+    <section class="section" id="portfolio" style="background: var(--bg-cream);">
         <div class="public-container">
             <div class="section-header">
                 <h2 class="section-title">Our Portfolio</h2>
-                <p class="section-subtitle">A glimpse of past celebrations handcrafted with love and elegance.</p>
+                <p class="section-subtitle">Moments we've styled, memories we've created.</p>
             </div>
 
-            <!-- Filter Pills -->
+            <!-- Filter Pills (Panel 4) -->
             <div class="portfolio-filters">
                 <button type="button" class="filter-btn active" onclick="filterGallery('all', this)">All</button>
+                <button type="button" class="filter-btn" onclick="filterGallery('birthdays', this)">Birthdays</button>
                 <button type="button" class="filter-btn" onclick="filterGallery('weddings', this)">Weddings</button>
-                <button type="button" class="filter-btn" onclick="filterGallery('birthdays', this)">Kids Party</button>
+                <button type="button" class="filter-btn" onclick="filterGallery('corporate', this)">Corporate</button>
+                <button type="button" class="filter-btn" onclick="filterGallery('others', this)">Others</button>
             </div>
 
-            <?php
-            $default_portfolio = [
-                [
-                    'category' => 'weddings',
-                    'img'      => 'assets/portfolio/portfolio-wedding-ceremony.jpg',
-                    'title'    => 'Ceremony Floral Arch Styling',
-                    'location' => 'Weddings &bull; Church Ceremony Styling'
-                ],
-                [
-                    'category' => 'birthdays',
-                    'img'      => 'assets/portfolio/portfolio-jasmine-aladdin.jpg',
-                    'title'    => 'Arabian Nights: Jasmine &amp; Aladdin',
-                    'location' => 'Kids Party &bull; Character Backdrop'
-                ],
-                [
-                    'category' => 'weddings',
-                    'img'      => 'assets/portfolio/portfolio-wedding-couple.jpg',
-                    'title'    => 'Garden Wedding Portraits',
-                    'location' => 'Weddings &bull; Full Event Styling'
-                ],
-                [
-                    'category' => 'birthdays',
-                    'img'      => 'assets/portfolio/portfolio-snowwhite-party.jpg',
-                    'title'    => 'Snow White Themed Celebration',
-                    'location' => 'Kids Party &bull; Character Backdrop'
-                ],
-                [
-                    'category' => 'birthdays',
-                    'img'      => 'assets/portfolio/portfolio-elisha-carparty.jpg',
-                    'title'    => 'Vintage Car Themed 1st Birthday',
-                    'location' => 'Kids Party &bull; Full Event Styling'
-                ],
-                [
-                    'category' => 'birthdays',
-                    'img'      => 'assets/portfolio/portfolio-kiara-magician.jpg',
-                    'title'    => 'Circus Magician Entertainment',
-                    'location' => 'Kids Party &bull; Hosts &amp; Entertainment'
-                ],
-                [
-                    'category' => 'birthdays',
-                    'img'      => 'assets/portfolio/portfolio-agatha-butterfly.jpg',
-                    'title'    => 'Butterfly Garden Celebration',
-                    'location' => 'Kids Party &bull; Full Event Styling'
-                ],
-                [
-                    'category' => 'birthdays',
-                    'img'      => 'assets/portfolio/portfolio-rabbalucia-boho.jpg',
-                    'title'    => 'Boho Floral 1st Birthday',
-                    'location' => 'Kids Party &bull; Full Event Styling'
-                ]
-            ];
-            $saved_portfolio_json = get_setting($conn, 'portfolio_items', '');
-            $portfolio_items = !empty($saved_portfolio_json) ? json_decode($saved_portfolio_json, true) : null;
-            if (!is_array($portfolio_items) || empty($portfolio_items)) {
-                $portfolio_items = $default_portfolio;
-            }
-            ?>
-            <div class="portfolio-grid">
+            <div class="portfolio-grid-wire">
                 <?php foreach ($portfolio_items as $item): ?>
-                <div class="portfolio-item" data-category="<?= htmlspecialchars($item['category'] ?? 'weddings') ?>">
+                <div class="portfolio-card-wire portfolio-item" data-category="<?= htmlspecialchars($item['category'] ?? 'weddings') ?>">
                     <img src="<?= htmlspecialchars($item['img'] ?? '') ?>" alt="<?= htmlspecialchars(strip_tags($item['title'] ?? '')) ?>" onerror="this.src='assets/portfolio/portfolio-wedding-ceremony.jpg'">
-                    <div class="portfolio-overlay">
-                        <div class="portfolio-info">
-                            <h4><?= htmlspecialchars($item['title'] ?? '') ?></h4>
-                            <span><?= htmlspecialchars($item['location'] ?? '') ?></span>
-                        </div>
+                    <div class="overlay">
+                        <h4 style="font-size: 16px; font-weight: 700; margin: 0 0 4px 0;"><?= htmlspecialchars($item['title'] ?? '') ?></h4>
+                        <span style="font-size: 12px; color: rgba(255,255,255,0.8);"><?= htmlspecialchars($item['location'] ?? '') ?></span>
                     </div>
                 </div>
                 <?php endforeach; ?>
+            </div>
+
+            <!-- Bottom Portfolio CTA (Panel 4) -->
+            <div style="text-align: center; margin-top: 50px;">
+                <h3 style="font-family: 'Cormorant Garamond', 'Playfair Display', serif; font-size: 28px; font-weight: 600; color: var(--primary); margin-bottom: 8px;">Have a special event in mind?</h3>
+                <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">Let's bring your vision to life.</p>
+                <a href="booking.php" class="btn-event-pill"><i class="fa-solid fa-calendar-plus"></i> Book Now</a>
             </div>
         </div>
     </section>
@@ -1487,7 +1776,7 @@ if ($has_wedding) {
     <section class="cta-section" id="book-now">
         <div class="public-container">
             <h2 class="cta-title">Ready to Create Your Celebration?</h2>
-            <p class="cta-sub">Whether it's a wedding, a kids' party, or a personalized floral arrangement &mdash; we are here to bring your vision to life. Submit an inquiry today and let's start planning.</p>
+            <p class="cta-sub">Whether it's an unforgettable kids' party or a bespoke wedding celebration &mdash; we are here to bring your vision to life. Submit an inquiry today and let's start planning.</p>
             <div class="cta-buttons">
                 <a href="booking.php" class="btn-cta-primary">
                     <i class="fa-solid fa-calendar-plus"></i> Start Your Booking
@@ -1507,10 +1796,10 @@ if ($has_wedding) {
                     <span class="hero-tag" style="color: var(--primary); background: var(--primary-light); border-color: var(--border-color);">ABOUT <?= htmlspecialchars($business_name) ?></span>
                     <h2 class="section-title" style="text-align: left; margin-bottom: 18px;">Event Management &amp; Styling Since 2020</h2>
                     <p style="color: var(--text-secondary); margin-bottom: 16px; line-height: 1.7;">
-                        <?= htmlspecialchars($business_name) ?> is a professional event management, styling, and floral creation business. We specialize in transforming your vision into a beautifully executed, stress-free celebration.
+                        <?= htmlspecialchars($business_name) ?> is a professional event management and styling business. We specialize in transforming your vision into a beautifully executed, stress-free celebration.
                     </p>
                     <p style="color: var(--text-secondary); margin-bottom: 24px; line-height: 1.7;">
-                        From intimate weddings to vibrant kids' parties, our team manages every detail &mdash; from the floral arrangements and backdrops to vendor coordination and day-of execution.
+                        From magical kids' parties to romantic weddings, our team coordinates every detail &mdash; from custom backdrops and theme styling to vendor coordination and flawless day-of execution.
                     </p>
                     <div style="display: flex; gap: 32px; flex-wrap: wrap;">
                         <div>
@@ -1518,8 +1807,8 @@ if ($has_wedding) {
                             <div style="font-size: 13px; color: var(--text-secondary);">Year Established</div>
                         </div>
                         <div>
-                            <div style="font-size: 32px; font-weight: 800; color: var(--primary);">3</div>
-                            <div style="font-size: 13px; color: var(--text-secondary);">Core Service Pillars</div>
+                            <div style="font-size: 32px; font-weight: 800; color: var(--primary);">2</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Signature Packages</div>
                         </div>
                         <div>
                             <div style="font-size: 32px; font-weight: 800; color: var(--primary);">100%</div>
@@ -1551,149 +1840,128 @@ if ($has_wedding) {
                         <a href="booking.php" class="btn-open-category-modal" style="text-decoration: none; width: 100%; box-sizing: border-box; justify-content: center; cursor: pointer;">
                             <i class="fa-solid fa-calendar-plus"></i> Start Your Event Inquiry
                         </a>
-                    </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Footer -->
-    <footer style="background: #232f22; color: #b2c0b1; padding: 48px 0 32px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 14px;">
+    <!-- Footer (Panels 1 - 5) -->
+    <footer style="background: #1f3327; color: #b6c7bc; padding: 48px 0 32px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 14px;">
         <div class="public-container">
-            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; margin-bottom: 36px; text-align: left;">
-                <div>
-                    <img src="assets/tyoy_logo_cropped.png" alt="<?= htmlspecialchars($business_name) ?>" style="height: 40px; border-radius: 6px; background: #fff; padding: 2px; margin-bottom: 14px; display: block;">
-                    <p style="color: rgba(255,255,255,0.55); font-size: 13px; line-height: 1.7; max-width: 280px; margin: 0;">
-                        Premier event management, creative styling, and personalized floral creations — crafted with passion since 2020.
-                    </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 32px;">
+                <a href="#home">
+                    <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" style="height: 38px; width: auto; border-radius: 6px; display: block;">
+                </a>
+                <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+                    <a href="#home" style="color: #ffffff; text-decoration: none; font-size: 14px;">Home</a>
+                    <a href="#about-us" style="color: #ffffff; text-decoration: none; font-size: 14px;">About</a>
+                    <a href="#services" style="color: #ffffff; text-decoration: none; font-size: 14px;">Services</a>
+                    <a href="#portfolio" style="color: #ffffff; text-decoration: none; font-size: 14px;">Portfolio</a>
+                    <a href="#contact" style="color: #ffffff; text-decoration: none; font-size: 14px;">Contact</a>
                 </div>
-                <div>
-                    <div style="font-size: 12px; font-weight: 800; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px;">Services</div>
-                    <div style="display: flex; flex-direction: column; gap: 9px;">
-                        <?php if ($has_kids_party): ?>
-                        <a href="#services" onclick="openPackageModal('birthday');" style="color: rgba(255,255,255,0.65); font-size: 13px; text-decoration: none;">Kids Party</a>
-                        <?php endif; ?>
-                        <?php if ($has_wedding): ?>
-                        <a href="#services" onclick="openPackageModal('wedding');" style="color: rgba(255,255,255,0.65); font-size: 13px; text-decoration: none;">Weddings</a>
-                        <?php endif; ?>
-                        <a href="booking.php" style="color: rgba(255,255,255,0.65); font-size: 13px; text-decoration: none;">Book an Event</a>
-                    </div>
-                </div>
-                <div>
-                    <div style="font-size: 12px; font-weight: 800; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px;">Contact</div>
-                    <div style="display: flex; flex-direction: column; gap: 9px;">
-                        <a href="mailto:<?= htmlspecialchars($contact_email) ?>" style="color: rgba(255,255,255,0.65); font-size: 13px; text-decoration: none;"><?= htmlspecialchars($contact_email) ?></a>
-                        <span style="color: rgba(255,255,255,0.65); font-size: 13px;"><?= htmlspecialchars($contact_phone) ?></span>
-                        <span style="color: rgba(255,255,255,0.65); font-size: 13px;"><i class="fa-solid fa-location-dot" style="margin-right:4px;"></i> <?= htmlspecialchars(get_setting($conn, 'business_address', '123 Grand Ballroom Avenue, Metro Manila, Philippines')) ?></span>
-                        <a href="booking.php" style="color: #8fa68e; font-size: 13px; font-weight: 700; text-decoration: none;"><i class="fa-solid fa-calendar-plus" style="margin-right:4px;"></i> Book an Event</a>
-                    </div>
+                <div style="display: flex; gap: 14px; align-items: center; font-size: 16px;">
+                    <a href="https://facebook.com" target="_blank" rel="noopener" style="color: #ffffff; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; text-decoration: none;"><i class="fa-brands fa-facebook-f"></i></a>
+                    <a href="https://instagram.com" target="_blank" rel="noopener" style="color: #ffffff; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; text-decoration: none;"><i class="fa-brands fa-instagram"></i></a>
+                    <a href="https://tiktok.com" target="_blank" rel="noopener" style="color: #ffffff; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; text-decoration: none;"><i class="fa-brands fa-tiktok"></i></a>
+                    <a href="mailto:<?= htmlspecialchars($contact_email) ?>" style="color: #ffffff; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; text-decoration: none;"><i class="fa-solid fa-envelope"></i></a>
                 </div>
             </div>
-            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; text-align: center;">
-                <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.4);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. Event Management, Styling &amp; Floral Creations. All rights reserved.</p>
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.45);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved.</p>
+                <a href="loginadmin.php" style="color: rgba(255,255,255,0.40); text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='rgba(255,255,255,0.40)'">
+                    <i class="fa-solid fa-lock"></i> Staff / Admin Portal
+                </a>
             </div>
         </div>
     </footer>
 
     <!-- ==========================================================================
-       VIEW-ONLY MODAL 1: BIRTHDAY PACKAGES
+       VIEW-ONLY MODAL 1: BIRTHDAY PACKAGES (Panel 6)
        ========================================================================== -->
     <div class="package-view-overlay" id="birthdayPackageModal" onclick="handleOverlayClick(event, this)">
         <div class="package-view-modal">
             
             <div class="package-view-header">
                 <div>
-                    <span class="view-only-pill"><i class="fa-solid fa-eye"></i> View Only</span>
-                    <h2><i class="fa-solid fa-cake-candles"></i> Kids Party Packages &amp; Inclusions</h2>
-                    <p>Live package prices from our booking system. To customize and book, click Book Now below.</p>
+                    <h2 style="font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; margin: 0 0 4px 0; color: #ffffff;">Birthday Package</h2>
+                    <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.85);">Complete and hassle-free celebration package.</p>
                 </div>
                 <button type="button" class="modal-close-icon" onclick="closePackageModal('birthdayPackageModal')" aria-label="Close">&times;</button>
             </div>
 
-            <div class="package-view-body">
-                
-                <h3 style="font-size: 17px; font-weight: 800; color: #1f2937; margin: 0 0 14px 0;">
-                    Core Styling Packages
-                </h3>
-
-                <!-- Featured Birthday Styling Packages Grid -->
-                <div class="view-cards-grid">
-                    <?php 
-                    $tp_items = $pricing_theme['theme_styling']['items'] ?? [];
-                    foreach ($tp_items as $item): 
-                        $price = (int)$item['price'];
-                        $price_text = ($price > 0) ? '&#8369;' . number_format($price) : 'Custom Quote';
-                    ?>
-                        <div class="view-pkg-card">
-                            <span class="view-pkg-badge">Theme Styling</span>
-                            <h4 class="view-pkg-name"><?= htmlspecialchars($item['label']) ?></h4>
-                            <div class="view-pkg-price"><?= $price_text ?></div>
-                            <ul class="view-inclusions-list">
-                                <li><i class="fa-solid fa-check"></i> <span>Custom Thematic Backdrop Setup</span></li>
-                                <li><i class="fa-solid fa-check"></i> <span>Organic Balloon Garland &amp; Styling</span></li>
-                                <li><i class="fa-solid fa-check"></i> <span>Themed Centerpieces &amp; Cake Table</span></li>
-                                <li><i class="fa-solid fa-check"></i> <span>Setup, Ingress &amp; Egress Coordination</span></li>
-                            </ul>
-                            <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">View Only &bull; Selectable on Booking Page</div>
-                        </div>
-                    <?php endforeach; ?>
+            <div class="modal-split-layout">
+                <div>
+                    <img src="assets/portfolio/svc-kids-party.jpg" alt="Birthday Package" class="modal-split-img" onerror="this.src='assets/portfolio/portfolio-snowwhite-party.jpg'">
                 </div>
+                <div class="modal-split-info">
+                    <div class="modal-inclusions-title"><i class="fa-solid fa-gift"></i> Package Inclusions</div>
+                    <ul class="modal-inclusions-checklist">
+                        <li><i class="fa-solid fa-check"></i> Balloon Decoration &amp; Thematic Backdrop</li>
+                        <li><i class="fa-solid fa-check"></i> Table Set-up, Centerpieces &amp; Cake Table</li>
+                        <li><i class="fa-solid fa-check"></i> Character Decors &amp; Stage Installations</li>
+                        <li><i class="fa-solid fa-check"></i> Party Favors &amp; Giveaways Coordination</li>
+                        <li><i class="fa-solid fa-check"></i> Dedicated On-the-Day Event Coordinator</li>
+                    </ul>
 
-                <!-- Additional Setup & Equipment Options (Dynamically Loaded from Database) -->
-                <?php 
-                $addon_cat_icons = [
-                    'sound_lights'  => 'fa-music',
-                    'entertainment' => 'fa-masks-theater',
-                    'food_carts'    => 'fa-cart-flatbed',
-                    'photo_video'   => 'fa-video',
-                ];
-                $has_other_cats = false;
-                foreach ($pricing_theme as $c_k => $c_v) {
-                    if ($c_k !== 'theme_styling' && !empty($c_v['items'])) {
-                        $has_other_cats = true;
-                        break;
-                    }
-                }
-                if ($has_other_cats):
-                ?>
-                <h3 style="font-size: 17px; font-weight: 800; color: #1f2937; margin: 24px 0 14px 0;">
-                    Available Setup, Equipment &amp; Add-ons
-                </h3>
-
-                <?php
-                foreach ($pricing_theme as $c_key => $c_val):
-                    if ($c_key === 'theme_styling') continue;
-                    $c_items = $c_val['items'] ?? [];
-                    if (empty($c_items)) continue;
-                    $c_title = $c_val['category_title'] ?? ucwords(str_replace('_', ' ', $c_key));
-                    $c_icon = !empty($c_val['icon']) ? $c_val['icon'] : ($addon_cat_icons[$c_key] ?? 'fa-asterisk');
-                ?>
-                    <div class="view-addon-section">
-                        <div class="view-addon-header">
-                            <i class="fa-solid <?= $c_icon ?>"></i> <?= htmlspecialchars($c_title) ?>
-                        </div>
-                        <div class="view-addon-grid">
-                            <?php foreach ($c_items as $c_item): ?>
-                                <div class="view-addon-item">
-                                    <span><?= htmlspecialchars($c_item['label']) ?></span>
-                                    <span class="view-addon-price">&#8369;<?= number_format((int)$c_item['price']) ?></span>
+                    <div class="modal-pricing-title"><i class="fa-solid fa-tag"></i> Packages &amp; Pricing</div>
+                    <div class="modal-pricing-rows">
+                        <?php 
+                        $tp_items = $pricing_theme['theme_styling']['items'] ?? [];
+                        if (!empty($tp_items)):
+                            foreach ($tp_items as $item): 
+                                $price = (int)$item['price'];
+                                $price_text = ($price > 0) ? '&#8369; ' . number_format($price) : 'Custom Quote';
+                                $item_label = $item['label'];
+                        ?>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);"><?= htmlspecialchars($item_label) ?></span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;"><?= $price_text ?></span>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
+                                <a href="booking.php?event_type=Kids+Party&package=<?= urlencode($item_label) ?>" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                        <?php 
+                            endforeach;
+                        else:
+                        ?>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Basic Package</span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 8,000</span>
+                                </div>
+                                <a href="booking.php?event_type=Kids+Party&package=Basic+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Standard Package</span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 12,000</span>
+                                </div>
+                                <a href="booking.php?event_type=Kids+Party&package=Standard+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Premium Package</span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 18,000</span>
+                                </div>
+                                <a href="booking.php?event_type=Kids+Party&package=Premium+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                        <?php endif; ?>
                     </div>
-                <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
 
-            <div class="package-view-footer">
-                <div class="package-view-footer-info">
-                    <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i>
-                    This modal is strictly for viewing package details. To select options and reserve a date, proceed to the Booking Page.
-                </div>
-                <div class="modal-action-buttons">
-                    <button type="button" class="btn-modal-close" onclick="closePackageModal('birthdayPackageModal')">Close</button>
-                    <a href="booking.php?event_type=Kids+Party" class="btn-modal-book-now">
-                        <i class="fa-solid fa-calendar-plus"></i> Book Now
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px; margin-top: 10px;">
+                        <i class="fa-solid fa-lock" style="color: var(--primary);"></i> Selecting a package locks this service in your booking form to preserve your reservation details.
+                    </p>
+
+                    <a href="booking.php?event_type=Kids+Party" class="btn-event-pill" style="width: 100%; text-align: center; display: block; box-sizing: border-box; text-decoration: none;">
+                        <i class="fa-solid fa-calendar-check"></i> Book Kids Party (Locked to Service)
                     </a>
                 </div>
             </div>
@@ -1702,106 +1970,92 @@ if ($has_wedding) {
     </div>
 
     <!-- ==========================================================================
-       VIEW-ONLY MODAL 2: WEDDING PACKAGES
+       VIEW-ONLY MODAL 2: WEDDING PACKAGES (Panel 6)
        ========================================================================== -->
     <div class="package-view-overlay" id="weddingPackageModal" onclick="handleOverlayClick(event, this)">
         <div class="package-view-modal">
             
             <div class="package-view-header">
                 <div>
-                    <span class="view-only-pill"><i class="fa-solid fa-eye"></i> View Only</span>
-                    <h2><i class="fa-solid fa-rings-wedding"></i> Wedding Packages &amp; Inclusions</h2>
-                    <p>Live wedding &amp; reception prices synced from our database. To customize and book, click Book Now.</p>
+                    <h2 style="font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; margin: 0 0 4px 0; color: #ffffff;">Wedding Package</h2>
+                    <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.85);">Complete and elegant celebration package.</p>
                 </div>
                 <button type="button" class="modal-close-icon" onclick="closePackageModal('weddingPackageModal')" aria-label="Close">&times;</button>
             </div>
 
-            <div class="package-view-body">
-                
-                <h3 style="font-size: 17px; font-weight: 800; color: #1f2937; margin: 0 0 14px 0;">
-                    Reception &amp; Main Styling Packages
-                </h3>
-
-                <!-- Featured Reception Styling Packages Grid -->
-                <div class="view-cards-grid">
-                    <?php 
-                    $w_items = $pricing_wedding['reception_styling']['items'] ?? [];
-                    foreach ($w_items as $item): 
-                        $price = (int)$item['price'];
-                        $price_text = ($price > 0) ? '&#8369;' . number_format($price) : 'Custom Quote';
-                    ?>
-                        <div class="view-pkg-card">
-                            <span class="view-pkg-badge">Reception Styling</span>
-                            <h4 class="view-pkg-name"><?= htmlspecialchars($item['label']) ?></h4>
-                            <div class="view-pkg-price"><?= $price_text ?></div>
-                            <ul class="view-inclusions-list">
-                                <li><i class="fa-solid fa-check"></i> <span>Thematic Couple's Stage &amp; Backdrop</span></li>
-                                <li><i class="fa-solid fa-check"></i> <span>Custom Head Table &amp; Floral Arrangements</span></li>
-                                <li><i class="fa-solid fa-check"></i> <span>Guest Table Centerpieces &amp; Napkin Setup</span></li>
-                                <li><i class="fa-solid fa-check"></i> <span>Entrance Tunnel / Photo Op Vignette</span></li>
-                            </ul>
-                            <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">View Only &bull; Selectable on Booking Page</div>
-                        </div>
-                    <?php endforeach; ?>
+            <div class="modal-split-layout">
+                <div>
+                    <img src="assets/portfolio/svc-wedding.jpg" alt="Wedding Package" class="modal-split-img" onerror="this.src='assets/portfolio/portfolio-wedding-ceremony.jpg'">
                 </div>
+                <div class="modal-split-info">
+                    <div class="modal-inclusions-title"><i class="fa-solid fa-rings-wedding"></i> Package Inclusions</div>
+                    <ul class="modal-inclusions-checklist">
+                        <li><i class="fa-solid fa-check"></i> Altar, Aisle &amp; Entrance Arch Ceremony Styling</li>
+                        <li><i class="fa-solid fa-check"></i> Reception Head Table &amp; Centerpieces</li>
+                        <li><i class="fa-solid fa-check"></i> Bridal Entourage Arrangements &amp; Stage Backdrop</li>
+                        <li><i class="fa-solid fa-check"></i> Atmospheric Ambient Lighting &amp; Sound Setup</li>
+                        <li><i class="fa-solid fa-check"></i> Full-Day Coordination &amp; Master of Ceremonies</li>
+                    </ul>
 
-                <!-- Additional Setup & Equipment Options (Dynamically Loaded from Database) -->
-                <?php 
-                $wedding_cat_icons = [
-                    'ceremony_styling'  => 'fa-church',
-                    'entourage_flower'  => 'fa-spa',
-                    'otd'               => 'fa-clipboard-list',
-                    'sound_lights'      => 'fa-music',
-                    'entertainment'     => 'fa-microphone',
-                    'photo_video'       => 'fa-video',
-                ];
-                $has_other_wedding_cats = false;
-                foreach ($pricing_wedding as $w_k => $w_v) {
-                    if ($w_k !== 'reception_styling' && !empty($w_v['items'])) {
-                        $has_other_wedding_cats = true;
-                        break;
-                    }
-                }
-                if ($has_other_wedding_cats):
-                ?>
-                <h3 style="font-size: 17px; font-weight: 800; color: #1f2937; margin: 24px 0 14px 0;">
-                    Available Setup, Equipment &amp; Floral Options
-                </h3>
-
-                <?php
-                foreach ($pricing_wedding as $w_key => $w_val):
-                    if ($w_key === 'reception_styling') continue;
-                    $w_items = $w_val['items'] ?? [];
-                    if (empty($w_items)) continue;
-                    $w_title = $w_val['category_title'] ?? ucwords(str_replace('_', ' ', $w_key));
-                    $w_icon = !empty($w_val['icon']) ? $w_val['icon'] : ($wedding_cat_icons[$w_key] ?? 'fa-asterisk');
-                ?>
-                    <div class="view-addon-section">
-                        <div class="view-addon-header">
-                            <i class="fa-solid <?= $w_icon ?>"></i> <?= htmlspecialchars($w_title) ?>
-                        </div>
-                        <div class="view-addon-grid">
-                            <?php foreach ($w_items as $w_item): ?>
-                                <div class="view-addon-item">
-                                    <span><?= htmlspecialchars($w_item['label']) ?></span>
-                                    <span class="view-addon-price">&#8369;<?= number_format((int)$w_item['price']) ?></span>
+                    <div class="modal-pricing-title"><i class="fa-solid fa-tag"></i> Packages &amp; Pricing</div>
+                    <div class="modal-pricing-rows">
+                        <?php 
+                        $w_items = $pricing_wedding['reception_styling']['items'] ?? [];
+                        if (!empty($w_items)):
+                            foreach ($w_items as $item): 
+                                $price = (int)$item['price'];
+                                $price_text = ($price > 0) ? '&#8369; ' . number_format($price) : 'Custom Quote';
+                                $item_label = $item['label'];
+                        ?>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);"><?= htmlspecialchars($item_label) ?></span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;"><?= $price_text ?></span>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
+                                <a href="booking.php?event_type=Weddings&package=<?= urlencode($item_label) ?>" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                        <?php 
+                            endforeach;
+                        else:
+                        ?>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Basic Package</span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 15,000</span>
+                                </div>
+                                <a href="booking.php?event_type=Weddings&package=Basic+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Standard Package</span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 25,000</span>
+                                </div>
+                                <a href="booking.php?event_type=Weddings&package=Standard+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
+                                <div>
+                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Premium Package</span>
+                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 45,000</span>
+                                </div>
+                                <a href="booking.php?event_type=Weddings&package=Premium+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <i class="fa-solid fa-lock"></i> Select
+                                </a>
+                            </div>
+                        <?php endif; ?>
                     </div>
-                <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
 
-            <div class="package-view-footer">
-                <div class="package-view-footer-info">
-                    <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i>
-                    This modal is strictly for viewing package details. To select options and reserve your wedding date, proceed to the Booking Page.
-                </div>
-                <div class="modal-action-buttons">
-                    <button type="button" class="btn-modal-close" onclick="closePackageModal('weddingPackageModal')">Close</button>
-                    <a href="booking.php?event_type=Weddings" class="btn-modal-book-now">
-                        <i class="fa-solid fa-calendar-plus"></i> Book Now
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px; margin-top: 10px;">
+                        <i class="fa-solid fa-lock" style="color: var(--primary);"></i> Selecting a package locks this service in your booking form to preserve your reservation details.
+                    </p>
+
+                    <a href="booking.php?event_type=Weddings" class="btn-event-pill" style="width: 100%; text-align: center; display: block; box-sizing: border-box; text-decoration: none;">
+                        <i class="fa-solid fa-calendar-check"></i> Book Wedding Package (Locked to Service)
                     </a>
                 </div>
             </div>
@@ -1835,24 +2089,19 @@ if ($has_wedding) {
                 <div class="chat-bubble bot">
                     Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong>. I can answer questions regarding our services, Birthday and Wedding packages, pricing, and booking requirements!
                     <div class="quick-chips-wrapper">
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')">
-                            <i class="fa-solid fa-gift"></i> What packages do you offer?
-                        </button>
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')">
-                            <i class="fa-solid fa-calendar-check"></i> How does booking work?
-                        </button>
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')">
-                            <i class="fa-solid fa-clock"></i> What is the lead time requirement?
-                        </button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
                     </div>
                 </div>
             </div>
 
             <div class="chatbot-footer-wrapper">
                 <form class="chatbot-footer" onsubmit="sendChatMessage(event)">
-                    <textarea id="chatInput" placeholder="Ask a question..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage(event);}"></textarea>
+                    <textarea id="chatInput" placeholder="Type a message..." rows="1" oninput="autoResizeChatInput(this)" onkeydown="handleChatInputKeydown(event)"></textarea>
                     <button type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane"></i></button>
                 </form>
+                <div class="chat-input-hint">Press <strong>Enter</strong> to send • <strong>Shift + Enter</strong> for new line</div>
             </div>
         </div>
     </div>
@@ -1907,35 +2156,81 @@ if ($has_wedding) {
             });
         }
 
-        // Chatbot Controls
+        // Chatbot Auto-expanding Textarea & Keyboard Controls
+        function autoResizeChatInput(el) {
+            if (!el) return;
+            el.style.height = 'auto';
+            if (!el.value) {
+                el.style.height = '38px';
+                el.style.overflowY = 'hidden';
+                return;
+            }
+            const newH = Math.min(el.scrollHeight, 120);
+            el.style.height = Math.max(38, newH) + 'px';
+            el.style.overflowY = el.scrollHeight > 120 ? 'auto' : 'hidden';
+        }
+
+        function handleChatInputKeydown(e) {
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    // Shift + Enter creates a natural new line spacing
+                    setTimeout(() => autoResizeChatInput(e.target), 0);
+                } else {
+                    // Plain Enter submits the message
+                    e.preventDefault();
+                    sendChatMessage(e);
+                }
+            }
+        }
+
+        function formatChatMessage(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/__(.*?)__/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`([^`]+)`/g, '<code style="background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; font-size: 0.9em;">$1</code>')
+                .replace(/\n/g, '<br>');
+        }
+
+        // Chatbot Window Controls
         function toggleChatWindow() {
             const win = document.getElementById('chatbotWindow');
             win.classList.toggle('active');
             if (win.classList.contains('active')) {
-                document.getElementById('chatInput').focus();
+                const input = document.getElementById('chatInput');
+                input.focus();
+                autoResizeChatInput(input);
             }
         }
 
         function sendQuickPrompt(text) {
             const input = document.getElementById('chatInput');
             input.value = text;
+            autoResizeChatInput(input);
             sendChatMessage(new Event('submit'));
         }
 
         async function sendChatMessage(e) {
-            e.preventDefault();
+            if (e && e.preventDefault) e.preventDefault();
             const input = document.getElementById('chatInput');
             const msg = input.value.trim();
             if (!msg) return;
 
             const chatMessages = document.getElementById('chatbotMessages');
             
-            // Append user message
+            // Append formatted user message
             const uDiv = document.createElement('div');
             uDiv.className = 'chat-bubble user';
-            uDiv.textContent = msg;
+            uDiv.innerHTML = formatChatMessage(msg);
             chatMessages.appendChild(uDiv);
+            
+            // Reset input and its height
             input.value = '';
+            autoResizeChatInput(input);
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
             // Show typing indicator
@@ -1951,10 +2246,25 @@ if ($has_wedding) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: msg })
                 });
-                const data = await res.json();
-                botDiv.innerHTML = data.reply ? data.reply.replace(/\n/g, '<br>') : (data.message || 'Sorry, I could not process your message right now.');
+                const rawText = await res.text();
+                let data = null;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (parseErr) {
+                    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        try { data = JSON.parse(jsonMatch[0]); } catch (e) {}
+                    }
+                }
+                if (data && (data.reply || data.response)) {
+                    botDiv.innerHTML = formatChatMessage(data.reply || data.response);
+                } else if (data && data.message) {
+                    botDiv.innerHTML = formatChatMessage(data.message);
+                } else {
+                    botDiv.innerHTML = "I am here to assist you! Feel free to ask about our event packages, check date availability, or click <strong>'Book Now'</strong> above to submit your inquiry directly!";
+                }
             } catch (err) {
-                botDiv.textContent = 'Our concierge is temporarily unavailable. Please visit our Booking page or contact our team directly!';
+                botDiv.innerHTML = "I am here to assist you! Feel free to ask about our event packages, check date availability, or click <strong>'Book Now'</strong> above to submit your inquiry directly!";
             }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }

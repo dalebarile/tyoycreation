@@ -39,50 +39,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $booking_id = (int)($_POST['booking_id'] ?? 0);
 
     if ($action === 'approve' && $booking_id > 0) {
-        // Fetch target booking details to check schedule
-        $fetch_stmt = $conn->prepare("SELECT id, reference_no, event_title, event_start, event_end, status FROM bookings WHERE id = ?");
-        $fetch_stmt->bind_param("i", $booking_id);
-        $fetch_stmt->execute();
-        $booking_res = $fetch_stmt->get_result();
-        $target_booking = $booking_res ? $booking_res->fetch_assoc() : null;
-        $fetch_stmt->close();
-
-        if (!$target_booking) {
-            $alert_message = "Booking #{$booking_id} was not found.";
-            $alert_type = 'warning';
-        } else {
-            // Server-side Conflict Check: verify date and time do not overlap with any approved event
-            $conflict = check_booking_conflict($conn, $target_booking['event_start'], $target_booking['event_end'], $booking_id);
-
-            if ($conflict['conflict']) {
-                // Block approval, keep booking pending, display conflict message
-                $alert_message = $conflict['message'];
-                $alert_type = 'warning';
-            } else {
-                // No conflict: approve booking and add to Master Calendar
-                $stmt = $conn->prepare("UPDATE bookings SET status = 'approved', rejection_reason = NULL WHERE id = ?");
-                $stmt->bind_param("i", $booking_id);
-                if ($stmt->execute()) {
-                    NotificationHelper::sendApprovalNotice($conn, $booking_id);
-                    $alert_message = "Booking #{$booking_id} (" . htmlspecialchars($target_booking['event_title']) . ") has been APPROVED and added to the Master Calendar. Approval notifications were dispatched.";
-                    $alert_type = 'success';
-                } else {
-                    $alert_message = "Failed to approve booking #{$booking_id}. Please try again.";
-                    $alert_type = 'warning';
-                }
-                $stmt->close();
-            }
-        }
+        $result = update_booking_status($conn, $booking_id, 'approve');
+        $alert_message = $result['message'];
+        $alert_type = $result['success'] ? 'success' : 'warning';
     } elseif ($action === 'reject' && $booking_id > 0) {
         $reason = trim($_POST['rejection_reason'] ?? 'Requested schedule or venue is unavailable.');
-        $stmt = $conn->prepare("UPDATE bookings SET status = 'rejected', rejection_reason = ? WHERE id = ?");
-        $stmt->bind_param("si", $reason, $booking_id);
-        if ($stmt->execute()) {
-            NotificationHelper::sendRejectionNotice($conn, $booking_id, $reason);
-            $alert_message = "Booking #{$booking_id} has been REJECTED. Rejection notice was dispatched to the client.";
-            $alert_type = 'warning';
-        }
-        $stmt->close();
+        $result = update_booking_status($conn, $booking_id, 'reject', $reason);
+        $alert_message = $result['message'];
+        $alert_type = 'warning';
     } elseif ($action === 'delete_rejected' && $booking_id > 0) {
         // Only allow permanent deletion of rejected bookings
         $stmt = $conn->prepare("DELETE FROM bookings WHERE id = ? AND status = 'rejected'");
@@ -221,9 +185,396 @@ elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCHEDFIX - <?= htmlspecialchars($page_title) ?></title>
+    <title>Tyoy Creation - <?= htmlspecialchars($page_title) ?></title>
+    <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* Table Card and General Layout */
+        .table-card {
+            background: #ffffff;
+            border-radius: 14px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03), 0 6px 12px -2px rgba(0,0,0,0.02);
+            overflow: hidden;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .custom-table {
+            width: 100%;
+            min-width: 1120px;
+            border-collapse: separate;
+            border-spacing: 0;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        .custom-table thead th {
+            background: #f8fafc;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 14px 18px;
+            border-bottom: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        .custom-table tbody tr {
+            transition: background 0.15s ease;
+        }
+
+        .custom-table tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        .custom-table tbody td {
+            padding: 16px 18px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+            color: #334155;
+        }
+
+        .custom-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Column Specific Ref Badge */
+        .ref-badge {
+            display: inline-flex;
+            align-items: center;
+            font-family: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 12px;
+            font-weight: 700;
+            color: #0f766e;
+            background: #f0fdfa;
+            border: 1px solid #ccfbf1;
+            padding: 4px 9px;
+            border-radius: 6px;
+            white-space: nowrap;
+            letter-spacing: 0.3px;
+        }
+
+        /* Client Info */
+        .client-info-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .client-name-text {
+            font-weight: 700;
+            font-size: 14px;
+            color: #0f172a;
+        }
+
+        .client-meta-row {
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .client-meta-row i {
+            font-size: 11px;
+            width: 12px;
+            color: #94a3b8;
+        }
+
+        /* Event Details */
+        .event-info-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .event-title-text {
+            font-weight: 700;
+            font-size: 14px;
+            color: #0f172a;
+            line-height: 1.35;
+        }
+
+        .event-tags-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .event-type-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 99px;
+            white-space: nowrap;
+        }
+
+        .event-type-wedding {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .event-type-birthday {
+            background: #fdf2f8;
+            color: #9d174d;
+            border: 1px solid #fbcfe8;
+        }
+
+        .event-type-other {
+            background: #f5f3ff;
+            color: #5b21b6;
+            border: 1px solid #ddd6fe;
+        }
+
+        .guest-count-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #475569;
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 99px;
+            border: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        /* Schedule Cell */
+        .schedule-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            white-space: nowrap;
+        }
+
+        .schedule-date-text {
+            font-weight: 600;
+            font-size: 13px;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .schedule-date-text i {
+            color: var(--primary, #18392b);
+            font-size: 12px;
+        }
+
+        .schedule-time-text {
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .schedule-time-text i {
+            color: #94a3b8;
+            font-size: 11px;
+        }
+
+        /* Venue Cell */
+        .venue-cell {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #334155;
+            line-height: 1.4;
+            max-width: 170px;
+        }
+
+        .venue-cell i {
+            color: #c5a059;
+            font-size: 12px;
+            margin-top: 3px;
+            flex-shrink: 0;
+        }
+
+        /* Estimated Total Badge */
+        .total-price-pill {
+            display: inline-flex;
+            align-items: center;
+            font-weight: 800;
+            font-size: 13px;
+            color: #064e3b;
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            padding: 4px 10px;
+            border-radius: 8px;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+        }
+
+        .total-price-tbd {
+            display: inline-flex;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: #94a3b8;
+            font-style: italic;
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            padding: 3px 8px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        /* Status Badge */
+        .status-badge-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 99px;
+            white-space: nowrap;
+        }
+
+        .status-badge-wrap .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-badge-approved {
+            background: #ecfdf5;
+            color: #059669;
+            border: 1px solid #a7f3d0;
+        }
+
+        .status-badge-pending {
+            background: #fffbeb;
+            color: #d97706;
+            border: 1px solid #fde68a;
+        }
+
+        .status-badge-rejected {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+
+        /* Action Buttons */
+        .action-cell {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .action-btn-group {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .btn-modern-approve {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #10b981;
+            color: #ffffff;
+            border: 1px solid #059669;
+            padding: 6px 12px;
+            border-radius: 7px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(16, 185, 129, 0.15);
+        }
+
+        .btn-modern-approve:hover {
+            background: #059669;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.25);
+        }
+
+        .btn-modern-reject {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #ffffff;
+            color: #dc2626;
+            border: 1px solid #fca5a5;
+            padding: 6px 12px;
+            border-radius: 7px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-modern-reject:hover {
+            background: #fef2f2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            transform: translateY(-1px);
+        }
+
+        .btn-modern-details {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            padding: 6px 12px;
+            border-radius: 7px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+
+        .btn-modern-details:hover {
+            background: #f8fafc;
+            border-color: #94a3b8;
+            color: #0f172a;
+            transform: translateY(-1px);
+        }
+
+        .btn-modern-delete {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #ffffff;
+            color: #94a3b8;
+            border: 1px solid #e2e8f0;
+            padding: 6px 9px;
+            border-radius: 7px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-modern-delete:hover {
+            background: #fee2e2;
+            color: #dc2626;
+            border-color: #fca5a5;
+            transform: translateY(-1px);
+        }
+    </style>
 </head>
 <body class="admin-app">
 
@@ -279,32 +630,33 @@ elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
                     </form>
                 </div>
 
-                <div style="overflow-x: auto;">
+                <div class="table-responsive">
                     <table class="custom-table">
                         <thead>
                             <tr>
-                                <th>#</th>
-                                <th>Client Contact</th>
-                                <th>Event Details</th>
-                                <th>Target Schedule</th>
-                                <th>Venue</th>
-                                <th>Estimated Total</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th style="width: 125px;">Ref #</th>
+                                <th style="width: 200px;">Client Contact</th>
+                                <th style="width: 220px;">Event Details</th>
+                                <th style="width: 140px;">Schedule</th>
+                                <th style="width: 160px;">Venue</th>
+                                <th style="width: 140px;">Estimated Total</th>
+                                <th style="width: 110px;">Status</th>
+                                <th style="width: 180px; text-align: right;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($bookings)): ?>
                                 <tr>
-                                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 40px;">
-                                        No bookings found matching the selected criteria.
+                                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 48px;">
+                                        <div style="font-size: 28px; margin-bottom: 8px; opacity: 0.5;"><i class="fa-regular fa-folder-open"></i></div>
+                                        <div style="font-weight: 600; font-size: 14px; color: #475569;">No booking requests found</div>
+                                        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">No records match your selected filter criteria.</div>
                                     </td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($bookings as $idx => $b): 
-                                    $badge_class = 'badge-pending';
-                                    if ($b['status'] === 'approved') $badge_class = 'badge-approved';
-                                    elseif ($b['status'] === 'rejected') $badge_class = 'badge-rejected';
+                                    $st = strtolower($b['status']);
+                                    $status_badge_class = ($st === 'approved') ? 'status-badge-approved' : (($st === 'rejected') ? 'status-badge-rejected' : 'status-badge-pending');
 
                                     $estimated_total_display = '';
                                     if (!empty($b['service_requirements'])) {
@@ -314,63 +666,97 @@ elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
                                     }
 
                                     $booking_json = htmlspecialchars(json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
+                                    
+                                    $is_wedding = (stripos($b['event_type'] ?? '', 'Wedding') !== false);
+                                    $is_bday = (stripos($b['event_type'] ?? '', 'Birthday') !== false || stripos($b['event_type'] ?? '', 'Kids') !== false);
+                                    $type_cls = $is_wedding ? 'event-type-wedding' : ($is_bday ? 'event-type-birthday' : 'event-type-other');
+                                    $type_icon = $is_wedding ? 'fa-ring' : ($is_bday ? 'fa-cake-candles' : 'fa-champagne-glasses');
                                 ?>
                                     <tr>
-                                        <td style="font-family: monospace; font-weight: 700; color: var(--primary);">
-                                            <?= htmlspecialchars($b['reference_no']) ?>
-                                        </td>
+                                        <!-- Ref # -->
                                         <td>
-                                            <div style="font-weight: 700; font-size: 14px;"><?= htmlspecialchars($b['client_name']) ?></div>
-                                            <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; margin-top: 2px;">
-                                                <i class="fa-solid fa-phone" style="font-size: 10px; color: var(--primary);"></i>
-                                                <span><?= htmlspecialchars($b['client_phone']) ?></span>
-                                            </div>
-                                            <?php if (!empty($b['client_email'])): ?>
-                                            <div style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; margin-top: 1px;">
-                                                <i class="fa-solid fa-envelope" style="font-size: 10px; color: var(--text-muted);"></i>
-                                                <span><?= htmlspecialchars($b['client_email']) ?></span>
-                                            </div>
-                                            <?php endif; ?>
+                                            <span class="ref-badge"><?= htmlspecialchars($b['reference_no']) ?></span>
                                         </td>
+
+                                        <!-- Client Contact -->
                                         <td>
-                                            <div style="font-weight: 700; font-size: 14px; color: var(--text-main);"><?= htmlspecialchars($b['event_title']) ?></div>
-                                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
-                                                <span class="badge" style="background: <?= stripos($b['event_type'], 'Wedding') !== false ? '#ecfdf5' : '#fef2f2' ?>; color: <?= stripos($b['event_type'], 'Wedding') !== false ? '#065f46' : '#991b1b' ?>; font-size: 11px; padding: 2px 8px; font-weight: 600;">
-                                                    <i class="fa-solid <?= stripos($b['event_type'], 'Wedding') !== false ? 'fa-rings-wedding' : 'fa-cake-candles' ?>" style="font-size: 10px;"></i>
-                                                    <?= htmlspecialchars($b['event_type']) ?>
-                                                </span>
-                                                <?php if (!empty($b['guest_count'])): ?>
-                                                    <span style="font-size: 11px; color: var(--text-muted); background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">
-                                                        <i class="fa-solid fa-users" style="font-size: 10px;"></i> <?= (int)$b['guest_count'] ?> guests
-                                                    </span>
+                                            <div class="client-info-cell">
+                                                <span class="client-name-text"><?= htmlspecialchars($b['client_name']) ?></span>
+                                                <div class="client-meta-row">
+                                                    <i class="fa-solid fa-phone"></i>
+                                                    <span><?= htmlspecialchars($b['client_phone']) ?></span>
+                                                </div>
+                                                <?php if (!empty($b['client_email'])): ?>
+                                                    <div class="client-meta-row">
+                                                        <i class="fa-regular fa-envelope"></i>
+                                                        <span><?= htmlspecialchars($b['client_email']) ?></span>
+                                                    </div>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
+
+                                        <!-- Event Details -->
                                         <td>
-                                            <div style="font-weight: 600;"><?= date('M d, Y', strtotime($b['event_start'])) ?></div>
-                                            <div style="font-size: 12px; color: var(--text-muted);"><?= date('g:i A', strtotime($b['event_start'])) ?></div>
+                                            <div class="event-info-cell">
+                                                <span class="event-title-text"><?= htmlspecialchars($b['event_title']) ?></span>
+                                                <div class="event-tags-row">
+                                                    <span class="event-type-pill <?= $type_cls ?>">
+                                                        <i class="fa-solid <?= $type_icon ?>"></i>
+                                                        <?= htmlspecialchars($b['event_type']) ?>
+                                                    </span>
+                                                    <?php if (!empty($b['guest_count'])): ?>
+                                                        <span class="guest-count-pill">
+                                                            <i class="fa-solid fa-users"></i> <?= (int)$b['guest_count'] ?> guests
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
                                         </td>
+
+                                        <!-- Schedule -->
                                         <td>
-                                            <div style="font-size: 13px; font-weight: 500;"><?= htmlspecialchars($b['location_venue']) ?></div>
+                                            <div class="schedule-cell">
+                                                <div class="schedule-date-text">
+                                                    <i class="fa-regular fa-calendar"></i>
+                                                    <span><?= date('M d, Y', strtotime($b['event_start'])) ?></span>
+                                                </div>
+                                                <div class="schedule-time-text">
+                                                    <i class="fa-regular fa-clock"></i>
+                                                    <span><?= date('g:i A', strtotime($b['event_start'])) ?></span>
+                                                </div>
+                                            </div>
                                         </td>
+
+                                        <!-- Venue -->
+                                        <td>
+                                            <div class="venue-cell" title="<?= htmlspecialchars($b['location_venue']) ?>">
+                                                <i class="fa-solid fa-location-dot"></i>
+                                                <span><?= htmlspecialchars($b['location_venue']) ?></span>
+                                            </div>
+                                        </td>
+
+                                        <!-- Estimated Total -->
                                         <td>
                                             <?php if ($estimated_total_display): ?>
-                                                <span class="badge" style="background: #232f22; color: #ffffff; font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 6px; white-space: nowrap;">
-                                                    <?= $estimated_total_display ?>
-                                                </span>
+                                                <span class="total-price-pill"><?= $estimated_total_display ?></span>
                                             <?php else: ?>
-                                                <span style="font-size: 12px; color: var(--text-muted); font-style: italic;">Custom / TBD</span>
+                                                <span class="total-price-tbd">Custom / TBD</span>
                                             <?php endif; ?>
                                         </td>
+
+                                        <!-- Status -->
                                         <td>
-                                            <span class="badge <?= $badge_class ?>">
-                                                <span class="badge-dot"></span>
+                                            <span class="status-badge-wrap <?= $status_badge_class ?>">
+                                                <span class="dot"></span>
                                                 <?= ucfirst($b['status']) ?>
                                             </span>
                                         </td>
-                                        <td                                            <div class="action-buttons">
+
+                                        <!-- Actions -->
+                                        <td class="action-cell">
+                                            <div class="action-btn-group">
                                                 <?php if ($b['status'] === 'pending' || $b['status'] === 'rejected'): ?>
-                                                    <button type="button" class="btn-action-approve" 
+                                                    <button type="button" class="btn-modern-approve" 
                                                         data-id="<?= (int)$b['id'] ?>" 
                                                         data-client="<?= htmlspecialchars($b['client_name'], ENT_QUOTES, 'UTF-8') ?>" 
                                                         data-title="<?= htmlspecialchars($b['event_title'], ENT_QUOTES, 'UTF-8') ?>" 
@@ -378,39 +764,39 @@ elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
                                                         data-venue="<?= htmlspecialchars($b['location_venue'], ENT_QUOTES, 'UTF-8') ?>"
                                                         data-ref="<?= htmlspecialchars($b['reference_no'], ENT_QUOTES, 'UTF-8') ?>"
                                                         onclick="openApproveFromBtn(this)" 
-                                                        title="Approve booking">
+                                                        title="Approve booking request">
                                                         <i class="fa-solid fa-check"></i> Approve
                                                     </button>
                                                 <?php endif; ?>
 
                                                 <?php if ($b['status'] === 'pending' || $b['status'] === 'approved'): ?>
-                                                    <button type="button" class="btn-action-reject" 
+                                                    <button type="button" class="btn-modern-reject" 
                                                         data-id="<?= (int)$b['id'] ?>" 
                                                         data-client="<?= htmlspecialchars($b['client_name'], ENT_QUOTES, 'UTF-8') ?>" 
                                                         data-title="<?= htmlspecialchars($b['event_title'], ENT_QUOTES, 'UTF-8') ?>" 
                                                         data-ref="<?= htmlspecialchars($b['reference_no'], ENT_QUOTES, 'UTF-8') ?>"
                                                         onclick="openRejectFromBtn(this)" 
-                                                        title="Reject booking">
+                                                        title="Reject booking request">
                                                         <i class="fa-solid fa-xmark"></i> Reject
                                                     </button>
                                                 <?php endif; ?>
 
-                                                <button type="button" class="btn-action-view" data-booking="<?= $booking_json ?>" onclick="openBookingFromBtn(this)" title="View booking details">
+                                                <button type="button" class="btn-modern-details" data-booking="<?= $booking_json ?>" onclick="openBookingFromBtn(this)" title="View full booking details">
                                                     <i class="fa-solid fa-eye"></i> Details
                                                 </button>
 
                                                 <?php if ($b['status'] === 'rejected'): ?>
-                                                    <button type="button" class="btn-action-delete" 
+                                                    <button type="button" class="btn-modern-delete" 
                                                         data-id="<?= (int)$b['id'] ?>" 
                                                         data-client="<?= htmlspecialchars($b['client_name'], ENT_QUOTES, 'UTF-8') ?>" 
                                                         data-title="<?= htmlspecialchars($b['event_title'], ENT_QUOTES, 'UTF-8') ?>" 
                                                         data-ref="<?= htmlspecialchars($b['reference_no'], ENT_QUOTES, 'UTF-8') ?>"
                                                         onclick="openDeleteFromBtn(this)" 
                                                         title="Permanently delete rejected booking">
-                                                        <i class="fa-solid fa-trash"></i> Delete
+                                                        <i class="fa-solid fa-trash"></i>
                                                     </button>
                                                 <?php endif; ?>
-                                            </div>v>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

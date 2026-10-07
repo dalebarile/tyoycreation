@@ -24,9 +24,20 @@ if ($uid > 0 && isset($conn) && is_object($conn)) {
     }
 }
 
-session_unset();
+$_SESSION = [];
+if (ini_get("session.use_cookies")) {
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000,
+        $params["path"], $params["domain"],
+        $params["secure"], $params["httponly"]
+    );
+}
 session_destroy();
 $redirect = $_GET['redirect'] ?? 'loginadmin.php';
+// Security: only allow relative redirects (block absolute URLs / protocol-relative URLs)
+if (preg_match('#^https?://|^//#i', $redirect) || str_contains($redirect, '://')) {
+    $redirect = 'loginadmin.php';
+}
 header("Location: " . $redirect);
 exit;
 ?>

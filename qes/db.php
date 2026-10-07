@@ -7,39 +7,76 @@ if (file_exists($env_file)) {
 
 date_default_timezone_set('Asia/Manila');
 
+if (!defined('PHPUNIT_RUNNING')) {
+    @ini_set('display_errors', '0');
+    @ini_set('log_errors', '1');
+    error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED);
+}
+
 require_once __DIR__ . '/supabase_driver.php';
 require_once __DIR__ . '/crypto_helper.php';
 
-// Connect directly to Supabase
-$conn = new SupabaseConnection();
+// Connect directly to Supabase (bypassed in PHPUnit CLI test suite)
+if (!defined('PHPUNIT_RUNNING')) {
+    $conn = new SupabaseConnection();
 
-// Fallback only if Supabase fails
-if ($conn->connect_error) {
-    $servername = (defined('ENV_DB_HOST') && ENV_DB_HOST !== 'your_db_host') ? ENV_DB_HOST : "127.0.0.1";
-    $username   = (defined('ENV_DB_USER') && ENV_DB_USER !== 'your_db_username') ? ENV_DB_USER : "root";
-    $password   = (defined('ENV_DB_PASS') && ENV_DB_PASS !== 'your_db_password') ? ENV_DB_PASS : "";
-    $dbname     = (defined('ENV_DB_NAME') && ENV_DB_NAME !== 'your_db_name') ? ENV_DB_NAME : "qe";
-    
-    $mysql_fallback = @new mysqli($servername, $username, $password, $dbname);
-    if (!$mysql_fallback->connect_error) {
-        $conn = $mysql_fallback;
-    } else {
-        http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'reply' => "Our system is temporarily unavailable. Please try again shortly or use the 'Book Now' button to submit your inquiry.",
-            'response' => "Our system is temporarily unavailable. Please try again shortly.",
-            'error' => 'db_connection_failed'
-        ]);
-        error_log('Supabase connection failed: ' . $conn->connect_error);
-        exit;
+    // SupabaseConnection may not detect failures until the first query.
+    // Run a lightweight health check to surface connection errors early.
+    if (!$conn->connect_error) {
+        $health = $conn->query("SELECT 1");
+        if ($health === false && !empty($conn->connect_error)) {
+            // Connection-level failure confirmed (e.g. token expired, network down)
+            error_log('[QES DB] Supabase health check failed: ' . $conn->connect_error);
+        }
     }
+
+    // Fallback to local MySQL only if Supabase has a connection-level error
+    // AND valid local DB credentials are configured (not placeholder values).
+    if ($conn->connect_error) {
+        $has_local_config = defined('ENV_DB_HOST') && ENV_DB_HOST !== 'your_db_host'
+                        && defined('ENV_DB_NAME') && ENV_DB_NAME !== 'your_db_name';
+
+        if ($has_local_config) {
+            $servername = ENV_DB_HOST;
+            $username   = (defined('ENV_DB_USER') && ENV_DB_USER !== 'your_db_username') ? ENV_DB_USER : 'root';
+            $password   = (defined('ENV_DB_PASS') && ENV_DB_PASS !== 'your_db_password') ? ENV_DB_PASS : '';
+            $dbname     = ENV_DB_NAME;
+
+            $mysql_fallback = @new mysqli($servername, $username, $password, $dbname);
+            if (!$mysql_fallback->connect_error) {
+                $conn = $mysql_fallback;
+                error_log('[QES DB] Supabase unavailable, fell back to local MySQL.');
+            }
+        }
+
+        // If we still have a connection error after fallback attempt, halt
+        if ($conn->connect_error || (isset($mysql_fallback) && $mysql_fallback->connect_error)) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'reply' => "Our system is temporarily unavailable. Please try again shortly or use the 'Book Now' button to submit your inquiry.",
+                'response' => "Our system is temporarily unavailable. Please try again shortly.",
+                'error' => 'db_connection_failed'
+            ]);
+            error_log('[QES DB] All database connections failed. Supabase: ' . ($conn->connect_error ?? 'unknown'));
+            exit;
+        }
+    }
+
+    $conn->set_charset("utf8mb4");
 }
 
-$conn->set_charset("utf8mb4");
-
-// CSRF Protection Helpers
-if (session_status() === PHP_SESSION_NONE) {
+// Secure Session Configuration & CSRF Protection
+if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() !== 'cli') {
+    $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => $is_https,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
     session_start();
 }
 
@@ -53,6 +90,109 @@ if (!function_exists('csrf_token')) {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
         return $_SESSION['csrf_token'] ?? '';
+    }
+}
+
+/**
+ * Rate Limiter for Authentication & Security-Sensitive Operations
+ * Protects against brute-force, password-guessing, and credential stuffing attacks.
+ */
+if (!function_exists('qes_rate_limit_check')) {
+    function qes_rate_limit_check(string $action, string $key, int $max_attempts = 5, int $decay_seconds = 900): array {
+        $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
+        $hashed_key = hash('sha256', strtolower(trim($key)));
+        $temp_dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_limits';
+        if (!is_dir($temp_dir)) {
+            @mkdir($temp_dir, 0700, true);
+        }
+        $file = $temp_dir . DIRECTORY_SEPARATOR . $clean_action . '_' . $hashed_key . '.json';
+        $now = time();
+        $data = ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
+
+        if (file_exists($file)) {
+            $content = @file_get_contents($file);
+            if ($content) {
+                $decoded = json_decode($content, true);
+                if (is_array($decoded)) {
+                    $data = array_merge($data, $decoded);
+                }
+            }
+        }
+
+        // If locked out
+        if (!empty($data['locked_until']) && $data['locked_until'] > $now) {
+            $retry_after = (int)($data['locked_until'] - $now);
+            $mins = max(1, (int)ceil($retry_after / 60));
+            return [
+                'allowed' => false,
+                'retry_after' => $retry_after,
+                'remaining' => 0,
+                'message' => "Too many failed attempts. Please try again in {$mins} minute(s)."
+            ];
+        }
+
+        // Reset if decay window has elapsed
+        if (($now - (int)($data['first_attempt'] ?? $now)) > $decay_seconds) {
+            $data = ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
+            @unlink($file);
+        }
+
+        $remaining = max(0, $max_attempts - (int)($data['attempts'] ?? 0));
+        return [
+            'allowed' => ((int)($data['attempts'] ?? 0) < $max_attempts),
+            'retry_after' => 0,
+            'remaining' => $remaining,
+            'message' => ''
+        ];
+    }
+}
+
+if (!function_exists('qes_rate_limit_record_fail')) {
+    function qes_rate_limit_record_fail(string $action, string $key, int $max_attempts = 5, int $lockout_seconds = 900): int {
+        $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
+        $hashed_key = hash('sha256', strtolower(trim($key)));
+        $temp_dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_limits';
+        if (!is_dir($temp_dir)) {
+            @mkdir($temp_dir, 0700, true);
+        }
+        $file = $temp_dir . DIRECTORY_SEPARATOR . $clean_action . '_' . $hashed_key . '.json';
+        $now = time();
+        $data = ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
+
+        if (file_exists($file)) {
+            $content = @file_get_contents($file);
+            if ($content) {
+                $decoded = json_decode($content, true);
+                if (is_array($decoded)) {
+                    $data = array_merge($data, $decoded);
+                }
+            }
+        }
+
+        // Reset if previous window expired
+        if (($now - (int)($data['first_attempt'] ?? $now)) > $lockout_seconds && empty($data['locked_until'])) {
+            $data['attempts'] = 0;
+            $data['first_attempt'] = $now;
+        }
+
+        $data['attempts'] = ((int)($data['attempts'] ?? 0)) + 1;
+        if ($data['attempts'] >= $max_attempts) {
+            $data['locked_until'] = $now + $lockout_seconds;
+        }
+
+        @file_put_contents($file, json_encode($data), LOCK_EX);
+        return (int)$data['attempts'];
+    }
+}
+
+if (!function_exists('qes_rate_limit_clear')) {
+    function qes_rate_limit_clear(string $action, string $key): void {
+        $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
+        $hashed_key = hash('sha256', strtolower(trim($key)));
+        $file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_limits' . DIRECTORY_SEPARATOR . $clean_action . '_' . $hashed_key . '.json';
+        if (file_exists($file)) {
+            @unlink($file);
+        }
     }
 }
 
@@ -311,11 +451,15 @@ if (!function_exists('get_setting')) {
 
         if ($settings_cache === null) {
             $settings_cache = [];
-            $res = $conn->query("SELECT setting_key, setting_value FROM settings");
-            if ($res) {
-                while ($row = $res->fetch_assoc()) {
-                    $settings_cache[$row['setting_key']] = $row['setting_value'];
-                }
+            if (is_object($conn) && method_exists($conn, 'query')) {
+                try {
+                    $res = $conn->query("SELECT setting_key, setting_value FROM settings");
+                    if ($res) {
+                        while ($row = $res->fetch_assoc()) {
+                            $settings_cache[$row['setting_key']] = $row['setting_value'];
+                        }
+                    }
+                } catch (\Throwable $e) {}
             }
         }
 
@@ -477,10 +621,14 @@ if (!function_exists('check_booking_conflict')) {
 
         $stmt = $conn->prepare($sql);
         if (!$stmt) {
+            // FAIL CLOSED: If we can't query the database, assume conflict
+            // to prevent double-booking. Never silently allow a booking
+            // when we can't verify there's no overlap.
+            error_log('[QES Booking] CRITICAL: check_booking_conflict query preparation failed: ' . $conn->error);
             return [
-                'conflict' => false,
+                'conflict' => true,
                 'conflicting_event' => null,
-                'message' => ''
+                'message' => 'Unable to verify schedule availability due to a temporary database issue. Please try again in a moment.'
             ];
         }
 
@@ -529,6 +677,313 @@ if (!function_exists('get_event_family')) {
             return 'wedding';
         }
         return 'theme_party';
+    }
+}
+
+if (!function_exists('create_booking_inquiry')) {
+    /**
+     * Unified Central Booking Service.
+     * Single source of truth for creating bookings across Web Form, Chatbot, and Admin flows.
+     * Ensures future updates to validations, reference generator, or notifications never break any booking channel.
+     *
+     * @param mysqli|SupabaseConnection $conn
+     * @param array $params Booking parameters
+     * @return array ['success' => bool, 'message' => string, 'booking_id' => int, 'reference_no' => string, ...]
+     */
+    function create_booking_inquiry($conn, array $params): array {
+        $user_id          = !empty($params['user_id']) ? (int)$params['user_id'] : null;
+        $client_name      = trim($params['client_name'] ?? '');
+        $client_email     = trim($params['client_email'] ?? '');
+        $client_phone     = trim($params['client_phone'] ?? '');
+        $client_address   = trim($params['client_address'] ?? '');
+        $event_title      = trim($params['event_title'] ?? '');
+        $event_type       = trim($params['event_type'] ?? 'Theme Party');
+        $event_date       = trim($params['event_date'] ?? '');
+        $event_time       = trim($params['event_time'] ?? '10:00');
+        $guest_count      = max(1, (int)($params['guest_count'] ?? 100));
+        $location_venue   = trim($params['location_venue'] ?? '');
+        $service_requirements = trim($params['service_requirements'] ?? 'Standard Event Styling');
+        $source           = trim($params['source'] ?? 'online_inquiry');
+        $raw_status       = $params['status'] ?? 'pending';
+        $status           = in_array($raw_status, ['pending', 'approved', 'declined', 'cancelled'], true) ? $raw_status : 'pending';
+        $check_conflict   = !empty($params['check_conflict']);
+        $send_notice      = $params['send_notice'] ?? ($status === 'approved' ? 'approval' : 'inquiry');
+
+        // 1. Required fields
+        if (empty($client_name) || empty($client_phone) || empty($event_title) || empty($event_date) || empty($location_venue)) {
+            return ['success' => false, 'message' => 'Please fill in all required fields (Name, Contact Number, Event Title, Date, and Venue).'];
+        }
+
+        // 2. Strict Email Validation (if provided or for online/chatbot sources)
+        if (!empty($client_email)) {
+            if (!filter_var($client_email, FILTER_VALIDATE_EMAIL) || !preg_match("/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/", $client_email)) {
+                return ['success' => false, 'message' => 'Please enter a valid Email Address (e.g. name@gmail.com).'];
+            }
+        } elseif ($source !== 'manual_entry') {
+            return ['success' => false, 'message' => 'Please enter a valid Email Address.'];
+        }
+
+        // 3. Strict Phone / Contact Number Validation (10 to 13 digits)
+        $clean_phone = preg_replace('/[^0-9]/', '', $client_phone);
+        if (preg_match('/[a-zA-Z]/', $client_phone) || strlen($clean_phone) < 10 || strlen($clean_phone) > 13) {
+            return ['success' => false, 'message' => 'Please enter a valid Contact Number with 10 to 13 digits (e.g. 0917-123-4567).'];
+        }
+
+        // 4. Minimum Length Checks
+        if (strlen($event_title) < 3) {
+            return ['success' => false, 'message' => 'Event Title must be at least 3 characters.'];
+        }
+        if (strlen($location_venue) < 3) {
+            return ['success' => false, 'message' => 'Please enter a valid Event Venue or Location.'];
+        }
+
+        // 5. Dynamic Lead-Time Validation per Event Type
+        $dateValidation = validate_event_booking_date($event_type, $event_date);
+        if (!$dateValidation['valid']) {
+            return ['success' => false, 'message' => $dateValidation['message']];
+        }
+
+        // 6. Catering Capacity Check (if catering package selected, including add-ons)
+        if (preg_match('/Catering.*?(\d+)\s*pax/i', $service_requirements, $cat_match)) {
+            $catering_pax = (int)$cat_match[1];
+            // Check for additional pax add-ons (e.g. +25 pax, extra 50 pax)
+            if (preg_match_all('/(?:\+|extra|additional)\s*(\d+)\s*pax/i', $service_requirements, $extra_matches)) {
+                foreach ($extra_matches[1] as $extra_pax) {
+                    $catering_pax += (int)$extra_pax;
+                }
+            }
+            if ($guest_count > $catering_pax) {
+                return [
+                    'success' => false,
+                    'message' => "Cannot proceed: Expected guest count ({$guest_count}) exceeds your selected Catering Service package limit ({$catering_pax} pax). Please adjust your guest count or choose a higher package."
+                ];
+            }
+        }
+
+        // 7. Calculate start and end timestamps
+        $event_start = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time}"));
+        $event_end   = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time} + 5 hours"));
+
+        // 8. Optional Conflict Check (e.g., for approved manual entries)
+        if ($check_conflict) {
+            $conflict = check_booking_conflict($conn, $event_start, $event_end);
+            if ($conflict['conflict']) {
+                return ['success' => false, 'message' => $conflict['message']];
+            }
+        }
+
+        // 9. Collision-free Reference Number Generation
+        $year = date('Y');
+        $ref_prefix = !empty($params['ref_prefix']) ? $params['ref_prefix'] : "EV-{$year}-";
+        $reference_no = '';
+        $max_attempts = 10;
+        for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
+            $rand = str_pad((string)random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+            $candidate = $ref_prefix . $rand;
+            $check = $conn->prepare("SELECT id FROM bookings WHERE reference_no = ?");
+            if ($check) {
+                $check->bind_param("s", $candidate);
+                $check->execute();
+                $is_unique = ($check->get_result()->num_rows === 0);
+                $check->close();
+                if ($is_unique) {
+                    $reference_no = $candidate;
+                    break;
+                }
+            }
+        }
+
+        if (empty($reference_no)) {
+            return ['success' => false, 'message' => 'Could not generate a unique reference number. Please try again.'];
+        }
+
+        // 10. PII Encryption
+        $enc_client_name    = qes_encrypt($client_name, false);
+        $enc_client_email   = !empty($client_email) ? qes_encrypt($client_email, true) : '';
+        $enc_client_phone   = qes_encrypt($client_phone, true);
+        $enc_client_address = !empty($client_address) ? qes_encrypt($client_address, false) : '';
+
+        // 11. Database Insertion
+        $stmt = $conn->prepare("INSERT INTO bookings (user_id, reference_no, client_name, client_email, client_phone, client_address, event_title, event_type, event_start, event_end, guest_count, location_venue, service_requirements, special_notes, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        if (!$stmt) {
+            error_log('[QES Booking] DB prepare error: ' . $conn->error);
+            return ['success' => false, 'message' => 'A database error occurred while creating your booking. Please try again shortly.'];
+        }
+
+        $stmt->bind_param("issssssssissssss",
+            $user_id,
+            $reference_no,
+            $enc_client_name,
+            $enc_client_email,
+            $enc_client_phone,
+            $enc_client_address,
+            $event_title,
+            $event_type,
+            $event_start,
+            $event_end,
+            $guest_count,
+            $location_venue,
+            $service_requirements,
+            $special_notes,
+            $status,
+            $source
+        );
+
+        if (!$stmt->execute()) {
+            error_log('[QES Booking] DB execute error: ' . $stmt->error);
+            $stmt->close();
+            return ['success' => false, 'message' => 'Could not save booking inquiry due to a database error. Please try again shortly.'];
+        }
+
+        $new_booking_id = (int)($stmt->insert_id ?? 0);
+        if ($new_booking_id <= 0) {
+            $new_booking_id = (int)($conn->insert_id ?? 0);
+        }
+        $stmt->close();
+
+        if ($new_booking_id <= 0) {
+            $chk = $conn->prepare("SELECT id FROM bookings WHERE reference_no = ? LIMIT 1");
+            if ($chk) {
+                $chk->bind_param("s", $reference_no);
+                $chk->execute();
+                $chk_res = $chk->get_result();
+                if ($chk_res && ($row = $chk_res->fetch_assoc())) {
+                    $new_booking_id = (int)($row['id'] ?? 0);
+                }
+                $chk->close();
+            }
+        }
+
+        // 12. Dispatch Notifications (if enabled)
+        if ($new_booking_id > 0 && !empty($send_notice) && $send_notice !== 'none') {
+            require_once __DIR__ . '/notification_helper.php';
+            try {
+                if ($send_notice === 'approval' || $status === 'approved') {
+                    NotificationHelper::sendApprovalNotice($conn, $new_booking_id);
+                } elseif ($send_notice === 'inquiry' || $status === 'pending') {
+                    NotificationHelper::sendInquiryReceivedNotice($conn, $new_booking_id);
+                }
+            } catch (\Throwable $e) {
+                error_log("[QES Booking] Error dispatching notification: " . $e->getMessage());
+            }
+        }
+
+        return [
+            'success'      => true,
+            'booking_id'   => $new_booking_id,
+            'reference_no' => $reference_no,
+            'client_name'  => $client_name,
+            'event_title'  => $event_title,
+            'event_date'   => date('F j, Y', strtotime($event_date)),
+            'message'      => $status === 'approved' 
+                ? "Booking '{$event_title}' (Ref: {$reference_no}) was approved and scheduled!" 
+                : 'Booking request submitted successfully!'
+        ];
+    }
+}
+
+if (!function_exists('update_booking_status')) {
+    /**
+     * Unified Booking Status Transition Service.
+     * Centralizes approval, rejection, and future status lifecycle transitions.
+     * Enforces conflict checks, database updates, and client notifications consistently.
+     *
+     * @param mysqli|SupabaseConnection $conn
+     * @param int $booking_id
+     * @param string $action 'approve' | 'reject'
+     * @param string|null $reason Optional rejection reason
+     * @param bool $send_notice Whether to dispatch email notice
+     * @return array ['success' => bool, 'message' => string, 'booking' => ?array]
+     */
+    function update_booking_status($conn, int $booking_id, string $action, ?string $reason = null, bool $send_notice = true): array {
+        if ($booking_id <= 0) {
+            return ['success' => false, 'message' => 'Invalid booking ID.', 'booking' => null];
+        }
+
+        $stmt = $conn->prepare("SELECT id, reference_no, event_title, event_type, event_start, event_end, status FROM bookings WHERE id = ?");
+        if (!$stmt) {
+            error_log('[QES Booking] update_booking_status prepare failed: ' . $conn->error);
+            return ['success' => false, 'message' => 'A database error occurred. Please try again shortly.', 'booking' => null];
+        }
+        $stmt->bind_param("i", $booking_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $target = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+
+        if (!$target) {
+            return ['success' => false, 'message' => "Booking #{$booking_id} was not found.", 'booking' => null];
+        }
+
+        $action = strtolower(trim($action));
+
+        if ($action === 'approve') {
+            // Server-side Conflict Check
+            $conflict = check_booking_conflict($conn, $target['event_start'], $target['event_end'], $booking_id);
+            if ($conflict['conflict']) {
+                return ['success' => false, 'message' => $conflict['message'], 'conflict' => true, 'booking' => $target];
+            }
+
+            $up = $conn->prepare("UPDATE bookings SET status = 'approved', rejection_reason = NULL WHERE id = ?");
+            if (!$up) {
+                error_log('[QES Booking] approve prepare failed: ' . $conn->error);
+                return ['success' => false, 'message' => 'A database error occurred. Please try again shortly.', 'booking' => $target];
+            }
+            $up->bind_param("i", $booking_id);
+            $saved = $up->execute();
+            $up->close();
+
+            if (!$saved) {
+                return ['success' => false, 'message' => "Failed to approve booking #{$booking_id}.", 'booking' => $target];
+            }
+
+            if ($send_notice) {
+                require_once __DIR__ . '/notification_helper.php';
+                try {
+                    NotificationHelper::sendApprovalNotice($conn, $booking_id);
+                } catch (\Throwable $e) {
+                    error_log("[QES Booking] Error sending approval email: " . $e->getMessage());
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => "Booking #{$booking_id} (" . htmlspecialchars($target['event_title']) . ") has been APPROVED and added to the Master Calendar. Approval notifications were dispatched.",
+                'booking' => $target
+            ];
+        } elseif ($action === 'reject') {
+            $reason_clean = !empty($reason) ? trim($reason) : 'Requested schedule or venue is unavailable.';
+            $up = $conn->prepare("UPDATE bookings SET status = 'rejected', rejection_reason = ? WHERE id = ?");
+            if (!$up) {
+                error_log('[QES Booking] reject prepare failed: ' . $conn->error);
+                return ['success' => false, 'message' => 'A database error occurred. Please try again shortly.', 'booking' => $target];
+            }
+            $up->bind_param("si", $reason_clean, $booking_id);
+            $saved = $up->execute();
+            $up->close();
+
+            if (!$saved) {
+                return ['success' => false, 'message' => "Failed to reject booking #{$booking_id}.", 'booking' => $target];
+            }
+
+            if ($send_notice) {
+                require_once __DIR__ . '/notification_helper.php';
+                try {
+                    NotificationHelper::sendRejectionNotice($conn, $booking_id, $reason_clean);
+                } catch (\Throwable $e) {
+                    error_log("[QES Booking] Error sending rejection email: " . $e->getMessage());
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => "Booking #{$booking_id} has been REJECTED. Rejection notice was dispatched to the client.",
+                'booking' => $target
+            ];
+        }
+
+        return ['success' => false, 'message' => "Unknown action '{$action}'.", 'booking' => $target];
     }
 }
 

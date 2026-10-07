@@ -73,13 +73,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['phone'] = $phone;
 
                     $redirect = $_GET['redirect'] ?? 'index.php?registered=1';
+                    // Security: only allow relative redirects (block absolute URLs)
+                    if (preg_match('#^https?://|^//#i', $redirect) || str_contains($redirect, '://')) {
+                        $redirect = 'index.php?registered=1';
+                    }
                     header("Location: " . $redirect);
                     exit;
                 } else {
-                    $register_error = "Registration failed: " . $insert->error;
+                    error_log('[QES Register] Insert execute error: ' . $insert->error);
+                    $register_error = "Registration failed due to a system error. Please try again shortly.";
                 }
             } else {
-                $register_error = "Database error: " . $conn->error;
+                error_log('[QES Register] DB prepare error: ' . $conn->error);
+                $register_error = "Registration is temporarily unavailable. Please try again shortly.";
             }
         }
     }
@@ -91,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tyoy Creation - Register Account</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -290,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <div class="register-card">
         <div class="register-logo">
-            <img src="assets/tyoy_logo_cropped.png" alt="Tyoy Creation" style="height: 52px; width: auto; border-radius: 8px;">
+            <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="Tyoy Creation" style="height: 52px; width: auto; border-radius: 8px;">
         </div>
         <div style="font-weight: 700; font-size: 16px; color: var(--primary); margin: 8px 0 2px 0;">Create Member Account</div>
         <p class="register-title">Register to book events &amp; customize packages</p>
@@ -406,24 +413,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div id="googleAuthError" class="auth-alert-error" style="display: none; background: #fee2e2; color: #dc2626; padding: 9px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 14px; text-align: left;"></div>
 
-            <form id="googleLoginForm" onsubmit="handleGoogleSubmit(event)">
-                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
-                <div style="text-align: left; margin-bottom: 14px;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px;">Google Email Address</label>
-                    <input type="email" id="googleEmailInput" name="email" placeholder="example@gmail.com" required style="width: 100%; padding: 11px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
-                </div>
-                <div style="text-align: left; margin-bottom: 18px;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px;">Full Name (optional)</label>
-                    <input type="text" id="googleNameInput" name="full_name" placeholder="Your name" style="width: 100%; padding: 11px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
-                </div>
-                <button type="submit" id="btnGoogleSubmit" style="width: 100%; padding: 12px; background: #1a73e8; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 6px rgba(26,115,232,0.3);">
-                    <span>Continue with Google</span>
-                </button>
-            </form>
+            <div id="googleSignInContainer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80px; margin: 15px 0;">
+                <div id="googleSignInBtn"></div>
+            </div>
+            <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">Select your Google account securely via Google Identity Services.</p>
         </div>
     </div>
 
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
+        const GOOGLE_CLIENT_ID = <?= json_encode(defined('ENV_GOOGLE_CLIENT_ID') ? ENV_GOOGLE_CLIENT_ID : (function_exists('get_setting') ? get_setting($conn, 'google_client_id', '') : '')) ?>;
+
         function togglePass(inputId, iconId) {
             const input = document.getElementById(inputId);
             const icon = document.getElementById(iconId);
@@ -439,9 +439,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        let gisInitialized = false;
+
+        function initGoogleAuth() {
+            if (window.google && GOOGLE_CLIENT_ID && !gisInitialized) {
+                try {
+                    google.accounts.id.initialize({
+                        client_id: GOOGLE_CLIENT_ID,
+                        callback: handleGoogleCredentialResponse,
+                        auto_select: false,
+                        cancel_on_tap_outside: true
+                    });
+                    
+                    const btnContainer = document.getElementById('googleSignInBtn');
+                    if (btnContainer) {
+                        google.accounts.id.renderButton(btnContainer, {
+                            type: 'standard',
+                            theme: 'outline',
+                            size: 'large',
+                            text: 'continue_with',
+                            shape: 'rectangular',
+                            width: 280,
+                            logo_alignment: 'left'
+                        });
+                    }
+                    gisInitialized = true;
+                } catch (e) {
+                    console.warn('[QES Google] GIS init:', e);
+                }
+            }
+        }
+
+        window.addEventListener('load', () => {
+            initGoogleAuth();
+        });
+
         function openGoogleAuthModal() {
             const modal = document.getElementById('googleAuthModal');
             if (modal) modal.style.display = 'flex';
+            if (window.google && GOOGLE_CLIENT_ID) {
+                initGoogleAuth();
+                try {
+                    google.accounts.id.prompt();
+                } catch (e) {
+                    console.warn('[QES Google] One Tap prompt error:', e);
+                }
+            }
         }
 
         function closeGoogleAuthModal() {
@@ -449,20 +492,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (modal) modal.style.display = 'none';
         }
 
-        async function handleGoogleSubmit(e) {
-            e.preventDefault();
-            const btn = document.getElementById('btnGoogleSubmit');
+        async function handleGoogleCredentialResponse(response) {
             const errBox = document.getElementById('googleAuthError');
             if (errBox) errBox.style.display = 'none';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting Google...';
+
+            if (!response || !response.credential) {
+                if (errBox) {
+                    errBox.textContent = 'No Google credential received. Please try again.';
+                    errBox.style.display = 'block';
+                }
+                return;
             }
 
-            const formData = new FormData(document.getElementById('googleLoginForm'));
-            formData.append('action', 'google_login');
-
             try {
+                const formData = new FormData();
+                formData.append('csrf_token', <?= json_encode(csrf_token()) ?>);
+                formData.append('action', 'google_login');
+                formData.append('credential', response.credential);
+
                 const res = await fetch('auth_action.php?action=google_login', {
                     method: 'POST',
                     body: formData
@@ -479,13 +526,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } catch (err) {
                 if (errBox) {
-                    errBox.textContent = 'Connection error. Please try again.';
+                    errBox.textContent = 'Connection error during verification. Please try again.';
                     errBox.style.display = 'block';
-                }
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<span>Continue with Google</span>';
                 }
             }
         }

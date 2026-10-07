@@ -29,43 +29,56 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (empty($identifier) || empty($password)) {
         $login_error = "Please enter your username/email and password.";
     } else {
-        $stmt = $conn->prepare("SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1");
-        $stmt->bind_param("sss", $identifier, $identifier, $identifier);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows === 1) {
-            $user = $result->fetch_assoc();
-            if (password_verify($password, $user['password'])) {
-                if ($user['status'] !== 'approved') {
-                    $login_error = "Your account is " . htmlspecialchars($user['status']) . ".";
-                } elseif (!in_array($user['role'], ['admin', 'super_admin', 'main_admin'])) {
-                    // Strictly restrict to administrators
-                    $login_error = "Access denied. The Admin Portal is restricted to authorized administrators.";
-                } else {
-                    // Prevent session fixation
-                    session_regenerate_id(true);
-                    
-                    $_SESSION['id'] = (int)$user['id'];
-                    $_SESSION['username'] = $user['username'];
-                    $_SESSION['role'] = $user['role'];
-                    $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
-                    $_SESSION['email'] = $user['email'];
-                    $_SESSION['phone'] = $user['phone'] ?? '';
-                    
-                    // Track device & active session (is_login=true ensures last_login_at is recorded immediately)
-                    track_user_session($conn, (int)$user['id'], true);
+        $client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $rate_key = $client_ip . '|' . strtolower($identifier);
+        $rate_check = qes_rate_limit_check('admin_login', $rate_key, 5, 900);
 
-                    header("Location: " . $base_href . "a_home.php");
-                    exit;
+        if (!$rate_check['allowed']) {
+            $login_error = $rate_check['message'];
+        } else {
+            $stmt = $conn->prepare("SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1");
+            $stmt->bind_param("sss", $identifier, $identifier, $identifier);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            
+            if ($result->num_rows === 1) {
+                $user = $result->fetch_assoc();
+                if (password_verify($password, $user['password'])) {
+                    if ($user['status'] !== 'approved') {
+                        $login_error = "Your account is " . htmlspecialchars($user['status']) . ".";
+                    } elseif (!in_array($user['role'], ['admin', 'super_admin', 'main_admin'])) {
+                        // Strictly restrict to administrators
+                        $login_error = "Access denied. The Admin Portal is restricted to authorized administrators.";
+                    } else {
+                        // Clear failed attempts upon successful login
+                        qes_rate_limit_clear('admin_login', $rate_key);
+
+                        // Prevent session fixation
+                        session_regenerate_id(true);
+                        
+                        $_SESSION['id'] = (int)$user['id'];
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['role'] = $user['role'];
+                        $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
+                        $_SESSION['email'] = $user['email'];
+                        $_SESSION['phone'] = $user['phone'] ?? '';
+                        
+                        // Track device & active session (is_login=true ensures last_login_at is recorded immediately)
+                        track_user_session($conn, (int)$user['id'], true);
+
+                        header("Location: " . $base_href . "a_home.php");
+                        exit;
+                    }
+                } else {
+                    qes_rate_limit_record_fail('admin_login', $rate_key, 5, 900);
+                    $login_error = "Invalid credentials. Please verify your username/email and password.";
                 }
             } else {
-                $login_error = "Invalid password. Please check your credentials.";
+                qes_rate_limit_record_fail('admin_login', $rate_key, 5, 900);
+                $login_error = "Invalid credentials. Please verify your username/email and password.";
             }
-        } else {
-            $login_error = "No account found matching this username or email.";
+            $stmt->close();
         }
-        $stmt->close();
     }
 }
 
@@ -82,43 +95,31 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <base href="<?= htmlspecialchars($base_href) ?>">
     <title><?= htmlspecialchars($business_name) ?> - Admin Portal</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body {
-            background: radial-gradient(circle at 15% 15%, #232f22 0%, #172117 50%, #0c120c 100%);
+            background-color: #142e23;
+            background-image: 
+                linear-gradient(135deg, rgba(20, 46, 35, 0.92) 0%, rgba(24, 57, 43, 0.88) 50%, rgba(13, 32, 24, 0.95) 100%),
+                url('assets/tyoy_creation_banner.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 24px;
             position: relative;
-            overflow: hidden;
             font-family: inherit;
         }
 
         /* Abstract glowing background shapes */
-        .bg-glow-1 {
-            position: absolute;
-            top: -100px;
-            left: -100px;
-            width: 450px;
-            height: 450px;
-            background: radial-gradient(circle, rgba(54, 71, 53, 0.4) 0%, transparent 70%);
-            border-radius: 50%;
-            pointer-events: none;
-        }
-
-        .bg-glow-2 {
-            position: absolute;
-            bottom: -120px;
-            right: -100px;
-            width: 500px;
-            height: 500px;
-            background: radial-gradient(circle, rgba(54, 71, 53, 0.3) 0%, transparent 70%);
-            border-radius: 50%;
-            pointer-events: none;
-        }
+        .bg-glow-1 { display: none; }
+        .bg-glow-2 { display: none; }
 
         .login-card {
             background: #ffffff;
@@ -126,11 +127,11 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             width: 100%;
             max-width: 440px;
             padding: 42px 36px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.3);
             position: relative;
             z-index: 10;
             text-align: center;
-            animation: slideUp 0.35s ease;
         }
 
         @keyframes slideUp {
@@ -151,15 +152,15 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #eef2ee;
-            color: #364735;
+            background: #eaf2ec;
+            color: #18392b;
             padding: 6px 14px;
             border-radius: 9999px;
             font-size: 11px;
             font-weight: 800;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            border: 1px solid rgba(54, 71, 53, 0.15);
+            border: 1px solid rgba(24, 57, 43, 0.15);
         }
 
         .login-logo {
@@ -171,14 +172,14 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         .login-heading {
             font-size: 22px;
             font-weight: 800;
-            color: #1f291e;
+            color: #14261c;
             margin: 0 0 6px 0;
             letter-spacing: -0.02em;
         }
 
         .login-title {
             font-size: 13px;
-            color: var(--text-secondary);
+            color: #3d5345;
             margin-bottom: 24px;
             line-height: 1.5;
         }
@@ -193,7 +194,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             display: block;
             font-size: 13px;
             font-weight: 600;
-            color: var(--text-primary);
+            color: #14261c;
             margin-bottom: 6px;
         }
 
@@ -205,7 +206,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             width: 100%;
             padding: 12px 14px;
             padding-right: 42px;
-            border: 1px solid var(--border-color);
+            border: 1px solid #dbe5de;
             border-radius: 10px;
             font-size: 14px;
             outline: none;
@@ -215,8 +216,8 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         }
 
         .input-group input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-light);
+            border-color: #18392b;
+            box-shadow: 0 0 0 3px rgba(24, 57, 43, 0.12);
         }
 
         .toggle-password-btn {
@@ -226,27 +227,27 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             transform: translateY(-50%);
             background: transparent;
             border: none;
-            color: var(--text-muted);
+            color: #667d6f;
             cursor: pointer;
             font-size: 14px;
             padding: 4px;
         }
 
         .toggle-password-btn:hover {
-            color: var(--text-primary);
+            color: #18392b;
         }
 
         .btn-login {
             width: 100%;
             padding: 13px;
-            background: #364735;
+            background: #18392b;
             color: #ffffff;
             border: none;
             border-radius: 10px;
             font-size: 15px;
             font-weight: 700;
             cursor: pointer;
-            box-shadow: 0 4px 14px rgba(54, 71, 53, 0.35);
+            box-shadow: 0 4px 14px rgba(24, 57, 43, 0.28);
             transition: all 0.2s ease;
             margin-top: 8px;
             display: inline-flex;
@@ -256,9 +257,9 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         }
 
         .btn-login:hover {
-            background: #2b392a;
+            background: #122c21;
             transform: translateY(-1px);
-            box-shadow: 0 6px 18px rgba(54, 71, 53, 0.45);
+            box-shadow: 0 6px 18px rgba(24, 57, 43, 0.38);
         }
 
         .login-error {
@@ -282,7 +283,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             gap: 8px;
             margin-top: 24px;
             font-size: 13px;
-            color: var(--text-secondary);
+            color: #3d5345;
             font-weight: 600;
             text-decoration: none;
             padding: 8px 16px;
@@ -292,9 +293,9 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         }
 
         .back-to-site:hover {
-            color: #364735;
-            background: #f3f4f6;
-            border-color: #e5e7eb;
+            color: #18392b;
+            background: #eaf2ec;
+            border-color: #dbe5de;
         }
 
         .login-footer-text {
@@ -310,17 +311,14 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
     <div class="bg-glow-2"></div>
 
     <div class="login-card">
-        <div class="login-header">
-            <div class="admin-badge">
-                <i class="fa-solid fa-shield-halved"></i> ADMIN PORTAL
-            </div>
+        <div class="login-header" style="margin-bottom: 20px;">
             <div class="login-logo">
-                <img src="assets/tyoy_logo_cropped.png" alt="<?= htmlspecialchars($business_name) ?>" style="height: 52px; width: auto; border-radius: 8px; display: block;">
+                <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" style="height: 60px; width: auto; display: block; margin: 0 auto;">
             </div>
         </div>
 
-        <h2 class="login-heading">Admin Sign In</h2>
-        <p class="login-title">Enter your administrator credentials to access the management portal</p>
+        <h2 class="login-heading" style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; font-weight: 700; color: #1f2937; margin: 0 0 6px 0;">Admin Login</h2>
+        <p class="login-title" style="font-size: 13.5px; color: #6b7280; margin-bottom: 24px;">Access your dashboard to manage events and bookings.</p>
 
         <?php if (!empty($login_error)): ?>
             <div class="login-error" style="border-radius: 12px; padding: 12px 16px; border: 1px solid #fecaca; background: #fef2f2; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08);">
@@ -335,32 +333,32 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             
             <div class="login-field">
-                <label>Username or Email</label>
+                <label style="font-weight: 600; font-size: 13px; color: #374151;">Email Address</label>
                 <div class="input-group">
-                    <input type="text" name="identifier" placeholder="Enter username or email" required autocomplete="username" autofocus>
+                    <input type="text" name="identifier" placeholder="Enter your email" required autocomplete="username" autofocus style="border-radius: 8px; border-color: #d1d5db; padding: 11px 14px;">
                 </div>
             </div>
 
-            <div class="login-field">
-                <label>Password</label>
+            <div class="login-field" style="margin-bottom: 22px;">
+                <label style="font-weight: 600; font-size: 13px; color: #374151;">Password</label>
                 <div class="input-group">
-                    <input type="password" id="passwordInput" name="password" placeholder="Enter password" required autocomplete="current-password">
+                    <input type="password" id="passwordInput" name="password" placeholder="Enter your password" required autocomplete="current-password" style="border-radius: 8px; border-color: #d1d5db; padding: 11px 14px;">
                     <button type="button" class="toggle-password-btn" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility">
                         <i class="fa-solid fa-eye" id="passwordEyeIcon"></i>
                     </button>
                 </div>
             </div>
 
-            <!-- Forgot Password Trigger -->
-            <div style="display: flex; justify-content: flex-end; margin-top: -6px; margin-bottom: 18px;">
-                <button type="button" onclick="openForgotPasswordModal()" style="background: none; border: none; font-size: 13px; font-weight: 600; color: #364735; cursor: pointer; padding: 0; text-decoration: underline; transition: color 0.15s ease;">
-                    Forgot Password?
+            <button type="submit" class="btn-login" style="background: #18392b; color: #ffffff; border-radius: 8px; font-weight: 700; padding: 12px; font-size: 14.5px; width: 100%; box-shadow: 0 4px 14px rgba(24, 57, 43, 0.28);">
+                Login
+            </button>
+
+            <!-- Centered Forgot Password Link (Panel 7) -->
+            <div style="text-align: center; margin-top: 14px; margin-bottom: 8px;">
+                <button type="button" onclick="openForgotPasswordModal()" style="background: none; border: none; font-size: 12.5px; color: #6b7280; cursor: pointer; padding: 0; text-decoration: underline; transition: color 0.15s ease;">
+                    Forgot password?
                 </button>
             </div>
-
-            <button type="submit" class="btn-login">
-                <i class="fa-solid fa-right-to-bracket"></i> Login
-            </button>
         </form>
 
         <div>

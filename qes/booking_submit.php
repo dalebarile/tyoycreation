@@ -1,202 +1,192 @@
 <?php
-// Endpoint for public booking inquiry submissions
-header('Content-Type: application/json');
+// ============================================================
+// Two-Step Public Booking Submission & Verification Endpoint
+// Intercepts direct insertion into main database table.
+// Stages booking in temporary session, triggers 6-digit OTP email,
+// and commits to main database ONLY upon successful code validation.
+// ============================================================
+header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/booking_verification_helper.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $_SERVER['REQUEST_METHOD'] !== 'GET') {
+    echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
     exit;
 }
 
-// CSRF protection — validate token sent from the booking form
-if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+$action = trim($_POST['action'] ?? ($_GET['action'] ?? 'submit'));
+$client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+// Handle GET status check
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'status') {
+    $status = BookingVerificationHelper::getPendingStatus();
+    echo json_encode(['success' => true, 'pending' => $status]);
+    exit;
+}
+
+// CSRF protection for all POST requests
+$csrf = $_POST['csrf_token'] ?? '';
+if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Security token mismatch. Please refresh the page and try again.']);
     exit;
 }
 
-$client_name = trim($_POST['client_name'] ?? '');
-$client_email = trim($_POST['client_email'] ?? '');
-$client_phone = trim($_POST['client_phone'] ?? '');
-$client_address = trim($_POST['client_address'] ?? '');
-
-$event_title = trim($_POST['event_title'] ?? '');
-$event_type = trim($_POST['event_type'] ?? 'Weddings');
-$event_date = trim($_POST['event_date'] ?? '');
-$event_time = trim($_POST['event_time'] ?? '10:00');
-$guest_count = (int)($_POST['guest_count'] ?? 50);
-$location_venue = trim($_POST['location_venue'] ?? '');
-
-// Service requirements: accept the assembled hidden string from Step 3
-// (falls back to legacy array format for backward compatibility)
-$raw_requirements = $_POST['service_requirements'] ?? '';
-if (is_array($raw_requirements)) {
-    // Legacy: old checkbox array format
-    $service_requirements = implode('; ', $raw_requirements);
-} else {
-    $service_requirements = trim($raw_requirements);
-}
-
-// Estimated total (sent as hidden field from the JS assembler)
-$estimated_total = (int)($_POST['estimated_total'] ?? 0);
-
-if (empty($service_requirements)) {
-    $service_requirements = 'Standard Consultation & Custom Event Styling';
-}
-
-// Ensure the ESTIMATED TOTAL tag is always clearly present for admin visibility
-if (strpos($service_requirements, 'ESTIMATED TOTAL') === false) {
-    $peso = '₱' . number_format($estimated_total);
-    $service_requirements .= ' | ESTIMATED TOTAL: ' . $peso;
-}
-
-
-$special_notes = trim($_POST['special_notes'] ?? '');
-
-
-// User ID is optional - clients do NOT need an account or login to submit a booking
-$user_id = !empty($_SESSION['id']) ? (int)$_SESSION['id'] : null;
-
-// Validation
-if (empty($client_name) || empty($client_email) || empty($client_phone) || empty($event_title) || empty($event_date) || empty($location_venue)) {
-    echo json_encode(['success' => false, 'message' => 'Please fill in all required fields.']);
-    exit;
-}
-
-// 1. Strict Name Validation: must be letters, spaces, hyphens/periods, minimum 2 characters
-if (strlen($client_name) < 2 || !preg_match("/^[a-zA-Z\s\.\-']+$/", $client_name)) {
-    echo json_encode(['success' => false, 'message' => 'Please enter a valid Full Name (letters and spaces only).']);
-    exit;
-}
-
-// 2. Strict Email Validation: must be a valid email format (e.g. user@domain.com)
-if (!filter_var($client_email, FILTER_VALIDATE_EMAIL) || !preg_match("/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/", $client_email)) {
-    echo json_encode(['success' => false, 'message' => 'Please enter a valid Email Address (e.g. name@gmail.com).']);
-    exit;
-}
-
-// 3. Strict Phone / Contact Number Validation: cannot contain letters, must have valid phone digits
-$clean_phone = preg_replace('/[^0-9]/', '', $client_phone);
-if (preg_match('/[a-zA-Z]/', $client_phone) || strlen($clean_phone) < 10 || strlen($clean_phone) > 13) {
-    echo json_encode(['success' => false, 'message' => 'Please enter a valid Contact Number with 10 to 12 digits (e.g. 0917-123-4567).']);
-    exit;
-}
-
-// 4. Event Title & Venue Minimum Length
-if (strlen($event_title) < 3) {
-    echo json_encode(['success' => false, 'message' => 'Event Title must be at least 3 characters.']);
-    exit;
-}
-if (strlen($location_venue) < 3) {
-    echo json_encode(['success' => false, 'message' => 'Please enter a valid Event Venue or Location.']);
-    exit;
-}
-
-// Server-side Dynamic Lead-Time Validation per Event Type
-$dateValidation = validate_event_booking_date($event_type, $event_date);
-if (!$dateValidation['valid']) {
-    echo json_encode([
-        'success' => false,
-        'message' => $dateValidation['message']
-    ]);
-    exit;
-}
-
-// Server-side Guest Count against Catering Service Capacity
-if (preg_match('/Catering[^:]*:\s*(\d+)\s*pax/i', $service_requirements, $cat_match)) {
-    $catering_pax = (int)$cat_match[1];
-    if ($guest_count > $catering_pax) {
+// ============================================================
+// ACTION 1: VERIFY OTP CODE & COMMIT TO DATABASE
+// ============================================================
+if ($action === 'verify') {
+    // Rate limit verification attempts: 15 per 10 minutes per IP
+    $rate = qes_rate_limit_check('booking_verify', $client_ip, 15, 600);
+    if (!$rate['allowed']) {
         echo json_encode([
             'success' => false,
-            'message' => "Cannot proceed: Expected guest count ({$guest_count}) exceeds your selected Catering Service package limit ({$catering_pax} pax). Please adjust your guest count or choose a higher package."
+            'message' => "Too many verification attempts from this network. Please wait {$rate['wait_seconds']} seconds."
         ]);
         exit;
     }
-}
 
-// Generate unique reference number: EV-YEAR-XXXX
-$year = date('Y');
-$rand = str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
-$reference_no = "EV-{$year}-{$rand}";
+    $code  = trim($_POST['code'] ?? '');
+    $token = trim($_POST['verification_token'] ?? ($_POST['token'] ?? ''));
 
-// Check for uniqueness
-$check = $conn->prepare("SELECT id FROM bookings WHERE reference_no = ?");
-$check->bind_param("s", $reference_no);
-$check->execute();
-if ($check->get_result()->num_rows > 0) {
-    $reference_no = "EV-{$year}-" . str_pad(mt_rand(10000, 99999), 5, '0', STR_PAD_LEFT);
-}
-$check->close();
+    if (empty($code)) {
+        echo json_encode(['success' => false, 'message' => 'Please enter the 6-digit verification code.']);
+        exit;
+    }
 
-$event_start = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time}"));
-$event_end = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time} + 5 hours"));
+    $res = BookingVerificationHelper::verifyBooking($conn, $code, $token ?: null);
+    if ($res['success']) {
+        qes_rate_limit_clear('booking_verify', $client_ip);
+    } else {
+        qes_rate_limit_record_fail('booking_verify', $client_ip, 15, 600);
+    }
 
-$stmt = $conn->prepare("INSERT INTO bookings (user_id, reference_no, client_name, client_email, client_phone, client_address, event_title, event_type, event_start, event_end, guest_count, location_venue, service_requirements, special_notes, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'online_inquiry')");
-
-if (!$stmt) {
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
+    echo json_encode($res);
     exit;
 }
 
-$enc_client_name    = qes_encrypt($client_name, false);
-$enc_client_email   = qes_encrypt($client_email, true);
-$enc_client_phone   = qes_encrypt($client_phone, true);
-$enc_client_address = qes_encrypt($client_address, false);
-
-$stmt->bind_param("issssssssissss", 
-    $user_id,
-    $reference_no, 
-    $enc_client_name, 
-    $enc_client_email, 
-    $enc_client_phone, 
-    $enc_client_address, 
-    $event_title, 
-    $event_type, 
-    $event_start, 
-    $event_end, 
-    $guest_count, 
-    $location_venue, 
-    $service_requirements, 
-    $special_notes
-);
-
-if ($stmt->execute()) {
-    $new_booking_id = (int)($stmt->insert_id ?? 0);
-    if ($new_booking_id <= 0) {
-        $new_booking_id = (int)($conn->insert_id ?? 0);
-    }
-    if ($new_booking_id <= 0) {
-        $chk = $conn->prepare("SELECT id FROM bookings WHERE reference_no = ? LIMIT 1");
-        if ($chk) {
-            $chk->bind_param("s", $reference_no);
-            $chk->execute();
-            $chk_res = $chk->get_result();
-            if ($chk_res && ($row = $chk_res->fetch_assoc())) {
-                $new_booking_id = (int)($row['id'] ?? 0);
-            }
-            $chk->close();
-        }
+// ============================================================
+// ACTION 2: RESEND VERIFICATION CODE
+// ============================================================
+if ($action === 'resend') {
+    // Rate limit resend requests: 5 per 10 minutes per IP
+    $rate = qes_rate_limit_check('booking_resend', $client_ip, 5, 600);
+    if (!$rate['allowed']) {
+        echo json_encode([
+            'success' => false,
+            'message' => "Too many resend requests. Please wait {$rate['wait_seconds']} seconds."
+        ]);
+        exit;
     }
 
-    // Automatically send inquiry received confirmation notice to client's email
-    if ($new_booking_id > 0) {
-        require_once __DIR__ . '/notification_helper.php';
-        try {
-            NotificationHelper::sendInquiryReceivedNotice($conn, $new_booking_id);
-        } catch (\Throwable $e) {
-            error_log("[QES Booking] Error dispatching inquiry email: " . $e->getMessage());
-        }
-    }
-
-    echo json_encode([
-        'success' => true,
-        'reference_no' => $reference_no,
-        'client_name' => $client_name,
-        'event_title' => $event_title,
-        'event_date' => date('F j, Y', strtotime($event_date))
-    ]);
-} else {
-    echo json_encode(['success' => false, 'message' => 'Could not save booking: ' . $stmt->error]);
+    $token = trim($_POST['verification_token'] ?? ($_POST['token'] ?? ''));
+    $res = BookingVerificationHelper::resendCode($conn, $token ?: null);
+    echo json_encode($res);
+    exit;
 }
-$stmt->close();
-?>
+
+// ============================================================
+// ACTION 2.5: UPDATE EMAIL & RESEND OTP CODE
+// ============================================================
+if ($action === 'update_email') {
+    // Rate limit email update requests: 6 per 10 minutes per IP
+    $rate = qes_rate_limit_check('booking_update_email', $client_ip, 6, 600);
+    if (!$rate['allowed']) {
+        echo json_encode([
+            'success' => false,
+            'message' => "Too many email update attempts. Please wait {$rate['wait_seconds']} seconds."
+        ]);
+        exit;
+    }
+
+    $new_email = trim($_POST['new_email'] ?? ($_POST['client_email'] ?? ''));
+    $token     = trim($_POST['verification_token'] ?? ($_POST['token'] ?? ''));
+
+    if (empty($new_email) || !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+        echo json_encode(['success' => false, 'message' => 'Please provide a valid email address (e.g. name@gmail.com).']);
+        exit;
+    }
+
+    $res = BookingVerificationHelper::updateEmail($conn, $new_email, $token ?: null);
+    echo json_encode($res);
+    exit;
+}
+
+// ============================================================
+// ACTION 3: SUBMIT BOOKING (STAGE & SEND OTP CODE)
+// ============================================================
+if ($action === 'submit') {
+    // Rate limit booking submissions: 6 per 10 minutes per IP
+    $rate = qes_rate_limit_check('booking_submit', $client_ip, 6, 600);
+    if (!$rate['allowed']) {
+        echo json_encode([
+            'success' => false,
+            'message' => "Too many booking submissions. Please wait {$rate['wait_seconds']} seconds before submitting another request."
+        ]);
+        exit;
+    }
+
+    $client_name    = trim($_POST['client_name'] ?? '');
+    $client_email   = trim($_POST['client_email'] ?? '');
+    $client_phone   = trim($_POST['client_phone'] ?? '');
+    $client_address = trim($_POST['client_address'] ?? '');
+
+    $event_title    = trim($_POST['event_title'] ?? '');
+    $event_type     = trim($_POST['event_type'] ?? 'Kids Party');
+    $event_date     = trim($_POST['event_date'] ?? '');
+    $event_time     = trim($_POST['event_time'] ?? '10:00');
+    $guest_count    = (int)($_POST['guest_count'] ?? 50);
+    $location_venue = trim($_POST['location_venue'] ?? '');
+
+    // Service requirements: accept assembled hidden string
+    $raw_requirements = $_POST['service_requirements'] ?? '';
+    if (is_array($raw_requirements)) {
+        $service_requirements = implode('; ', $raw_requirements);
+    } else {
+        $service_requirements = trim($raw_requirements);
+    }
+
+    // Estimated total (sent as hidden field from JS assembler)
+    $estimated_total = (int)($_POST['estimated_total'] ?? 0);
+
+    if (empty($service_requirements)) {
+        $service_requirements = 'Standard Consultation & Custom Event Styling';
+    }
+
+    // Ensure ESTIMATED TOTAL tag is clearly present
+    if (strpos($service_requirements, 'ESTIMATED TOTAL') === false && $estimated_total > 0) {
+        $peso = '₱' . number_format($estimated_total);
+        $service_requirements .= ' | ESTIMATED TOTAL: ' . $peso;
+    }
+
+    $special_notes = trim($_POST['special_notes'] ?? '');
+    $user_id = !empty($_SESSION['id']) ? (int)$_SESSION['id'] : null;
+
+    // Stage booking payload and dispatch verification code email
+    $result = BookingVerificationHelper::stageBooking($conn, [
+        'user_id'              => $user_id,
+        'client_name'          => $client_name,
+        'client_email'         => $client_email,
+        'client_phone'         => $client_phone,
+        'client_address'       => $client_address,
+        'event_title'          => $event_title,
+        'event_type'           => $event_type,
+        'event_date'           => $event_date,
+        'event_time'           => $event_time,
+        'guest_count'          => $guest_count,
+        'location_venue'       => $location_venue,
+        'service_requirements' => $service_requirements,
+        'special_notes'        => $special_notes,
+        'source'               => 'online_inquiry'
+    ]);
+
+    if (!$result['success']) {
+        qes_rate_limit_record_fail('booking_submit', $client_ip, 6, 600);
+    }
+
+    echo json_encode($result);
+    exit;
+}
+
+echo json_encode(['success' => false, 'message' => 'Unknown action requested.']);
+exit;

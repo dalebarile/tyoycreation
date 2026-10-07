@@ -25,7 +25,7 @@ $current_status = $_GET['status'] ?? '';
 
 <aside class="admin-sidebar">
     <div class="sidebar-brand" style="gap: 10px; align-items: center; justify-content: space-between; display: flex; padding: 16px 20px;">
-        <img src="assets/tyoy_logo_cropped.png" alt="Tyoy Creation" style="height: 36px; width: auto; border-radius: 6px;">
+        <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="Tyoy Creation" style="height: 38px; width: auto; max-width: 140px; border-radius: 6px; display: block; object-fit: contain;">
         <span style="font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; background: <?= $is_main_admin ? '#d97706' : 'rgba(255,255,255,0.2)' ?>; color: #fff;">
             <?= $is_main_admin ? 'Main Admin' : 'Admin' ?>
         </span>
@@ -127,13 +127,13 @@ $current_status = $_GET['status'] ?? '';
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <span style="color: #64748b; font-weight: 600;">Active Account:</span>
                     <strong style="color: #0f172a; font-size: 13px;">
-                        <i class="fa-solid fa-user-shield" style="color: #364735; margin-right: 4px;"></i>
+                        <i class="fa-solid fa-user-shield" style="color: #18392b; margin-right: 4px;"></i>
                         <?= htmlspecialchars($_SESSION['username'] ?? 'Administrator') ?>
                     </strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="color: #64748b; font-weight: 600;">Security Role:</span>
-                    <span style="background: <?= is_main_admin() ? '#fef3c7' : '#eef2ee' ?>; color: <?= is_main_admin() ? '#b45309' : '#364735' ?>; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em;">
+                    <span style="background: <?= is_main_admin() ? '#fef3c7' : '#eaf2ec' ?>; color: <?= is_main_admin() ? '#b45309' : '#18392b' ?>; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em;">
                         <?= htmlspecialchars(ucwords(str_replace('_', ' ', $_SESSION['role'] ?? 'Admin'))) ?>
                     </span>
                 </div>

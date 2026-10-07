@@ -10,7 +10,10 @@ if (!function_exists('qes_get_encryption_key')) {
         if (defined('ENV_ENCRYPTION_KEY') && !empty(ENV_ENCRYPTION_KEY)) {
             return ENV_ENCRYPTION_KEY;
         }
-        return 'qes_tyoy_master_encryption_key_2026_aes256_sec!';
+        throw new RuntimeException(
+            'FATAL: ENV_ENCRYPTION_KEY is not configured in .env.php. '
+            . 'Cannot encrypt or decrypt PII data without a valid encryption key.'
+        );
     }
 }
 
@@ -80,7 +83,7 @@ if (!function_exists('qes_decrypt')) {
         $payload = substr($ciphertext, strlen('ENC::v1::'));
         $decoded = base64_decode(strtr($payload, '-_', '+/'));
         if ($decoded === false || strlen($decoded) < 48) {
-            return $ciphertext;
+            return '';
         }
 
         $iv = substr($decoded, 0, 16);
@@ -90,11 +93,11 @@ if (!function_exists('qes_decrypt')) {
         $expectedHmac = hash_hmac('sha256', $iv . $cipher, $rawKey, true);
         if (!hash_equals($hmac, $expectedHmac)) {
             // Authentication check failed
-            return $ciphertext;
+            return '';
         }
 
         $plaintext = openssl_decrypt($cipher, $method, $rawKey, OPENSSL_RAW_DATA, $iv);
-        return ($plaintext !== false) ? $plaintext : $ciphertext;
+        return ($plaintext !== false) ? $plaintext : '';
     }
 }
 

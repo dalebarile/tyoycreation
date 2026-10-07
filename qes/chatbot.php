@@ -1,12 +1,13 @@
 <?php
 // SCHEDFIX AI Public Concierge & Direct Booking Backend
 ob_start();
+require_once __DIR__ . '/db.php';
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/notification_helper.php';
+require_once __DIR__ . '/booking_verification_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -19,21 +20,29 @@ $GLOBAL_DAILY_LIMIT = 1400; // System-wide daily maximum
 $RPM_LIMIT = 12;            // Burst rate limit per minute
 $USER_SESSION_LIMIT = 30;   // Fair-share limit per individual browser session
 
-// Database-driven Global Daily API Quota Tracker
+// Database-driven Global Daily API Quota Tracker with offline fallback
 function getGlobalDailyApiCount($conn) {
-    $today = date('Y-m-d');
-    $stored_date = get_setting($conn, 'gemini_daily_api_date', $today);
-    if ($stored_date !== $today) {
-        set_setting($conn, 'gemini_daily_api_date', $today);
-        set_setting($conn, 'gemini_daily_api_count', '0');
-        return 0;
+    try {
+        $today = date('Y-m-d');
+        $stored_date = get_setting($conn, 'gemini_daily_api_date', $today);
+        if ($stored_date !== $today) {
+            set_setting($conn, 'gemini_daily_api_date', $today);
+            set_setting($conn, 'gemini_daily_api_count', '0');
+            return 0;
+        }
+        return (int)get_setting($conn, 'gemini_daily_api_count', 0);
+    } catch (\Throwable $e) {
+        return (int)($_SESSION['gemini_fallback_count'] ?? 0);
     }
-    return (int)get_setting($conn, 'gemini_daily_api_count', 0);
 }
 
 function incrementGlobalDailyApiCount($conn) {
-    $current = getGlobalDailyApiCount($conn);
-    set_setting($conn, 'gemini_daily_api_count', (string)($current + 1));
+    try {
+        $current = getGlobalDailyApiCount($conn);
+        set_setting($conn, 'gemini_daily_api_count', (string)($current + 1));
+    } catch (\Throwable $e) {
+        $_SESSION['gemini_fallback_count'] = ((int)($_SESSION['gemini_fallback_count'] ?? 0)) + 1;
+    }
 }
 
 $global_daily_used = getGlobalDailyApiCount($conn);
@@ -173,6 +182,37 @@ $current_date_str = date('Y-m-d (l, F j, Y)');
 
 $ai_b_name = get_setting($conn, 'business_name', 'Tyoy Creation');
 
+// Fetch live packages and pricing catalogs so chatbot is always synchronized with a_packages.php
+$theme_pricing = get_packages_pricing($conn, 'theme_party');
+$wedding_pricing = get_packages_pricing($conn, 'wedding');
+$pricing_brief = "";
+if (!empty($wedding_pricing) && is_array($wedding_pricing)) {
+    $pricing_brief .= "\nLIVE WEDDING PACKAGES & PRICING:\n";
+    foreach ($wedding_pricing as $cat_key => $cat) {
+        $cat_title = $cat['category_title'] ?? ucfirst($cat_key);
+        $items_str = [];
+        foreach ($cat['items'] ?? [] as $it) {
+            $items_str[] = ($it['label'] ?? '') . " (₱" . number_format($it['price'] ?? 0) . ")";
+        }
+        if (!empty($items_str)) {
+            $pricing_brief .= "- {$cat_title}: " . implode(", ", array_slice($items_str, 0, 4)) . "\n";
+        }
+    }
+}
+if (!empty($theme_pricing) && is_array($theme_pricing)) {
+    $pricing_brief .= "\nLIVE KIDS & THEME PARTY PACKAGES & PRICING:\n";
+    foreach ($theme_pricing as $cat_key => $cat) {
+        $cat_title = $cat['category_title'] ?? ucfirst($cat_key);
+        $items_str = [];
+        foreach ($cat['items'] ?? [] as $it) {
+            $items_str[] = ($it['label'] ?? '') . " (₱" . number_format($it['price'] ?? 0) . ")";
+        }
+        if (!empty($items_str)) {
+            $pricing_brief .= "- {$cat_title}: " . implode(", ", array_slice($items_str, 0, 4)) . "\n";
+        }
+    }
+}
+
 // 2. Build system instructions with direct booking capability
 $system_prompt = "You are the friendly, professional AI Event Styling & Planning Concierge for {$ai_b_name}, specializing in custom flower styling, balloon arrangements, and full celebration coordination.
 Today's Date: {$current_date_str}
@@ -182,6 +222,7 @@ Business Information:
   1. Weddings (Ceremony floral arches, bridal bouquets, entourage flowers, aisle styling, full reception decor)
   2. Kids Party (Creative balloon arches, festive character backdrops, theme setups, entertainment & catering)
 - Currently booked/reserved dates: {$booked_str}
+{$pricing_brief}
 
 ADVANCE BOOKING LEAD TIME POLICY (STRICT):
 - Weddings: Require at least 6 months advance booking lead time.
@@ -246,7 +287,7 @@ When a user asks about your limitations, policies, or what you can or cannot do,
 
 - Keep conversational answers courteous, clear, and structured.";
 
-// Helper function to create booking in database
+// Helper function to create booking in database via Two-Step Verification
 function executeDirectBooking($conn, $data) {
     $client_name = trim($data['client_name'] ?? '');
     $client_email = trim($data['client_email'] ?? '');
@@ -269,108 +310,32 @@ function executeDirectBooking($conn, $data) {
         else $event_type = 'Kids Party';
     }
 
-    if (empty($client_name) || empty($client_phone) || empty($event_title) || empty($location_venue)) {
-        return ['success' => false, 'message' => 'Missing essential fields for booking'];
+    // Two-Step Verification: Stage booking in temporary session and dispatch 6-digit OTP code
+    // (DO NOT insert into main database bookings table until verified)
+    $stageResult = BookingVerificationHelper::stageBooking($conn, [
+        'client_name'          => $client_name,
+        'client_email'         => $client_email,
+        'client_phone'         => $client_phone,
+        'client_address'       => $client_address,
+        'event_title'          => $event_title,
+        'event_type'           => $event_type,
+        'event_date'           => $event_date,
+        'event_time'           => $event_time,
+        'guest_count'          => $guest_count,
+        'location_venue'       => $location_venue,
+        'service_requirements' => $service_requirements,
+        'special_notes'        => $special_notes,
+        'source'               => 'chatbot_ai'
+    ]);
+
+    if (!$stageResult['success']) {
+        return $stageResult;
     }
 
-    // Server-side dynamic lead time check
-    $dateValidation = validate_event_booking_date($event_type, $event_date);
-    if (!$dateValidation['valid']) {
-        return [
-            'success' => false,
-            'message' => $dateValidation['message']
-        ];
-    }
+    // Reset draft
+    $_SESSION['booking_draft'] = [];
 
-    // Generate unique reference number: EV-YEAR-XXXX
-    $year = date('Y');
-    $rand = str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
-    $reference_no = "EV-{$year}-{$rand}";
-
-    $check = $conn->prepare("SELECT id FROM bookings WHERE reference_no = ?");
-    $check->bind_param("s", $reference_no);
-    $check->execute();
-    if ($check->get_result()->num_rows > 0) {
-        $reference_no = "EV-{$year}-" . str_pad(mt_rand(10000, 99999), 5, '0', STR_PAD_LEFT);
-    }
-    $check->close();
-
-    $event_start = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time}"));
-    $event_end = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time} + 5 hours"));
-
-    $stmt = $conn->prepare("INSERT INTO bookings (reference_no, client_name, client_email, client_phone, client_address, event_title, event_type, event_start, event_end, guest_count, location_venue, service_requirements, special_notes, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'online_inquiry')");
-    if (!$stmt) {
-        return ['success' => false, 'message' => $conn->error];
-    }
-
-    $enc_client_name    = qes_encrypt($client_name, false);
-    $enc_client_email   = qes_encrypt($client_email, true);
-    $enc_client_phone   = qes_encrypt($client_phone, true);
-    $enc_client_address = qes_encrypt($client_address, false);
-
-    $stmt->bind_param("sssssssssisss", 
-        $reference_no, 
-        $enc_client_name, 
-        $enc_client_email, 
-        $enc_client_phone, 
-        $enc_client_address, 
-        $event_title, 
-        $event_type, 
-        $event_start, 
-        $event_end, 
-        $guest_count, 
-        $location_venue, 
-        $service_requirements, 
-        $special_notes
-    );
-
-    if ($stmt->execute()) {
-        $new_id = (int)($stmt->insert_id ?? 0);
-        if ($new_id <= 0) {
-            $new_id = (int)($conn->insert_id ?? 0);
-        }
-        if ($new_id <= 0) {
-            $chk = $conn->prepare("SELECT id FROM bookings WHERE reference_no = ? LIMIT 1");
-            if ($chk) {
-                $chk->bind_param("s", $reference_no);
-                $chk->execute();
-                $cres = $chk->get_result();
-                if ($cres && ($crow = $cres->fetch_assoc())) {
-                    $new_id = (int)($crow['id'] ?? 0);
-                }
-                $chk->close();
-            }
-        }
-        $stmt->close();
-
-        // Dispatch inquiry received notice to client's email automatically
-        require_once __DIR__ . '/notification_helper.php';
-        if ($new_id > 0) {
-            try {
-                NotificationHelper::sendInquiryReceivedNotice($conn, $new_id);
-            } catch (\Throwable $e) {
-                error_log("[QES Chatbot] Error dispatching inquiry email: " . $e->getMessage());
-            }
-        }
-
-        // Reset draft
-        $_SESSION['booking_draft'] = [];
-
-        return [
-            'success' => true,
-            'booking_id' => $new_id,
-            'reference_no' => $reference_no,
-            'client_name' => $client_name,
-            'event_title' => $event_title,
-            'event_type' => $event_type,
-            'event_date' => date('F j, Y', strtotime($event_date)),
-            'location_venue' => $location_venue
-        ];
-    } else {
-        $err = $stmt->error;
-        $stmt->close();
-        return ['success' => false, 'message' => $err];
-    }
+    return $stageResult;
 }
 
 // 3. Update Conversation History in Session
@@ -400,6 +365,59 @@ if (strpos($lower_msg, 'limitation') !== false || strpos($lower_msg, 'what can y
         . "• **No Editing of Existing Bookings:** For security and contract safety, the AI cannot alter, reschedule, or cancel existing bookings. Please reach out to our team to make changes.\n"
         . "• **Session-Based Chat:** Conversation context is retained during your active browsing session only.\n"
         . "• **Human Support:** For custom package quotes or complex requests, our event coordinators are always available to help!";
+}
+
+// ─── BOOKING TWO-STEP VERIFICATION OTP (Fast-path — zero API tokens) ────────
+if (empty($raw_reply) && !empty($_SESSION['pending_booking_verification'])) {
+    $pending_data = $_SESSION['pending_booking_verification'];
+    $lower_otp_msg = strtolower($message);
+
+    // Case A: User requests a new code
+    if (strpos($lower_otp_msg, 'resend') !== false || strpos($lower_otp_msg, 'send again') !== false || strpos($lower_otp_msg, 'new code') !== false || strpos($lower_otp_msg, 'bagong code') !== false) {
+        $resend = BookingVerificationHelper::resendCode($conn);
+        if ($resend['success']) {
+            $raw_reply = "📧 **New Verification Code Sent!**\n\n"
+                       . "A fresh 6-digit verification code has been dispatched to `" . htmlspecialchars($resend['email'] ?? $resend['masked_email']) . "`.\n\n"
+                       . "⚠️ *Double-check your email spelling carefully. If a letter was missing or mistyped, reply with: `change email to name@example.com`.*\n\n"
+                       . "👉 Please enter the **6-digit code** here in the chat to confirm and place your reservation inquiry!";
+        } else {
+            $raw_reply = "⏳ **Resend Notice:** " . htmlspecialchars($resend['message']) . "\n\nPlease enter your existing 6-digit code or wait before requesting a new one.";
+        }
+    }
+    // Case B: User wants to change email because of typo or missing letter
+    elseif (preg_match('/(?:change|update|palitan|wrong|maling|typo|correct)\s+email\s*(?:to|sa)?\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i', $message, $email_match)
+         || (strpos($lower_otp_msg, '@') !== false && preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $message, $email_match) && strpos($lower_otp_msg, 'resend') === false)) {
+        $new_email = trim($email_match[1]);
+        $update = BookingVerificationHelper::updateEmail($conn, $new_email);
+        if ($update['success']) {
+            $raw_reply = "📧 **Email Corrected & Verification Code Dispatched!**\n\n"
+                       . "We updated your recipient email address to:\n`" . htmlspecialchars($new_email) . "`\n\n"
+                       . "A fresh 6-digit verification code has been sent to this new address. Please enter the **6-digit code** here to confirm your booking inquiry!";
+        } else {
+            $raw_reply = "⚠️ **Email Update Notice:** " . htmlspecialchars($update['message']);
+        }
+    }
+    // Case C: User enters 6-digit verification code
+    elseif (preg_match('/\b(\d{6})\b/', $message, $otp_match)) {
+        $entered_code = $otp_match[1];
+        $verify = BookingVerificationHelper::verifyBooking($conn, $entered_code);
+        if ($verify['success']) {
+            $booking_info = $verify;
+            $raw_reply = "🎉 **Booking Verified & Officially Placed!**\n\n"
+                       . "Thank you, **" . htmlspecialchars($verify['client_name']) . "**! Your event reservation has been successfully verified and saved in our system:\n\n"
+                       . "• **Reference Number:** `" . htmlspecialchars($verify['reference_no']) . "`\n"
+                       . "• **Event:** " . htmlspecialchars($verify['event_title']) . "\n"
+                       . "• **Date:** " . htmlspecialchars($verify['event_date']) . "\n"
+                       . "• **Status:** PENDING ADMIN REVIEW\n\n"
+                       . "An inquiry confirmation notice has been dispatched to your email. Our event coordination team will review your reservation shortly!";
+        } else {
+            $target_email = htmlspecialchars($pending_data['email'] ?? 'your email');
+            $raw_reply = "⚠️ **Verification Notice:** " . htmlspecialchars($verify['message']) . "\n\n"
+                       . "• Target email: `{$target_email}`\n"
+                       . "• If there is a missing letter or typo in this email, reply: `change email to yourcorrect@gmail.com`\n"
+                       . "• Or reply **resend code** if you need a new code sent.";
+        }
+    }
 }
 
 // ─── BOOKING STATUS LOOKUP (Fast-path — zero API tokens) ────────────────────
@@ -597,11 +615,17 @@ if (preg_match('/```(?:json)?\s*(\{\s*"action"\s*:\s*"create_booking".*?\})\s*``
     $booking_json = json_decode($matches[1], true);
     if ($booking_json && isset($booking_json['client_name'], $booking_json['client_phone'], $booking_json['location_venue'])) {
         $booking_res = executeDirectBooking($conn, $booking_json);
-        if ($booking_res['success']) {
+        $clean_reply = trim(str_replace($matches[0], '', $raw_reply));
+        if ($booking_res['success'] && !empty($booking_res['requires_verification'])) {
+            // DO NOT insert or treat as finished booking until verified!
+            $booking_info = null;
+            $summary = $booking_res['summary'] ?? [];
+            $clean_reply .= "\n\n🔐 **Two-Step Verification Required!**\n"
+                         . "We have received your event details for **" . htmlspecialchars($summary['event_title'] ?? 'Special Event') . "** on **" . htmlspecialchars($summary['event_date'] ?? '') . "** at **" . htmlspecialchars($summary['location_venue'] ?? '') . "**.\n\n"
+                         . "To protect your reservation and prevent spam, we just dispatched a **6-digit verification code** to `" . htmlspecialchars($booking_res['masked_email']) . "` (valid for 10 minutes).\n\n"
+                         . "👉 **Please enter your 6-digit verification code here in the chat** to confirm and place your booking inquiry!";
+        } elseif ($booking_res['success']) {
             $booking_info = $booking_res;
-            
-            // Remove the raw JSON block from the user-facing text
-            $clean_reply = trim(str_replace($matches[0], '', $raw_reply));
             
             // Enhance confirmation message
             $clean_reply .= "\n\n🎉 **Booking Inquiry Successfully Submitted!**\n"
@@ -610,6 +634,10 @@ if (preg_match('/```(?:json)?\s*(\{\s*"action"\s*:\s*"create_booking".*?\})\s*``
                          . "• **Date:** {$booking_res['event_date']}\n"
                          . "• **Venue:** {$booking_res['location_venue']}\n\n"
                          . "Our administrator will review your reservation and reach out via Email shortly.";
+        } else {
+            $clean_reply .= "\n\n⚠️ **Notice Regarding Your Booking Request:**\n"
+                         . ($booking_res['message'] ?? 'Please check the requested details.')
+                         . "\n\nPlease let me know if you would like to pick an alternative date or adjust your event details!";
         }
     }
 }
@@ -618,16 +646,22 @@ if (preg_match('/```(?:json)?\s*(\{\s*"action"\s*:\s*"create_booking".*?\})\s*``
 $_SESSION['chat_history'][] = ['role' => 'assistant', 'content' => $clean_reply];
 
 $updated_daily_count = getGlobalDailyApiCount($conn);
+$pending_check = BookingVerificationHelper::getPendingStatus();
+
 $output = [
-    'reply'           => $clean_reply,
-    'response'        => $clean_reply,
-    'booking_created' => $booking_info !== null,
-    'booking'         => $booking_info,
-    'chat_count'      => $_SESSION['chat_count'],
-    'remaining_chats' => max(0, $USER_SESSION_LIMIT - $_SESSION['chat_count']),
-    'max_chats'       => $USER_SESSION_LIMIT,
-    'limit_reached'   => ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT || $updated_daily_count >= $GLOBAL_DAILY_LIMIT),
-    'daily_remaining' => max(0, $GLOBAL_DAILY_LIMIT - $updated_daily_count)
+    'reply'                 => $clean_reply,
+    'response'              => $clean_reply,
+    'booking_created'       => $booking_info !== null,
+    'booking'               => $booking_info,
+    'requires_verification' => ($pending_check !== null),
+    'verification_email'    => $pending_check['masked_email'] ?? '',
+    'verification_token'    => $pending_check['token'] ?? '',
+    'expires_in'            => $pending_check['expires_in'] ?? 0,
+    'chat_count'            => $_SESSION['chat_count'],
+    'remaining_chats'       => max(0, $USER_SESSION_LIMIT - $_SESSION['chat_count']),
+    'max_chats'             => $USER_SESSION_LIMIT,
+    'limit_reached'         => ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT || $updated_daily_count >= $GLOBAL_DAILY_LIMIT),
+    'daily_remaining'       => max(0, $GLOBAL_DAILY_LIMIT - $updated_daily_count)
 ];
 
 ob_clean();

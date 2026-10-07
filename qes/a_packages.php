@@ -18,6 +18,9 @@ $flash_error = '';
 
 // Handle POST actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        die('CSRF token validation failed.');
+    }
     $action = $_POST['action'] ?? '';
     $family = $_POST['family'] ?? $active_family;
     if (!in_array($family, ['theme_party', 'wedding'], true)) {
@@ -137,6 +140,7 @@ foreach ($wedding_pricing as $c) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Packages &amp; Pricing Management - <?= htmlspecialchars($business_name) ?></title>
+    <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -885,6 +889,7 @@ foreach ($wedding_pricing as $c) {
     <div class="modal-overlay" id="addItemModal">
         <div class="modal-card-box">
             <form method="POST" action="a_packages.php?family=<?= urlencode($active_family) ?>">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="add_item">
                 <input type="hidden" name="family" value="<?= htmlspecialchars($active_family) ?>">
 
@@ -929,6 +934,7 @@ foreach ($wedding_pricing as $c) {
     <div class="modal-overlay" id="editItemModal">
         <div class="modal-card-box">
             <form method="POST" action="a_packages.php?family=<?= urlencode($active_family) ?>">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="update_item">
                 <input type="hidden" name="family" value="<?= htmlspecialchars($active_family) ?>">
                 <input type="hidden" name="cat_key" id="editOrigCatKey">
@@ -974,6 +980,7 @@ foreach ($wedding_pricing as $c) {
     <div class="modal-overlay" id="deleteItemModal">
         <div class="modal-card-box">
             <form method="POST" action="a_packages.php?family=<?= urlencode($active_family) ?>">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="delete_item">
                 <input type="hidden" name="family" value="<?= htmlspecialchars($active_family) ?>">
                 <input type="hidden" name="cat_key" id="deleteCatKey">
@@ -1011,6 +1018,7 @@ foreach ($wedding_pricing as $c) {
     <div class="modal-overlay" id="addCatModal">
         <div class="modal-card-box">
             <form method="POST" action="a_packages.php?family=<?= urlencode($active_family) ?>">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="add_category">
                 <input type="hidden" name="family" value="<?= htmlspecialchars($active_family) ?>">
 
@@ -1065,6 +1073,7 @@ foreach ($wedding_pricing as $c) {
     <div class="modal-overlay" id="deleteCatModal">
         <div class="modal-card-box">
             <form method="POST" action="a_packages.php?family=<?= urlencode($active_family) ?>">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="delete_category">
                 <input type="hidden" name="family" value="<?= htmlspecialchars($active_family) ?>">
                 <input type="hidden" name="cat_key" id="deleteCatKeyInput">

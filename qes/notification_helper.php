@@ -49,6 +49,8 @@ class NotificationHelper {
             $mail->Port       = EMAIL_PORT;
             $mail->CharSet    = 'UTF-8';
             $mail->Encoding   = 'base64';
+            $mail->Timeout    = 8;
+            $mail->Timelimit  = 10;
             $mail->setFrom(EMAIL_USERNAME, EMAIL_FROM_NAME);
             $mail->addAddress($to, $name);
             $mail->Subject    = $subject;
@@ -105,7 +107,7 @@ class NotificationHelper {
                         last_error      = ?,
                         status          = CASE
                             WHEN (attempt_count + 1) >= max_attempts THEN 'failed'
-                            ELSE 'failed'
+                            ELSE 'pending'
                         END
                   WHERE id = ?"
             );
@@ -339,7 +341,7 @@ class NotificationHelper {
                  subject, message, status, attempt_count, max_attempts,
                  sent_at, last_attempt_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?,
-                     IF(? = 'sent', NOW(), NULL),
+                     CASE WHEN ? = 'sent' THEN NOW() ELSE NULL END,
                      NOW())"
         );
         if ($stmt) {
@@ -438,9 +440,82 @@ class NotificationHelper {
 
         [$sent] = self::trySMTPSend($to_email, $recipient_name, $subject, $body);
 
+        // Security Hardening: Redact reset code from database notification logs
+        $safe_log_subject = "Your Password Reset Code: [REDACTED] - {$business_name}";
+        $safe_log_body    = str_replace($code, '••••••', $body);
+
         self::logNotification(
             $conn, null, $recipient_name, $to_email,
-            'email', 'custom', $subject, $body,
+            'email', 'password_reset', $safe_log_subject, $safe_log_body,
+            $sent ? 'sent' : 'failed'
+        );
+
+        return $sent;
+    }
+
+    // ============================================================
+    // BOOKING VERIFICATION CODE EMAIL
+    // Sent when a user submits a booking (2-step verification)
+    // ============================================================
+    public static function sendBookingVerificationCodeEmail($conn, string $to_email, string $recipient_name, string $code, array $summary = []): bool {
+        $business_name = function_exists('get_setting') ? get_setting($conn, 'business_name', 'Tyoy Creation') : 'Tyoy Creation';
+        $subject = "Your 6-Digit Booking Verification Code: {$code} - {$business_name}";
+
+        $event_title  = htmlspecialchars($summary['event_title'] ?? 'Special Event');
+        $event_type   = htmlspecialchars($summary['event_type'] ?? 'General Event');
+        $event_date   = htmlspecialchars($summary['event_date'] ?? 'TBD');
+        $event_time   = htmlspecialchars($summary['event_time'] ?? '10:00');
+        $location     = htmlspecialchars($summary['location_venue'] ?? 'To Be Confirmed');
+        $guest_count  = (int)($summary['guest_count'] ?? 0);
+        $requirements = htmlspecialchars($summary['service_requirements'] ?? 'Standard Event Styling');
+
+        $body = '<div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.06);">'
+              . '<div style="background: #18392b; padding: 26px 20px; text-align: center; color: #ffffff;">'
+              . '<h2 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">' . htmlspecialchars($business_name) . '</h2>'
+              . '<p style="margin: 6px 0 0 0; font-size: 13px; color: #e5ede5;">Event Reservation Verification</p>'
+              . '</div>'
+              . '<div style="padding: 28px 24px;">'
+              . '<h3 style="margin: 0 0 10px 0; color: #111827; font-size: 18px; font-weight: 700;">Confirm Your Booking Request</h3>'
+              . '<p style="font-size: 14px; line-height: 1.6; color: #374151; margin: 0 0 16px 0;">Hello <strong>' . htmlspecialchars($recipient_name) . '</strong>,</p>'
+              . '<p style="font-size: 14px; line-height: 1.6; color: #374151; margin: 0 0 20px 0;">Thank you for planning your event with us! To complete your submission and verify your identity, please enter the following 6-digit verification code:</p>'
+              . '<div style="background: #f0fdf4; border: 2px dashed #16a34a; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">'
+              . '<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #15803d; font-weight: 700; margin-bottom: 6px;">Your One-Time Verification Code</div>'
+              . '<div style="font-family: monospace, Courier, monospace; font-size: 38px; font-weight: 800; color: #14532d; letter-spacing: 12px;">' . htmlspecialchars($code) . '</div>'
+              . '<div style="font-size: 12px; color: #166534; margin-top: 6px; font-weight: 600;">&#9201; Valid for 10 minutes only</div>'
+              . '</div>'
+              . '<h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700; color: #111827; text-transform: uppercase; letter-spacing: 0.05em;">Pending Booking Summary</h4>'
+              . '<table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 22px; background: #f9fafb; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb;">'
+              . '<tr><td style="padding: 10px 14px; color: #6b7280; font-weight: 600; width: 38%; border-bottom: 1px solid #e5e7eb;">Event Title:</td><td style="padding: 10px 14px; color: #111827; font-weight: 700; border-bottom: 1px solid #e5e7eb;">' . $event_title . '</td></tr>'
+              . '<tr><td style="padding: 10px 14px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Event Type:</td><td style="padding: 10px 14px; color: #111827; border-bottom: 1px solid #e5e7eb;">' . $event_type . '</td></tr>'
+              . '<tr><td style="padding: 10px 14px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Date &amp; Time:</td><td style="padding: 10px 14px; color: #111827; border-bottom: 1px solid #e5e7eb;">' . $event_date . ' at ' . $event_time . '</td></tr>'
+              . '<tr><td style="padding: 10px 14px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Venue / Location:</td><td style="padding: 10px 14px; color: #111827; border-bottom: 1px solid #e5e7eb;">' . $location . '</td></tr>'
+              . ($guest_count > 0 ? '<tr><td style="padding: 10px 14px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Guest Count:</td><td style="padding: 10px 14px; color: #111827; border-bottom: 1px solid #e5e7eb;">' . $guest_count . ' attendees</td></tr>' : '')
+              . '<tr><td style="padding: 10px 14px; color: #6b7280; font-weight: 600;">Requirements:</td><td style="padding: 10px 14px; color: #111827; font-size: 12px;">' . $requirements . '</td></tr>'
+              . '</table>'
+              . '<div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 6px; font-size: 12px; color: #92400e; line-height: 1.5; margin-bottom: 20px;">'
+              . '<strong>Note:</strong> Your reservation is not officially placed until you enter this verification code on our site. If you did not make this reservation, please disregard this email.'
+              . '</div>'
+              . '<p style="font-size: 13px; color: #6b7280; line-height: 1.5; margin: 0;">'
+              . 'Best regards,<br><strong>' . htmlspecialchars($business_name) . ' Team</strong>'
+              . '</p>'
+              . '</div>'
+              . '<div style="background: #f9fafb; padding: 14px 20px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb;">'
+              . htmlspecialchars($business_name) . ' &bull; Two-Step Booking Verification'
+              . '</div>'
+              . '</div>';
+
+        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+            $sent = true;
+        } else {
+            [$sent] = self::trySMTPSend($to_email, $recipient_name, $subject, $body);
+        }
+
+        $safe_log_subject = "Your 6-Digit Booking Verification Code: [REDACTED] - {$business_name}";
+        $safe_log_body    = str_replace($code, '••••••', $body);
+
+        self::logNotification(
+            $conn, null, $recipient_name, $to_email,
+            'email', 'inquiry', $safe_log_subject, $safe_log_body,
             $sent ? 'sent' : 'failed'
         );
 

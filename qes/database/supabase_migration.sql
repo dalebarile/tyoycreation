@@ -185,7 +185,7 @@ INSERT INTO facilities ("id", "name", "description", "capacity", "created_at") V
 INSERT INTO facilities ("id", "name", "description", "capacity", "created_at") VALUES (2, 'Grandstand', '', 1000, '2026-09-01 20:46:36');
 INSERT INTO facilities ("id", "name", "description", "capacity", "created_at") VALUES (3, 'Room 512', '', 100, '2026-09-01 20:47:21');
 
-SELECT setval(pg_get_serial_sequence('facilities', 'id'), COALESCE((SELECT MAX(id) FROM facilities), 1));
+SELECT setval(pg_get_serial_sequence('facilities', 'id'), COALESCE((SELECT MAX(id) FROM facilities), 1));1
 
 -- --------------------------------------------------------
 -- DATA FOR: bookings (10 rows)
