@@ -82,37 +82,50 @@ class NotificationHelper {
     // INTERNAL: Update a queued notification row after a send attempt
     // ============================================================
     private static function updateQueueRow($conn, int $notif_id, bool $success, string $error_msg = ''): void {
+        // Query current attempt count and max attempts first
+        $cur_attempts = 0;
+        $max_attempts = self::DEFAULT_MAX_ATTEMPTS;
+        $chk = $conn->prepare("SELECT attempt_count, max_attempts FROM notifications WHERE id = ? LIMIT 1");
+        if ($chk) {
+            $chk->bind_param("i", $notif_id);
+            $chk->execute();
+            $chk_res = $chk->get_result();
+            if ($chk_res && ($row = $chk_res->fetch_assoc())) {
+                $cur_attempts = (int)($row['attempt_count'] ?? 0);
+                $max_attempts = (int)($row['max_attempts'] ?? self::DEFAULT_MAX_ATTEMPTS);
+            }
+            $chk->close();
+        }
+        $new_attempts = $cur_attempts + 1;
+
         if ($success) {
             $stmt = $conn->prepare(
                 "UPDATE notifications
                     SET status          = 'sent',
                         sent_at         = NOW(),
                         last_attempt_at = NOW(),
-                        attempt_count   = attempt_count + 1,
+                        attempt_count   = ?,
                         last_error      = NULL
                   WHERE id = ?"
             );
             if ($stmt) {
-                $stmt->bind_param("i", $notif_id);
+                $stmt->bind_param("ii", $new_attempts, $notif_id);
                 $stmt->execute();
                 $stmt->close();
             }
         } else {
-            // Increment attempt count; mark 'failed' regardless of max_attempts
-            // (The caller decides whether to keep retrying or permanently fail)
+            // Increment attempt count; mark 'failed' if max reached, else keep 'pending'
+            $new_status = ($new_attempts >= $max_attempts) ? 'failed' : 'pending';
             $stmt = $conn->prepare(
                 "UPDATE notifications
-                    SET attempt_count   = attempt_count + 1,
+                    SET attempt_count   = ?,
                         last_attempt_at = NOW(),
                         last_error      = ?,
-                        status          = CASE
-                            WHEN (attempt_count + 1) >= max_attempts THEN 'failed'
-                            ELSE 'pending'
-                        END
+                        status          = ?
                   WHERE id = ?"
             );
             if ($stmt) {
-                $stmt->bind_param("si", $error_msg, $notif_id);
+                $stmt->bind_param("issi", $new_attempts, $error_msg, $new_status, $notif_id);
                 $stmt->execute();
                 $stmt->close();
             }

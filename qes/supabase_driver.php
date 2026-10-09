@@ -702,6 +702,8 @@ class SupabaseConnection {
                         } else {
                             $data[$col] = date('c');
                         }
+                    } elseif (preg_match('/^(\w+)\s*([+-])\s*(\d+)$/', $valRaw, $exprM) && $exprM[1] === $col) {
+                        $data[$col] = (int)$exprM[3];
                     } else {
                         $data[$col] = trim($valRaw, "'");
                     }

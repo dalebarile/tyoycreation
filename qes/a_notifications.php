@@ -21,10 +21,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notif_id = (int)($_POST['notif_id'] ?? 0);
         if ($notif_id > 0) {
             $ok = NotificationHelper::retryNotification($conn, $notif_id);
-            $success_msg = $ok
+            $msg = $ok
                 ? "Notification #{$notif_id} was successfully re-sent."
                 : "Retry attempted for #{$notif_id} but SMTP delivery failed. Check SMTP settings or try again later.";
-            if (!$ok) $error_msg = $success_msg and $success_msg = '';
+
+            if (!empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode([
+                    'success' => $ok,
+                    'message' => $msg,
+                    'notif_id' => $notif_id,
+                    'status' => $ok ? 'sent' : 'failed'
+                ]);
+                exit;
+            }
+
+            if ($ok) {
+                $success_msg = $msg;
+            } else {
+                $error_msg = $msg;
+            }
         }
 
     // ── Process entire pending/failed queue ────────────────────
@@ -317,7 +333,7 @@ if ($n_res) {
                                         </td>
                                         <td style="text-align: center;">
                                             <?php if ($n_status !== 'sent'): ?>
-                                                <form method="POST" action="a_notifications.php" style="margin:0;">
+                                                <form method="POST" action="a_notifications.php" style="margin:0;" onsubmit="handleNotificationRetry(event, this, <?= (int)$n['id'] ?>)">
                                                     <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                                     <input type="hidden" name="post_action" value="retry_notification">
                                                     <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
@@ -509,6 +525,86 @@ if ($n_res) {
             const m = document.getElementById('sendEmailModal');
             if (m && e.target === m) closeSendEmailModal();
         });
+
+        // Smooth Asynchronous Notification Retry
+        function handleNotificationRetry(e, form, id) {
+            e.preventDefault();
+            const btn = form.querySelector('button');
+            if (!btn || btn.disabled) return;
+            const oldHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending...';
+            btn.style.opacity = '0.85';
+
+            const fd = new FormData(form);
+            fd.append('ajax', '1');
+
+            fetch('a_notifications.php', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const tr = form.closest('tr');
+                    if (tr) {
+                        // Update Status (cell index 4) to Sent badge
+                        if (tr.cells[4]) {
+                            tr.cells[4].innerHTML = '<span class="badge badge-approved"><span class="badge-dot"></span> Sent</span>';
+                        }
+                        // Update Attempts count (cell index 3)
+                        if (tr.cells[3]) {
+                            const span = tr.cells[3].querySelector('span') || tr.cells[3];
+                            const txt = span.textContent.trim();
+                            const parts = txt.split('/');
+                            if (parts.length === 2) {
+                                const cur = (parseInt(parts[0], 10) || 0) + 1;
+                                span.textContent = cur + '/' + parts[1];
+                            }
+                        }
+                        // Replace Retry button with dash in cell index 5
+                        if (tr.cells[5]) {
+                            tr.cells[5].innerHTML = '<span style="font-size:11px;color:var(--text-muted);">&mdash;</span>';
+                        }
+                    }
+                    showNotifToast(data.message || 'Notification successfully re-sent!', 'success');
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = oldHtml;
+                    btn.style.opacity = '1';
+                    showNotifToast(data.message || 'Delivery failed. Check SMTP configuration.', 'error');
+                }
+            })
+            .catch(err => {
+                // Fallback to standard form submission
+                form.submit();
+            });
+        }
+
+        function showNotifToast(message, type) {
+            let container = document.getElementById('notifToastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notifToastContainer';
+                container.style.cssText = 'position:fixed;top:24px;right:24px;z-index:99999;display:flex;flex-direction:column;gap:10px;pointer-events:none;';
+                document.body.appendChild(container);
+            }
+            const toast = document.createElement('div');
+            const isSuccess = (type === 'success');
+            toast.style.cssText = `display:flex;align-items:center;gap:12px;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 10px 25px -5px rgba(0,0,0,0.15);pointer-events:auto;transition:all 0.3s ease;transform:translateY(-10px);opacity:0;${isSuccess ? 'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;' : 'background:#fef2f2;color:#991b1b;border:1px solid #fecaca;'}`;
+            toast.innerHTML = `<i class="fa-solid ${isSuccess ? 'fa-circle-check' : 'fa-circle-exclamation'}" style="font-size:16px;color:${isSuccess ? '#059669' : '#dc2626'};"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.style.transform = 'translateY(0)';
+                toast.style.opacity = '1';
+            });
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                setTimeout(() => toast.remove(), 350);
+            }, 4500);
+        }
 
         // Automatically open modal if recipient/contact GET param provided
         document.addEventListener('DOMContentLoaded', () => {
