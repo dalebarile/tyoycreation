@@ -16,7 +16,7 @@ if (isset($status_counts['pending'])) {
     $pending_count = (int)$status_counts['pending'];
     $_SESSION['admin_pending_badge_cnt'] = $pending_count;
     $_SESSION['admin_pending_badge_at'] = time();
-} elseif (isset($_SESSION['admin_pending_badge_cnt']) && (time() - ($_SESSION['admin_pending_badge_at'] ?? 0)) < 15) {
+} elseif (isset($_SESSION['admin_pending_badge_cnt']) && (time() - ($_SESSION['admin_pending_badge_at'] ?? 0)) < 120) {
     $pending_count = (int)$_SESSION['admin_pending_badge_cnt'];
 } else {
     $p_res = $conn->query("SELECT COUNT(*) as cnt FROM bookings WHERE status = 'pending'");
@@ -181,3 +181,4 @@ if (typeof openLogoutModal === 'undefined') {
     });
 }
 </script>
+<script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>

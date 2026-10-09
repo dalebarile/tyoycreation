@@ -2377,5 +2377,6 @@ if ($has_wedding) {
             checkCookieConsent();
         });
     </script>
+    <script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>
 </body>
 </html>

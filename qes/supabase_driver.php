@@ -346,9 +346,20 @@ class SupabaseConnection {
         return "sqc_{$ver}_{$hash}";
     }
 
-    private function invalidateQueryCache(): void {
+    private function invalidateQueryCache(?string $sql = null): void {
         $this->queryCache = [];
         if (class_exists('QesCache')) {
+            if ($sql !== null) {
+                if (stripos($sql, 'last_seen_at') !== false) {
+                    return;
+                }
+                if (stripos($sql, 'user_sessions') !== false && stripos($sql, 'is_blocked') === false && stripos($sql, 'DELETE') === false) {
+                    return;
+                }
+                if (stripos($sql, 'login_attempts') !== false) {
+                    return;
+                }
+            }
             QesCache::set('qes_db_cache_ver', time(), 86400);
             QesCache::delete('all_settings_map');
         }
@@ -384,13 +395,13 @@ class SupabaseConnection {
                 if ($cacheKey) {
                     $this->queryCache[$cacheKey] = $rows;
                     if (class_exists('QesCache')) {
-                        QesCache::set($cacheKey, $rows, 25);
+                        QesCache::set($cacheKey, $rows, 300);
                     }
                 }
                 return new SupabaseResult($rows);
             }
             $this->affected_rows = $stmt->rowCount();
-            $this->invalidateQueryCache();
+            $this->invalidateQueryCache($sql);
             return true;
         } catch (Exception $e) {
             $this->error = $e->getMessage();
@@ -484,7 +495,7 @@ class SupabaseConnection {
             if (!$isSelect && (stripos($errMessage, 'read-only') !== false || stripos($errMessage, '25006') !== false || stripos($errMessage, 'permission denied') !== false)) {
                 $pgRes = $this->executePostgrestFallback($sql, $originalParams, $originalSql);
                 if ($pgRes !== false) {
-                    $this->invalidateQueryCache();
+                    $this->invalidateQueryCache($sql);
                     return $pgRes;
                 }
             }
@@ -506,19 +517,19 @@ class SupabaseConnection {
                 if ($cacheKey) {
                     $this->queryCache[$cacheKey] = $json;
                     if (class_exists('QesCache')) {
-                        QesCache::set($cacheKey, $json, 25);
+                        QesCache::set($cacheKey, $json, 300);
                     }
                 }
                 return new SupabaseResult($json);
             }
             $this->affected_rows = count($json);
             // Invalidate cache on write operations
-            $this->invalidateQueryCache();
+            $this->invalidateQueryCache($sql);
             return true;
         }
 
         // Invalidate cache on non-select writes
-        $this->invalidateQueryCache();
+        $this->invalidateQueryCache($sql);
         return true;
     }
 

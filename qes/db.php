@@ -829,10 +829,10 @@ if (!function_exists('track_user_session')) {
         $session_id = session_id();
         if (empty($session_id)) return;
 
-        // Throttle session updates: only ping DB on login or if > 60 seconds since last tracked
+        // Throttle session updates: only ping DB on login or if > 300 seconds since last tracked
         $now = time();
         $last_tracked = $_SESSION['last_session_tracked_at'] ?? 0;
-        if (!$is_login && ($now - $last_tracked) < 60) {
+        if (!$is_login && ($now - $last_tracked) < 300) {
             return;
         }
         $_SESSION['last_session_tracked_at'] = $now;
@@ -889,10 +889,10 @@ if (!function_exists('is_current_session_blocked')) {
         $session_id = session_id();
         if (empty($session_id)) return false;
 
-        // Throttle block check to once every 30 seconds
+        // Throttle block check to once every 60 seconds
         $now = time();
         $last_check = $_SESSION['last_block_check_at'] ?? 0;
-        if (($now - $last_check) < 30 && isset($_SESSION['is_device_blocked'])) {
+        if (($now - $last_check) < 60 && isset($_SESSION['is_device_blocked'])) {
             return (bool)$_SESSION['is_device_blocked'];
         }
 

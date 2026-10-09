@@ -2171,3 +2171,46 @@ a:hover {
     pointer-events: none;
     opacity: 0.85;
 }
+
+/* ==========================================================================
+   Global Instant Top Progress Bar & Smooth Responsive Page Transitions
+   ========================================================================== */
+#qes-top-loader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3.5px;
+    width: 0%;
+    z-index: 9999999;
+    background: linear-gradient(90deg, #c5a059 0%, #10b981 50%, #22c55e 100%);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.75), 0 0 6px rgba(197, 160, 89, 0.5);
+    transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+    pointer-events: none;
+    opacity: 0;
+    border-radius: 0 2px 2px 0;
+}
+
+/* Ultra-smooth hardware-accelerated page entrance */
+.dashboard-wrapper,
+.admin-main,
+.events-container,
+.settings-container,
+.calendar-wrapper,
+.clients-container,
+.notifications-wrapper,
+.booking-container,
+.landing-wrapper {
+    animation: qesPageSmoothEntrance 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: opacity, transform;
+}
+
+@keyframes qesPageSmoothEntrance {
+    0% {
+        opacity: 0.88;
+        transform: translateY(4px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

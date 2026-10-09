@@ -49,10 +49,6 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     <?php if (qes_is_turnstile_enabled($conn)): ?>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <?php endif; ?>
-    <!-- React 18 & Babel Engines with Dual Fallback Resilience -->
-    <script src="assets/vendor/react.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'"></script>
-    <script src="assets/vendor/react-dom.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'"></script>
-    <script src="assets/vendor/babel.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js'"></script>
     <style>
         :root {
             /* Primary Botanical Emerald */
@@ -5193,5 +5189,6 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             checkCookieConsent();
         });
     </script>
+    <script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>
 </body>
 </html>
