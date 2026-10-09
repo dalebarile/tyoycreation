@@ -46,6 +46,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <?php if (qes_is_turnstile_enabled($conn)): ?>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <?php endif; ?>
     <!-- React 18 & Babel Engines with Dual Fallback Resilience -->
     <script src="assets/vendor/react.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'"></script>
     <script src="assets/vendor/react-dom.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'"></script>
@@ -972,14 +975,165 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         }
 
         .success-dialog {
+            position: relative;
             background: #ffffff;
-            border-radius: 20px;
+            border-radius: 18px;
             width: 100%;
-            max-width: 520px;
-            padding: 40px 32px;
+            max-width: 500px;
+            max-height: 86vh;
+            overflow-y: auto;
+            padding: 24px 22px 20px 22px;
             text-align: center;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
             animation: zoomSuccess 0.25s ease;
+        }
+
+        .success-dialog::-webkit-scrollbar {
+            width: 5px;
+        }
+        .success-dialog::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        /* Top-right 'x' close button to return to website */
+        .modal-close-x-btn {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #f1f5f9;
+            color: #64748b;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        .modal-close-x-btn:hover {
+            background: #fee2e2;
+            color: #dc2626;
+            border-color: #fca5a5;
+            transform: scale(1.08);
+        }
+
+        @media (max-width: 640px) {
+            .success-dialog {
+                padding: 20px 16px 16px 16px;
+                max-width: 95%;
+                max-height: 88vh;
+            }
+            .modal-close-x-btn {
+                top: 10px;
+                right: 10px;
+                width: 30px;
+                height: 30px;
+            }
+            .confirmation-terms-card {
+                max-height: 120px;
+            }
+        }
+
+        /* Confirmation Terms & Conditions Card */
+        .confirmation-terms-card {
+            background: #f8faf9;
+            border: 1px solid #d1fae5;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 16px;
+            text-align: left;
+            font-size: 11.5px;
+            line-height: 1.45;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+            max-height: 140px;
+            overflow-y: auto;
+        }
+
+        .confirmation-terms-card::-webkit-scrollbar {
+            width: 6px;
+        }
+        .confirmation-terms-card::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .confirmation-terms-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            color: #1e3a2b;
+            font-size: 12.5px;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .confirmation-terms-header i {
+            color: #059669;
+            font-size: 14px;
+        }
+
+        .confirmation-terms-body {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+        }
+
+        .confirmation-terms-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            color: #334155;
+            font-size: 12px;
+        }
+
+        .confirmation-terms-item i {
+            color: #059669;
+            margin-top: 2px;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .confirmation-terms-item strong {
+            color: #0f172a;
+        }
+
+        /* Email Warning Modal Terms Notice */
+        .email-warning-terms-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin: 14px 0;
+            text-align: left;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .email-warning-terms-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 700;
+            color: #166534;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .email-warning-terms-text {
+            color: #15803d;
+            margin: 0;
+            font-size: 11.5px;
         }
 
         @keyframes zoomSuccess {
@@ -988,16 +1142,16 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         }
 
         .success-icon-wrap {
-            width: 68px;
-            height: 68px;
+            width: 50px;
+            height: 50px;
             border-radius: 50%;
             background: #dcfce7;
             color: #15803d;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 32px;
-            margin: 0 auto 18px auto;
+            font-size: 24px;
+            margin: 0 auto 10px auto;
             border: 2px solid #86efac;
         }
 
@@ -1005,28 +1159,28 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             background: #eef2ee;
             border: 1px dashed var(--primary);
             color: var(--primary);
-            padding: 10px 18px;
-            border-radius: 8px;
-            font-size: 20px;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 17px;
             font-weight: 800;
             letter-spacing: 0.05em;
             display: inline-block;
-            margin: 12px 0 18px 0;
+            margin: 4px 0 10px 0;
         }
 
         .btn-done-modal {
             background: var(--primary);
             color: #ffffff;
             border: none;
-            padding: 12px 28px;
+            padding: 9px 20px;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             transition: all 0.2s;
         }
 
@@ -1647,7 +1801,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         .chatbot-messages::-webkit-scrollbar-thumb:hover {
             background: #9ca3af;
         }
-        .chat-msg {
+        .chat-msg, .chat-bubble {
             max-width: 85%;
             padding: 11px 15px;
             border-radius: 16px;
@@ -1657,25 +1811,61 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             word-break: break-word;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .chat-msg strong {
+        .chat-msg strong, .chat-bubble strong {
             font-weight: 700;
         }
-        .chat-msg em {
+        .chat-msg em, .chat-bubble em {
             font-style: italic;
         }
-        .chat-msg.bot {
+        .chat-msg.bot, .chat-bubble.bot {
             align-self: flex-start;
             background: #ffffff;
             color: #1f2937;
             border: 1px solid #e5e7eb;
             border-bottom-left-radius: 4px;
         }
-        .chat-msg.user {
+        .chat-msg.user, .chat-bubble.user {
             align-self: flex-end;
             background: #2a3c29;
             color: #ffffff;
             border-bottom-right-radius: 4px;
             box-shadow: 0 2px 6px rgba(42, 60, 41, 0.2);
+        }
+        .quick-chips-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 8px;
+            white-space: normal;
+        }
+        .quick-chip {
+            background: #f3f6f3;
+            border: 1px solid #d4dfd4;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: #2a3c29;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.15s ease;
+            white-space: normal;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            width: 100%;
+            box-sizing: border-box;
+            line-height: 1.3;
+        }
+        .quick-chip i {
+            font-size: 11px;
+            color: #2a3c29;
+            flex-shrink: 0;
+        }
+        .quick-chip:hover {
+            background: #e2ebe2;
+            border-color: #2a3c29;
+            transform: translateX(2px);
         }
         .chatbot-footer-wrapper {
             background: #ffffff;
@@ -2198,6 +2388,78 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         .pkg-active-content-wrapper {
             animation: fadeInSelected 0.3s ease-out;
         }
+
+        /* Address Picker (PSGC API) Styling */
+        .address-picker-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 6px;
+        }
+        .address-picker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .address-picker-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .address-toggle-btn {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s ease;
+        }
+        .address-toggle-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            color: var(--primary);
+        }
+        .address-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .address-select-group label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            margin-bottom: 4px;
+            display: block;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .address-preview-box {
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+            padding: 9px 13px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -2273,21 +2535,31 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             <div class="chatbot-header">
                 <div class="chatbot-header-info">
                     <div class="chatbot-avatar">
-                        <i class="fa-solid fa-sparkles"></i>
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
                     </div>
                     <div>
                         <div style="font-weight: 700; font-size: 14px;">Event Concierge AI</div>
-                        <div style="font-size: 11px; opacity: 0.85;">Here to answer booking &amp; pricing questions</div>
+                        <div style="font-size: 11px; opacity: 0.85;">Here to answer general FAQs &amp; packages</div>
                     </div>
                 </div>
-                <button type="button" onclick="toggleChatWindow()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" onclick="resetChatConversation()" title="Reset Conversation" style="background: none; border: none; color: white; cursor: pointer; font-size: 15px; opacity: 0.85; transition: opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.85'" aria-label="Reset Conversation">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                    <button type="button" onclick="toggleChatWindow()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;" aria-label="Close Chat">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
 
             <div class="chatbot-messages" id="chatbotMessages">
-                <div class="chat-msg bot">
-                    Hello! Welcome to <?= htmlspecialchars($business_name) ?>. Feel free to ask me anything about our packages, setup options, or booking lead times.
+                <div class="chat-bubble bot">
+                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong>. I can answer questions regarding our services, Birthday and Wedding packages, pricing, and booking requirements!
+                    <div class="quick-chips-wrapper">
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                    </div>
                 </div>
             </div>
 
@@ -2297,6 +2569,25 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     <button type="submit" aria-label="Send Message"><i class="fa-solid fa-paper-plane"></i></button>
                 </form>
                 <div class="chat-input-hint">Press <strong>Enter</strong> to send • <strong>Shift + Enter</strong> for new line</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cookie Consent Banner -->
+    <div id="cookieConsentBanner" class="cookie-consent-bar" style="display: none;">
+        <div class="cookie-consent-content">
+            <div class="cookie-consent-icon">
+                <i class="fa-solid fa-cookie-bite"></i>
+            </div>
+            <div class="cookie-consent-text">
+                <h4>We value your privacy &amp; experience</h4>
+                <p>
+                    We use cookies and local storage to optimize your navigation, ensure session security, remember your customized package preferences, and synchronize chat concierge inquiries. Do you accept the use of cookies?
+                </p>
+            </div>
+            <div class="cookie-consent-actions">
+                <button type="button" class="btn-cookie-decline" onclick="handleCookieConsent('declined')">Decline</button>
+                <button type="button" class="btn-cookie-accept" onclick="handleCookieConsent('accepted')">Accept Cookies</button>
             </div>
         </div>
     </div>
@@ -2315,7 +2606,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             initialType: <?= json_encode($initial_type) ?>,
             initialFamily: <?= json_encode($initial_family) ?>,
             initialPackage: <?= json_encode($requested_package) ?>,
-            isTypeLocked: <?= json_encode($is_type_locked_from_url) ?>
+            isTypeLocked: <?= json_encode($is_type_locked_from_url) ?>,
+            turnstileEnabled: <?= json_encode(qes_is_turnstile_enabled($conn)) ?>,
+            turnstileSiteKey: <?= json_encode(qes_get_turnstile_site_key($conn)) ?>
         };
     </script>
 
@@ -2344,6 +2637,18 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [clientEmail, setClientEmail] = useState('');
             const [clientPhone, setClientPhone] = useState('');
             const [clientAddress, setClientAddress] = useState('');
+
+            // Address API State (Philippine Standard Geographic Code: Regions, Cities/Municipalities, Barangays)
+            const [regionsList, setRegionsList] = useState([]);
+            const [selectedRegion, setSelectedRegion] = useState('');
+            const [citiesList, setCitiesList] = useState([]);
+            const [selectedCity, setSelectedCity] = useState('');
+            const [barangaysList, setBarangaysList] = useState([]);
+            const [selectedBarangay, setSelectedBarangay] = useState('');
+            const [streetDetail, setStreetDetail] = useState('');
+            const [addressLoading, setAddressLoading] = useState(false);
+            const [isManualAddress, setIsManualAddress] = useState(false);
+
             const [eventTitle, setEventTitle] = useState('');
             const [guestCount, setGuestCount] = useState('100');
             const [eventDate, setEventDate] = useState(minDateStr);
@@ -2489,6 +2794,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [submitError, setSubmitError] = useState('');
             const [isSubmitting, setIsSubmitting] = useState(false);
             const [confirmedBooking, setConfirmedBooking] = useState(null);
+            const [showExitConfirm, setShowExitConfirm] = useState(false);
 
             // Email Warning & Misconception Prevention Modal State
             const [emailWarningModal, setEmailWarningModal] = useState({
@@ -2509,7 +2815,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 resendCooldown: 60,
                 resendSuccess: '',
                 isVerified: false,
-                expiresIn: 600,
+                expiresIn: 300,
                 isEditingEmail: false,
                 newEmailInput: '',
                 isUpdatingEmail: false,
@@ -2588,6 +2894,24 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
                 return () => clearInterval(timer);
             }, [verifyModal.isOpen]);
+
+            // Render Cloudflare Turnstile inside OTP confirmation modal when opened
+            useEffect(() => {
+                if (verifyModal.isOpen && window.turnstile && config.turnstileEnabled && config.turnstileSiteKey) {
+                    const timer = setTimeout(() => {
+                        const el = document.querySelector('#verifyModalTurnstile .cf-turnstile');
+                        if (el && !el.hasChildNodes()) {
+                            try {
+                                window.turnstile.render(el, {
+                                    sitekey: config.turnstileSiteKey,
+                                    theme: 'light'
+                                });
+                            } catch (e) {}
+                        }
+                    }, 120);
+                    return () => clearTimeout(timer);
+                }
+            }, [verifyModal.isOpen, config.turnstileEnabled, config.turnstileSiteKey]);
 
             const formatTimeRemaining = (totalSec) => {
                 const m = Math.floor(totalSec / 60);
@@ -2717,6 +3041,82 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 });
                 return maxFound > 0 ? maxFound : 500;
             }, [currentCatalog]);
+
+            // Address API: Load Regions on Mount
+            useEffect(() => {
+                fetch('address_api.php?action=regions')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (Array.isArray(data)) {
+                            setRegionsList(data);
+                        }
+                    })
+                    .catch(err => console.error('Address API: failed to load regions', err));
+            }, []);
+
+            // Address API: When Region changes, fetch Cities / Municipalities
+            useEffect(() => {
+                if (!selectedRegion) {
+                    setCitiesList([]);
+                    setSelectedCity('');
+                    setBarangaysList([]);
+                    setSelectedBarangay('');
+                    return;
+                }
+                setAddressLoading(true);
+                fetch(`address_api.php?action=cities&code=${encodeURIComponent(selectedRegion)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (Array.isArray(data)) {
+                            const sorted = [...data].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                            setCitiesList(sorted);
+                        }
+                        setSelectedCity('');
+                        setBarangaysList([]);
+                        setSelectedBarangay('');
+                    })
+                    .catch(err => console.error('Address API: failed to load cities', err))
+                    .finally(() => setAddressLoading(false));
+            }, [selectedRegion]);
+
+            // Address API: When City changes, fetch Barangays
+            useEffect(() => {
+                if (!selectedCity) {
+                    setBarangaysList([]);
+                    setSelectedBarangay('');
+                    return;
+                }
+                setAddressLoading(true);
+                fetch(`address_api.php?action=barangays&code=${encodeURIComponent(selectedCity)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (Array.isArray(data)) {
+                            const sorted = [...data].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                            setBarangaysList(sorted);
+                        }
+                        setSelectedBarangay('');
+                    })
+                    .catch(err => console.error('Address API: failed to load barangays', err))
+                    .finally(() => setAddressLoading(false));
+            }, [selectedCity]);
+
+            // Address API: Format clientAddress when picker fields change
+            useEffect(() => {
+                if (isManualAddress) return;
+                const regObj = regionsList.find(r => r.code === selectedRegion);
+                const cityObj = citiesList.find(c => c.code === selectedCity);
+                const bgyObj = barangaysList.find(b => b.code === selectedBarangay);
+
+                const parts = [];
+                if (streetDetail.trim()) parts.push(streetDetail.trim());
+                if (bgyObj) parts.push(`Brgy. ${bgyObj.name}`);
+                if (cityObj) parts.push(cityObj.name);
+                if (regObj) parts.push(regObj.name);
+
+                if (parts.length > 0) {
+                    setClientAddress(parts.join(', '));
+                }
+            }, [selectedRegion, selectedCity, selectedBarangay, streetDetail, isManualAddress, regionsList, citiesList, barangaysList]);
 
             // Compute catering pax capacity limit from selected catering package.
             // STRICT: Must ONLY match the actual 'catering' category (Pax Capacity), NEVER catering_addons or others!
@@ -2979,8 +3379,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     errs.clientEmail = 'Please enter a valid Email Address (e.g. name@gmail.com).';
                 }
                 const cleanPhone = clientPhone.replace(/[^0-9]/g, '');
-                if (/[a-zA-Z]/.test(clientPhone) || cleanPhone.length < 10 || cleanPhone.length > 13) {
-                    errs.clientPhone = 'Please enter a valid Contact Number with 10 to 13 digits (e.g. 0917-123-4567, no letters).';
+                if (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 11 || !/^[0-9]+$/.test(cleanPhone)) {
+                    errs.clientPhone = 'Please enter a valid Contact Number with 10 to 11 numerical digits (e.g. 09171234567, numbers only).';
                 }
                 const trimmedTitle = eventTitle.trim();
                 if (!trimmedTitle || trimmedTitle.length < 3) {
@@ -3097,6 +3497,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     formData.append('estimated_total', totalEstimate);
                     formData.append('special_notes', specialNotes.trim());
 
+                    // Capture Cloudflare Turnstile token if present on page
+                    const mainTsEl = document.querySelector('#mainBookingTurnstile input[name="cf-turnstile-response"]') ||
+                                     document.querySelector('input[name="cf-turnstile-response"]');
+                    if (mainTsEl && mainTsEl.value) {
+                        formData.append('cf-turnstile-response', mainTsEl.value);
+                    }
+
                     const res = await fetch('booking_submit.php', {
                         method: 'POST',
                         body: formData
@@ -3119,7 +3526,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                 resendSuccess: '',
                                 isVerified: false,
                                 emailSent: (data.email_sent !== false),
-                                expiresIn: data.expires_in || 600,
+                                expiresIn: data.expires_in || 300,
                                 isEditingEmail: false,
                                 newEmailInput: '',
                                 isUpdatingEmail: false,
@@ -3159,6 +3566,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     formData.append('code', verifyModal.otpCode.trim());
                     formData.append('verification_token', verifyModal.token || '');
                     formData.append('csrf_token', config.csrfToken || '');
+
+                    // Capture Cloudflare Turnstile token from verify modal
+                    const modalTsEl = document.querySelector('#verifyModalTurnstile input[name="cf-turnstile-response"]') ||
+                                      document.querySelector('input[name="cf-turnstile-response"]');
+                    if (modalTsEl && modalTsEl.value) {
+                        formData.append('cf-turnstile-response', modalTsEl.value);
+                    }
 
                     const res = await fetch('booking_submit.php', {
                         method: 'POST',
@@ -3223,7 +3637,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             error: '',
                             resendSuccess: data.message || `A new 6-digit code has been sent to ${data.masked_email || prev.maskedEmail}.`,
                             resendCooldown: 60,
-                            expiresIn: data.expires_in || 600
+                            expiresIn: data.expires_in || 300
                         }));
                     } else {
                         setVerifyModal(prev => ({
@@ -3281,7 +3695,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             error: '',
                             resendSuccess: `Verification code successfully dispatched to: ${data.email || newEmail}`,
                             resendCooldown: 60,
-                            expiresIn: data.expires_in || 600
+                            expiresIn: data.expires_in || 300
                         }));
                     } else {
                         setVerifyModal(prev => ({
@@ -3306,6 +3720,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 setClientEmail('');
                 setClientPhone('');
                 setClientAddress('');
+                setSelectedRegion('');
+                setSelectedCity('');
+                setSelectedBarangay('');
+                setStreetDetail('');
+                setIsManualAddress(false);
                 setEventTitle('');
                 setGuestCount('100');
                 setEventTime('14:00');
@@ -3387,10 +3806,19 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 type="tel" 
                                                 id="client_phone_input"
                                                 className={`form-control ${errors.clientPhone ? 'is-invalid' : ''}`}
-                                                placeholder="e.g. 0917-123-4567"
+                                                placeholder="e.g. 09171234567"
                                                 value={clientPhone}
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                                maxLength={11}
+                                                onKeyPress={(e) => {
+                                                    if (!/[0-9]/.test(e.key)) {
+                                                        e.preventDefault();
+                                                    }
+                                                }}
                                                 onChange={(e) => {
-                                                    setClientPhone(e.target.value);
+                                                    const numericOnly = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                                    setClientPhone(numericOnly);
                                                     if (errors.clientPhone) setErrors(prev => ({ ...prev, clientPhone: null }));
                                                 }}
                                                 required
@@ -3402,14 +3830,102 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     </div>
 
                                     <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label>Complete Address / City</label>
-                                        <input 
-                                            type="text" 
-                                            className="form-control"
-                                            placeholder="e.g. Quezon City, Metro Manila"
-                                            value={clientAddress}
-                                            onChange={(e) => setClientAddress(e.target.value)}
-                                        />
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                                            <label style={{ margin: 0, fontWeight: 700 }}>Client / Event Address</label>
+                                            <button 
+                                                type="button" 
+                                                className="address-toggle-btn"
+                                                onClick={() => setIsManualAddress(prev => !prev)}
+                                            >
+                                                <i className={`fa-solid ${isManualAddress ? 'fa-list-check' : 'fa-pen-to-square'}`}></i>
+                                                <span>{isManualAddress ? 'Use Address Selector' : 'Type Manually'}</span>
+                                            </button>
+                                        </div>
+
+                                        {!isManualAddress ? (
+                                            <div className="address-picker-card">
+                                                <div className="address-select-grid">
+                                                    <div className="address-select-group">
+                                                        <label>Region</label>
+                                                        <select 
+                                                            className="form-control"
+                                                            value={selectedRegion}
+                                                            onChange={(e) => setSelectedRegion(e.target.value)}
+                                                        >
+                                                            <option value="">-- Select Region --</option>
+                                                            {regionsList.map(r => (
+                                                                <option key={r.code} value={r.code}>{r.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="address-select-group">
+                                                        <label>City / Municipality</label>
+                                                        <select 
+                                                            className="form-control"
+                                                            value={selectedCity}
+                                                            onChange={(e) => setSelectedCity(e.target.value)}
+                                                            disabled={!selectedRegion || addressLoading}
+                                                        >
+                                                            <option value="">
+                                                                {addressLoading && selectedRegion && !selectedCity ? 'Loading cities...' : '-- Select City / Municipality --'}
+                                                            </option>
+                                                            {citiesList.map(c => (
+                                                                <option key={c.code} value={c.code}>{c.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="address-select-group">
+                                                        <label>Barangay</label>
+                                                        <select 
+                                                            className="form-control"
+                                                            value={selectedBarangay}
+                                                            onChange={(e) => setSelectedBarangay(e.target.value)}
+                                                            disabled={!selectedCity || addressLoading}
+                                                        >
+                                                            <option value="">
+                                                                {addressLoading && selectedCity && !selectedBarangay ? 'Loading barangays...' : '-- Select Barangay --'}
+                                                            </option>
+                                                            {barangaysList.map(b => (
+                                                                <option key={b.code} value={b.code}>{b.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                                                        Street / Unit / House No. / Landmark
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        className="form-control"
+                                                        placeholder="e.g. Unit 402, 123 Emerald Ave"
+                                                        value={streetDetail}
+                                                        onChange={(e) => setStreetDetail(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                {clientAddress && (
+                                                    <div className="address-preview-box">
+                                                        <i className="fa-solid fa-location-dot"></i>
+                                                        <span><strong>Formatted Address:</strong> {clientAddress}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <input 
+                                                    type="text" 
+                                                    className="form-control"
+                                                    placeholder="e.g. 123 Emerald Ave, San Antonio, Pasig City, Metro Manila"
+                                                    value={clientAddress}
+                                                    onChange={(e) => setClientAddress(e.target.value)}
+                                                />
+                                                <p style={{ fontSize: '11.5px', color: '#64748b', margin: '6px 0 0 0' }}>
+                                                    <i className="fa-solid fa-circle-info"></i> Manual mode enabled. You may switch back to the Philippine Address Selector anytime.
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -3895,6 +4411,16 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             </div>
                                         )}
 
+                                        {config.turnstileEnabled && config.turnstileSiteKey && (
+                                            <div id="mainBookingTurnstile" style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
+                                                <div 
+                                                    className="cf-turnstile" 
+                                                    data-sitekey={config.turnstileSiteKey} 
+                                                    data-theme="light"
+                                                ></div>
+                                            </div>
+                                        )}
+
                                         <button 
                                             type="submit" 
                                             className="btn-submit-booking"
@@ -4022,9 +4548,20 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     <div className="warning-checklist-item">
                                         <i className="fa-solid fa-clock" style={{ color: '#059669', marginTop: '2px' }}></i>
                                         <div>
-                                            <strong>Active Mailbox:</strong> Ensure you can open this inbox now. The 6-digit code expires in 10 minutes.
+                                            <strong>Active Mailbox:</strong> Ensure you can open this inbox now. The 6-digit code expires in 5 minutes.
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Data Privacy & Terms Notice */}
+                                <div className="email-warning-terms-box">
+                                    <div className="email-warning-terms-title">
+                                        <i className="fa-solid fa-shield-halved"></i>
+                                        <span>Data Privacy &amp; Terms Notice</span>
+                                    </div>
+                                    <p className="email-warning-terms-text">
+                                        By confirming your email, you agree that your details will be stored securely in our protected cloud database and used solely for booking verification, quotation generation, and event coordination.
+                                    </p>
                                 </div>
 
                                 <div className="email-warning-modal-actions">
@@ -4195,6 +4732,21 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                         aria-label="6-digit verification code"
                                     />
 
+                                    <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                                        <i className="fa-solid fa-lock" style={{ color: '#059669', marginRight: '4px' }}></i>
+                                        By confirming, you agree to our Terms &amp; Conditions. Your data is stored securely and used solely for event coordination and quotation.
+                                    </div>
+
+                                    {config.turnstileEnabled && config.turnstileSiteKey && (
+                                        <div id="verifyModalTurnstile" style={{ display: 'flex', justifyContent: 'center', margin: '8px 0 14px 0' }}>
+                                            <div 
+                                                className="cf-turnstile" 
+                                                data-sitekey={config.turnstileSiteKey} 
+                                                data-theme="light"
+                                            ></div>
+                                        </div>
+                                    )}
+
                                     <button
                                         type="submit"
                                         className="btn-verify-submit"
@@ -4245,30 +4797,88 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     {confirmedBooking && (
                         <div className="success-overlay active" id="successOverlay">
                             <div className="success-dialog">
+                                {/* 'x' close button to return to website */}
+                                <a 
+                                    href="index.php" 
+                                    className="modal-close-x-btn" 
+                                    title="Close and return to website" 
+                                    aria-label="Close and return to website"
+                                >
+                                    <i className="fa-solid fa-xmark"></i>
+                                </a>
+
                                 <div className="success-icon-wrap">
                                     <i className="fa-solid fa-check"></i>
                                 </div>
-                                <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#111827', margin: '0 0 6px 0' }}>
+                                <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#111827', margin: '0 0 4px 0' }}>
                                     Booking Inquiry Received!
                                 </h2>
-                                <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+                                <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 10px 0', lineHeight: 1.4 }}>
                                     Thank you! Your event inquiry has been logged as <strong style={{ color: '#d97706' }}>PENDING</strong> and submitted to the event team for review.
                                 </p>
 
-                                <div style={{ fontSize: '12px', fontWeight: 700, color: '#4b5563', textTransform: 'uppercase' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                     Your Booking Reference Number:
                                 </div>
                                 <div className="ref-badge-display">
                                     {confirmedBooking.refNo}
                                 </div>
 
-                                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', textAlign: 'left', marginBottom: '24px', fontSize: '13px' }}>
-                                    <div style={{ marginBottom: '6px' }}><strong>Event:</strong> <span>{confirmedBooking.title}</span></div>
-                                    <div style={{ marginBottom: '6px' }}><strong>Client:</strong> <span>{confirmedBooking.client}</span></div>
+                                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '10px 14px', textAlign: 'left', marginBottom: '14px', fontSize: '12.5px' }}>
+                                    <div style={{ marginBottom: '4px' }}><strong>Event:</strong> <span>{confirmedBooking.title}</span></div>
+                                    <div style={{ marginBottom: '4px' }}><strong>Client:</strong> <span>{confirmedBooking.client}</span></div>
                                     <div><strong>Scheduled Date:</strong> <span>{confirmedBooking.date}</span></div>
                                 </div>
 
+                                {/* Terms & Conditions - Data Usage & Storage Details */}
+                                <div className="confirmation-terms-card">
+                                    <div className="confirmation-terms-header">
+                                        <i className="fa-solid fa-shield-halved"></i>
+                                        <span>Terms &amp; Conditions &bull; Data Privacy</span>
+                                    </div>
+                                    <div className="confirmation-terms-body">
+                                        <div className="confirmation-terms-item">
+                                            <i className="fa-solid fa-database"></i>
+                                            <div>
+                                                <strong>Where Your Data is Stored:</strong> Your contact information and event specifications are stored securely in Tyoy Creation's protected cloud database (hosted on Supabase PostgreSQL with SSL encryption and Row Level Security) as well as internal transactional backup records. Access is restricted strictly to authorized event personnel.
+                                            </div>
+                                        </div>
+                                        <div className="confirmation-terms-item">
+                                            <i className="fa-solid fa-clipboard-check"></i>
+                                            <div>
+                                                <strong>Where &amp; How Your Data is Used:</strong> Your data is used exclusively by our event coordination and styling management team to:
+                                                <ul style={{ margin: '4px 0 0 0', paddingLeft: '18px', color: '#475569' }}>
+                                                    <li>Verify calendar availability and reserve your chosen event date.</li>
+                                                    <li>Prepare personalized styling quotations, floral concept proposals, and service contracts.</li>
+                                                    <li>Dispatch booking updates, email receipts, and OTP verification notices.</li>
+                                                    <li>Provide client support and direct event coordination.</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                        <div className="confirmation-terms-item">
+                                            <i className="fa-solid fa-user-shield"></i>
+                                            <div>
+                                                <strong>Privacy &amp; Third-Party Protection:</strong> We value your privacy. Tyoy Creation will <u>never</u> sell, rent, monetize, or share your personal information with external third parties or advertisers.
+                                            </div>
+                                        </div>
+                                        <div className="confirmation-terms-item">
+                                            <i className="fa-solid fa-file-contract"></i>
+                                            <div>
+                                                <strong>Reservation Terms:</strong> This initial submission logs your inquiry as <strong style={{ color: '#d97706' }}>PENDING</strong>. Official date reservation is confirmed only after event team review, mutual consultation, and formal contract/downpayment processing.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowExitConfirm(true)} 
+                                        className="btn-done-modal" 
+                                        style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }}
+                                    >
+                                        <i className="fa-solid fa-arrow-left"></i> Back
+                                    </button>
                                     <a href="index.php" className="btn-done-modal">
                                         <i className="fa-solid fa-house"></i> Return to Home
                                     </a>
@@ -4281,6 +4891,44 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                         <i className="fa-solid fa-plus"></i> Submit Another
                                     </button>
                                 </div>
+
+                                {/* Confirmation Prompt Before Exiting Modal */}
+                                {showExitConfirm && (
+                                    <div className="modal-overlay active" style={{ zIndex: 12000, background: 'rgba(15, 23, 15, 0.75)', backdropFilter: 'blur(4px)' }}>
+                                        <div className="modal-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '28px 24px', animation: 'scaleUp 0.2s ease-out' }}>
+                                            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fffbeb', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', margin: '0 auto 16px auto', border: '2px solid #fde68a' }}>
+                                                <i className="fa-solid fa-arrow-right-from-bracket"></i>
+                                            </div>
+                                            <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 8px 0', color: '#1e293b' }}>
+                                                Exit Confirmation
+                                            </h3>
+                                            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 22px 0', lineHeight: 1.5 }}>
+                                                Are you sure you really want to exit this booking confirmation? Please ensure you have copied or taken note of your reference number <strong>{confirmedBooking.refNo}</strong> before leaving.
+                                            </p>
+                                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                                                <button 
+                                                    type="button" 
+                                                    className="btn-done-modal" 
+                                                    style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '10px 18px', fontSize: '13px' }}
+                                                    onClick={() => setShowExitConfirm(false)}
+                                                >
+                                                    Cancel / Stay
+                                                </button>
+                                                <button 
+                                                    type="button" 
+                                                    className="btn-done-modal" 
+                                                    style={{ background: '#dc2626', color: '#ffffff', border: 'none', padding: '10px 18px', fontSize: '13px' }}
+                                                    onClick={() => {
+                                                        setShowExitConfirm(false);
+                                                        setConfirmedBooking(null);
+                                                    }}
+                                                >
+                                                    Yes, Exit Modal
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -4354,6 +5002,109 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 .replace(/\n/g, '<br>');
         }
 
+        // Cookie Consent Engine
+        function checkCookieConsent() {
+            const consent = localStorage.getItem('tyoy_cookie_consent');
+            if (!consent) {
+                setTimeout(() => {
+                    const el = document.getElementById('cookieConsentBanner');
+                    if (el) el.style.display = 'block';
+                }, 500);
+            }
+        }
+
+        function handleCookieConsent(choice) {
+            localStorage.setItem('tyoy_cookie_consent', choice);
+            document.cookie = 'cookie_consent=' + choice + '; max-age=31536000; path=/; SameSite=Lax';
+            const el = document.getElementById('cookieConsentBanner');
+            if (el) {
+                el.style.animation = 'cookieSlideDown 0.25s ease forwards';
+                setTimeout(() => { el.style.display = 'none'; }, 250);
+            }
+        }
+
+        // Synchronized Chatbot Concierge Engine
+        const CHAT_SYNC_KEY = 'tyoy_synchronized_chat_history';
+
+        function getStoredChatHistory() {
+            try {
+                const data = localStorage.getItem(CHAT_SYNC_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveMessageToStorage(role, text) {
+            try {
+                const hist = getStoredChatHistory();
+                hist.push({ role: role, text: text, time: Date.now() });
+                localStorage.setItem(CHAT_SYNC_KEY, JSON.stringify(hist));
+            } catch (e) {}
+        }
+
+        function renderSynchronizedChat() {
+            const container = document.getElementById('chatbotMessages');
+            if (!container) return;
+            const history = getStoredChatHistory();
+            if (!history || history.length === 0) {
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="chat-bubble bot">
+                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong>. I can answer questions regarding our services, Birthday and Wedding packages, pricing, and booking requirements!
+                    <div class="quick-chips-wrapper">
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                    </div>
+                </div>
+            `;
+
+            history.forEach(item => {
+                const d = document.createElement('div');
+                d.className = (item.role === 'user') ? 'chat-bubble user' : 'chat-bubble bot';
+                d.innerHTML = formatChatMessage(item.text);
+                container.appendChild(d);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function resetChatConversation() {
+            if (!confirm('Are you sure you want to reset the conversation?')) return;
+            try {
+                await fetch('chatbot.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'clear_history' })
+                });
+            } catch (e) {}
+
+            localStorage.removeItem(CHAT_SYNC_KEY);
+            const container = document.getElementById('chatbotMessages');
+            if (container) {
+                container.innerHTML = `
+                    <div class="chat-bubble bot">
+                        Conversation has been reset. You have full message capacity available! How can I assist you today?
+                        <div class="quick-chips-wrapper">
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                        </div>
+                    </div>
+                `;
+                container.scrollTop = 0;
+            }
+            window.dispatchEvent(new StorageEvent('storage', { key: CHAT_SYNC_KEY, newValue: null }));
+        }
+
+        window.addEventListener('storage', (e) => {
+            if (e.key === CHAT_SYNC_KEY) {
+                renderSynchronizedChat();
+            }
+        });
+
         function toggleChatWindow() {
             const win = document.getElementById('chatbotWindow');
             if (win) {
@@ -4368,6 +5119,14 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             }
         }
 
+        function sendQuickPrompt(text) {
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            input.value = text;
+            autoResizeChatInput(input);
+            sendChatMessage(new Event('submit'));
+        }
+
         async function sendChatMessage(e) {
             if (e && e.preventDefault) e.preventDefault();
             const input = document.getElementById('chatInput');
@@ -4378,9 +5137,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             
             // Append formatted user message
             const uDiv = document.createElement('div');
-            uDiv.className = 'chat-msg user';
+            uDiv.className = 'chat-bubble user';
             uDiv.innerHTML = formatChatMessage(msg);
             chatMessages.appendChild(uDiv);
+            saveMessageToStorage('user', msg);
 
             // Reset input and shrink height back
             input.value = '';
@@ -4389,7 +5149,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             // Show typing indicator
             const botDiv = document.createElement('div');
-            botDiv.className = 'chat-msg bot';
+            botDiv.className = 'chat-bubble bot';
             botDiv.innerHTML = '<i class="fa-solid fa-ellipsis fa-fade"></i> Thinking...';
             chatMessages.appendChild(botDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -4410,18 +5170,28 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         try { data = JSON.parse(jsonMatch[0]); } catch (e) {}
                     }
                 }
+                let replyText = '';
                 if (data && (data.reply || data.response)) {
-                    botDiv.innerHTML = formatChatMessage(data.reply || data.response);
+                    replyText = data.reply || data.response;
                 } else if (data && data.message) {
-                    botDiv.innerHTML = formatChatMessage(data.message);
+                    replyText = data.message;
                 } else {
-                    botDiv.innerHTML = "I am here to assist you! Feel free to ask about our event packages, check date availability, or submit your booking inquiry directly!";
+                    replyText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
                 }
+                botDiv.innerHTML = formatChatMessage(replyText);
+                saveMessageToStorage('bot', replyText);
             } catch (err) {
-                botDiv.innerHTML = "I am here to assist you! Feel free to ask about our event packages, check date availability, or submit your booking inquiry directly!";
+                const fallbackText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
+                botDiv.innerHTML = formatChatMessage(fallbackText);
+                saveMessageToStorage('bot', fallbackText);
             }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            renderSynchronizedChat();
+            checkCookieConsent();
+        });
     </script>
 </body>
 </html>

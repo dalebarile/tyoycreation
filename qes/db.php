@@ -13,6 +13,7 @@ if (!defined('PHPUNIT_RUNNING')) {
     error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED);
 }
 
+require_once __DIR__ . '/cache_helper.php';
 require_once __DIR__ . '/supabase_driver.php';
 require_once __DIR__ . '/crypto_helper.php';
 
@@ -20,19 +21,9 @@ require_once __DIR__ . '/crypto_helper.php';
 if (!defined('PHPUNIT_RUNNING')) {
     $conn = new SupabaseConnection();
 
-    // SupabaseConnection may not detect failures until the first query.
-    // Run a lightweight health check to surface connection errors early.
-    if (!$conn->connect_error) {
-        $health = $conn->query("SELECT 1");
-        if ($health === false && !empty($conn->connect_error)) {
-            // Connection-level failure confirmed (e.g. token expired, network down)
-            error_log('[QES DB] Supabase health check failed: ' . $conn->connect_error);
-        }
-    }
-
-    // Fallback to local MySQL only if Supabase has a connection-level error
+    // Fallback to local MySQL only if Supabase has an immediate connection error
     // AND valid local DB credentials are configured (not placeholder values).
-    if ($conn->connect_error) {
+    if (!empty($conn->connect_error)) {
         $has_local_config = defined('ENV_DB_HOST') && ENV_DB_HOST !== 'your_db_host'
                         && defined('ENV_DB_NAME') && ENV_DB_NAME !== 'your_db_name';
 
@@ -93,12 +84,319 @@ if (!function_exists('csrf_token')) {
     }
 }
 
-/**
- * Rate Limiter for Authentication & Security-Sensitive Operations
- * Protects against brute-force, password-guessing, and credential stuffing attacks.
- */
-if (!function_exists('qes_rate_limit_check')) {
-    function qes_rate_limit_check(string $action, string $key, int $max_attempts = 5, int $decay_seconds = 900): array {
+// =========================================================================
+// Hardened Rate Limiter for Authentication & Security-Sensitive Operations
+// =========================================================================
+
+if (!defined('ADMIN_LOGIN_MAX_ATTEMPTS')) {
+    define('ADMIN_LOGIN_MAX_ATTEMPTS', 5);
+}
+if (!defined('ADMIN_LOGIN_LOCKOUT_SECONDS')) {
+    define('ADMIN_LOGIN_LOCKOUT_SECONDS', 900); // 15 minutes
+}
+if (!defined('ADMIN_LOGIN_IP_MAX_ATTEMPTS')) {
+    define('ADMIN_LOGIN_IP_MAX_ATTEMPTS', 20); // Lenient per-IP ceiling
+}
+if (!defined('ADMIN_LOGIN_IP_LOCKOUT_SECONDS')) {
+    define('ADMIN_LOGIN_IP_LOCKOUT_SECONDS', 900); // 15 minutes
+}
+
+if (!function_exists('qes_trusted_proxies')) {
+    function qes_trusted_proxies(): array {
+        if (defined('ENV_TRUSTED_PROXIES')) {
+            if (is_array(ENV_TRUSTED_PROXIES)) {
+                return ENV_TRUSTED_PROXIES;
+            }
+            if (is_string(ENV_TRUSTED_PROXIES) && trim(ENV_TRUSTED_PROXIES) !== '') {
+                return array_filter(array_map('trim', explode(',', ENV_TRUSTED_PROXIES)));
+            }
+        }
+        return []; // Empty by default (secure default: trust only REMOTE_ADDR)
+    }
+}
+
+if (!function_exists('qes_client_ip')) {
+    function qes_client_ip(?array $trusted_proxies = null): string {
+        $remote_addr = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $remote_ip = filter_var($remote_addr, FILTER_VALIDATE_IP) ? $remote_addr : '127.0.0.1';
+
+        $trusted = $trusted_proxies !== null ? $trusted_proxies : qes_trusted_proxies();
+
+        // Trust forwarded headers ONLY if REMOTE_ADDR is in the trusted-proxy list
+        if (!empty($trusted) && in_array($remote_ip, $trusted, true)) {
+            $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR'];
+            foreach ($headers as $header) {
+                if (!empty($_SERVER[$header])) {
+                    $candidates = explode(',', $_SERVER[$header]);
+                    foreach ($candidates as $cand) {
+                        $cand = trim($cand);
+                        if (filter_var($cand, FILTER_VALIDATE_IP)) {
+                            return $cand;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $remote_ip;
+    }
+}
+
+if (!function_exists('qes_is_postgres_conn')) {
+    function qes_is_postgres_conn($conn): bool {
+        if ($conn instanceof SupabaseConnection) {
+            return true;
+        }
+        if ($conn instanceof \PDO) {
+            return $conn->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'pgsql';
+        }
+        if ($conn instanceof \mysqli) {
+            return false;
+        }
+        return false;
+    }
+}
+
+if (!function_exists('qes_db_cleanup_expired')) {
+    function qes_db_cleanup_expired($conn): void {
+        // Run probabilistically (~1% of requests)
+        try {
+            if (random_int(1, 100) !== 1) {
+                return;
+            }
+            if (!$conn || (isset($conn->connect_error) && $conn->connect_error)) {
+                return;
+            }
+            if (qes_is_postgres_conn($conn)) {
+                $sql = "DELETE FROM login_attempts WHERE (locked_until IS NOT NULL AND locked_until < NOW()) OR (locked_until IS NULL AND first_attempt < (NOW() - INTERVAL '3600 seconds'))";
+            } else {
+                $sql = "DELETE FROM login_attempts WHERE (locked_until IS NOT NULL AND locked_until < NOW()) OR (locked_until IS NULL AND first_attempt < DATE_SUB(NOW(), INTERVAL 3600 SECOND))";
+            }
+            $conn->query($sql);
+        } catch (\Throwable $e) {
+            // Non-critical background cleanup failure, suppress
+        }
+    }
+}
+
+if (!function_exists('qes_db_rate_limit_check')) {
+    function qes_db_rate_limit_check($conn, string $action, string $key, int $max_attempts, int $decay_seconds): ?array {
+        if (!$conn || (isset($conn->connect_error) && $conn->connect_error)) {
+            return null;
+        }
+        if (is_object($conn) && (get_class($conn) === 'Qes\Tests\Fakes\FakeConnection' || str_ends_with(get_class($conn), 'FakeConnection'))) {
+            return null;
+        }
+        $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
+        $key_hash = hash('sha256', strtolower(trim($clean_action)) . ':' . strtolower(trim($key)));
+
+        try {
+            $stmt = $conn->prepare("SELECT attempts, first_attempt, locked_until, NOW() AS current_db_time FROM login_attempts WHERE key_hash = ? LIMIT 1");
+            if (!$stmt) {
+                return null;
+            }
+            $stmt->bind_param("s", $key_hash);
+            if (!$stmt->execute()) {
+                $stmt->close();
+                return null;
+            }
+            $res = $stmt->get_result();
+            if (!$res || $res->num_rows === 0) {
+                $stmt->close();
+                qes_db_cleanup_expired($conn);
+                return [
+                    'allowed' => true,
+                    'retry_after' => 0,
+                    'remaining' => $max_attempts,
+                    'message' => ''
+                ];
+            }
+
+            $row = $res->fetch_assoc();
+            $stmt->close();
+
+            $attempts = (int)($row['attempts'] ?? 0);
+            $now_ts = !empty($row['current_db_time']) ? strtotime($row['current_db_time']) : time();
+            $locked_ts = !empty($row['locked_until']) ? strtotime($row['locked_until']) : 0;
+            $first_ts = !empty($row['first_attempt']) ? strtotime($row['first_attempt']) : $now_ts;
+
+            if ($locked_ts > $now_ts) {
+                $retry_after = (int)($locked_ts - $now_ts);
+                $mins = max(1, (int)ceil($retry_after / 60));
+                return [
+                    'allowed' => false,
+                    'retry_after' => $retry_after,
+                    'remaining' => 0,
+                    'message' => "Too many failed attempts. Please try again in {$mins} minute(s)."
+                ];
+            }
+
+            // Decay window expired: reset row
+            if (($now_ts - $first_ts) > $decay_seconds) {
+                $del = $conn->prepare("DELETE FROM login_attempts WHERE key_hash = ?");
+                if ($del) {
+                    $del->bind_param("s", $key_hash);
+                    $del->execute();
+                    $del->close();
+                }
+                return [
+                    'allowed' => true,
+                    'retry_after' => 0,
+                    'remaining' => $max_attempts,
+                    'message' => ''
+                ];
+            }
+
+            $remaining = max(0, $max_attempts - $attempts);
+            return [
+                'allowed' => ($attempts < $max_attempts),
+                'retry_after' => 0,
+                'remaining' => $remaining,
+                'message' => ''
+            ];
+        } catch (\Throwable $e) {
+            error_log('[QES RateLimit DB Check Error] ' . $e->getMessage());
+            return null;
+        }
+    }
+}
+
+if (!function_exists('qes_db_rate_limit_record_fail')) {
+    function qes_db_rate_limit_record_fail($conn, string $action, string $key, int $max_attempts = 5, int $lockout_seconds = 900): ?int {
+        if (!$conn || (isset($conn->connect_error) && $conn->connect_error)) {
+            return null;
+        }
+        if (is_object($conn) && (get_class($conn) === 'Qes\Tests\Fakes\FakeConnection' || str_ends_with(get_class($conn), 'FakeConnection'))) {
+            return null;
+        }
+        $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
+        $key_hash = hash('sha256', strtolower(trim($clean_action)) . ':' . strtolower(trim($key)));
+        $is_pg = qes_is_postgres_conn($conn);
+
+        try {
+            if ($is_pg) {
+                $sql = "INSERT INTO login_attempts (key_hash, scope, attempts, first_attempt, locked_until, updated_at)
+                        VALUES (?, ?, 1, NOW(), NULL, NOW())
+                        ON CONFLICT (key_hash) DO UPDATE SET
+                          attempts = CASE
+                            WHEN login_attempts.locked_until IS NOT NULL AND login_attempts.locked_until > NOW()
+                              THEN login_attempts.attempts
+                            WHEN EXTRACT(EPOCH FROM (NOW() - login_attempts.first_attempt)) > ?
+                              THEN 1
+                            ELSE login_attempts.attempts + 1
+                          END,
+                          first_attempt = CASE
+                            WHEN login_attempts.locked_until IS NOT NULL AND login_attempts.locked_until > NOW()
+                              THEN login_attempts.first_attempt
+                            WHEN EXTRACT(EPOCH FROM (NOW() - login_attempts.first_attempt)) > ?
+                              THEN NOW()
+                            ELSE login_attempts.first_attempt
+                          END,
+                          locked_until = CASE
+                            WHEN login_attempts.locked_until IS NOT NULL AND login_attempts.locked_until > NOW()
+                              THEN login_attempts.locked_until
+                            WHEN (login_attempts.attempts + 1) >= ?
+                              AND EXTRACT(EPOCH FROM (NOW() - login_attempts.first_attempt)) <= ?
+                              THEN NOW() + (? * INTERVAL '1 second')
+                            ELSE NULL
+                          END,
+                          updated_at = NOW()
+                        RETURNING attempts";
+                $stmt = $conn->prepare($sql);
+                if (!$stmt) return null;
+                $stmt->bind_param("ssiiiii", $key_hash, $clean_action, $lockout_seconds, $lockout_seconds, $max_attempts, $lockout_seconds, $lockout_seconds);
+                if (!$stmt->execute()) {
+                    $stmt->close();
+                    return null;
+                }
+                $res = $stmt->get_result();
+                $attempts = 1;
+                if ($res && $row = $res->fetch_assoc()) {
+                    $attempts = (int)($row['attempts'] ?? 1);
+                }
+                $stmt->close();
+                return $attempts;
+            } else {
+                $sql = "INSERT INTO login_attempts (key_hash, scope, attempts, first_attempt, locked_until, updated_at)
+                        VALUES (?, ?, 1, NOW(), NULL, NOW())
+                        ON DUPLICATE KEY UPDATE
+                          attempts = IF(locked_until IS NOT NULL AND locked_until > NOW(),
+                            attempts,
+                            IF(TIMESTAMPDIFF(SECOND, first_attempt, NOW()) > ?, 1, attempts + 1)
+                          ),
+                          first_attempt = IF(locked_until IS NOT NULL AND locked_until > NOW(),
+                            first_attempt,
+                            IF(TIMESTAMPDIFF(SECOND, first_attempt, NOW()) > ?, NOW(), first_attempt)
+                          ),
+                          locked_until = IF(locked_until IS NOT NULL AND locked_until > NOW(),
+                            locked_until,
+                            IF((attempts + 1) >= ? AND TIMESTAMPDIFF(SECOND, first_attempt, NOW()) <= ?,
+                              DATE_ADD(NOW(), INTERVAL ? SECOND),
+                              NULL
+                            )
+                          ),
+                          updated_at = NOW()";
+                $stmt = $conn->prepare($sql);
+                if (!$stmt) return null;
+                $stmt->bind_param("ssiiiii", $key_hash, $clean_action, $lockout_seconds, $lockout_seconds, $max_attempts, $lockout_seconds, $lockout_seconds);
+                if (!$stmt->execute()) {
+                    $stmt->close();
+                    return null;
+                }
+                $stmt->close();
+
+                $sel = $conn->prepare("SELECT attempts FROM login_attempts WHERE key_hash = ? LIMIT 1");
+                if ($sel) {
+                    $sel->bind_param("s", $key_hash);
+                    $sel->execute();
+                    $res = $sel->get_result();
+                    $attempts = 1;
+                    if ($res && $row = $res->fetch_assoc()) {
+                        $attempts = (int)($row['attempts'] ?? 1);
+                    }
+                    $sel->close();
+                    return $attempts;
+                }
+                return 1;
+            }
+        } catch (\Throwable $e) {
+            error_log('[QES RateLimit DB Fail Error] ' . $e->getMessage());
+            return null;
+        }
+    }
+}
+
+if (!function_exists('qes_db_rate_limit_clear')) {
+    function qes_db_rate_limit_clear($conn, string $action, string $key): bool {
+        if (!$conn || (isset($conn->connect_error) && $conn->connect_error)) {
+            return false;
+        }
+        if (is_object($conn) && (get_class($conn) === 'Qes\Tests\Fakes\FakeConnection' || str_ends_with(get_class($conn), 'FakeConnection'))) {
+            return false;
+        }
+        $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
+        $key_hash = hash('sha256', strtolower(trim($clean_action)) . ':' . strtolower(trim($key)));
+        try {
+            $stmt = $conn->prepare("DELETE FROM login_attempts WHERE key_hash = ?");
+            if ($stmt) {
+                $stmt->bind_param("s", $key_hash);
+                $res = $stmt->execute();
+                $stmt->close();
+                return (bool)$res;
+            }
+        } catch (\Throwable $e) {
+            error_log('[QES RateLimit DB Clear Error] ' . $e->getMessage());
+        }
+        return false;
+    }
+}
+
+// -------------------------------------------------------------------------
+// File Store Fallback (with atomic flock to prevent race conditions)
+// -------------------------------------------------------------------------
+
+if (!function_exists('qes_file_rate_limit_check')) {
+    function qes_file_rate_limit_check(string $action, string $key, int $max_attempts = 5, int $decay_seconds = 900): array {
         $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
         $hashed_key = hash('sha256', strtolower(trim($key)));
         $temp_dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_limits';
@@ -147,8 +445,8 @@ if (!function_exists('qes_rate_limit_check')) {
     }
 }
 
-if (!function_exists('qes_rate_limit_record_fail')) {
-    function qes_rate_limit_record_fail(string $action, string $key, int $max_attempts = 5, int $lockout_seconds = 900): int {
+if (!function_exists('qes_file_rate_limit_record_fail')) {
+    function qes_file_rate_limit_record_fail(string $action, string $key, int $max_attempts = 5, int $lockout_seconds = 900): int {
         $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
         $hashed_key = hash('sha256', strtolower(trim($key)));
         $temp_dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_limits';
@@ -159,40 +457,258 @@ if (!function_exists('qes_rate_limit_record_fail')) {
         $now = time();
         $data = ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
 
-        if (file_exists($file)) {
-            $content = @file_get_contents($file);
-            if ($content) {
-                $decoded = json_decode($content, true);
-                if (is_array($decoded)) {
-                    $data = array_merge($data, $decoded);
+        $fp = @fopen($file, 'c+');
+        if ($fp) {
+            if (@flock($fp, LOCK_EX)) {
+                $content = '';
+                while (!feof($fp)) {
+                    $content .= fread($fp, 8192);
                 }
+                if (!empty($content)) {
+                    $decoded = json_decode($content, true);
+                    if (is_array($decoded)) {
+                        $data = array_merge($data, $decoded);
+                    }
+                }
+
+                // Reset if previous window expired
+                if (($now - (int)($data['first_attempt'] ?? $now)) > $lockout_seconds && empty($data['locked_until'])) {
+                    $data['attempts'] = 0;
+                    $data['first_attempt'] = $now;
+                }
+
+                // If not locked, increment
+                if (empty($data['locked_until']) || $data['locked_until'] <= $now) {
+                    $data['attempts'] = ((int)($data['attempts'] ?? 0)) + 1;
+                    if ($data['attempts'] >= $max_attempts) {
+                        $data['locked_until'] = $now + $lockout_seconds;
+                    }
+                }
+
+                ftruncate($fp, 0);
+                rewind($fp);
+                fwrite($fp, json_encode($data));
+                fflush($fp);
+                flock($fp, LOCK_UN);
             }
+            fclose($fp);
+            return (int)$data['attempts'];
         }
 
-        // Reset if previous window expired
-        if (($now - (int)($data['first_attempt'] ?? $now)) > $lockout_seconds && empty($data['locked_until'])) {
-            $data['attempts'] = 0;
-            $data['first_attempt'] = $now;
-        }
-
-        $data['attempts'] = ((int)($data['attempts'] ?? 0)) + 1;
-        if ($data['attempts'] >= $max_attempts) {
-            $data['locked_until'] = $now + $lockout_seconds;
-        }
-
-        @file_put_contents($file, json_encode($data), LOCK_EX);
-        return (int)$data['attempts'];
+        return 1;
     }
 }
 
-if (!function_exists('qes_rate_limit_clear')) {
-    function qes_rate_limit_clear(string $action, string $key): void {
+if (!function_exists('qes_file_rate_limit_clear')) {
+    function qes_file_rate_limit_clear(string $action, string $key): void {
         $clean_action = preg_replace('/[^a-z0-9_-]/i', '', $action);
         $hashed_key = hash('sha256', strtolower(trim($key)));
         $file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_limits' . DIRECTORY_SEPARATOR . $clean_action . '_' . $hashed_key . '.json';
         if (file_exists($file)) {
             @unlink($file);
         }
+    }
+}
+
+// -------------------------------------------------------------------------
+// Unified Rate Limiter Public API (Preserves Existing Signatures & Shapes)
+// -------------------------------------------------------------------------
+
+if (!function_exists('qes_rate_limit_check')) {
+    function qes_rate_limit_check(string $action, string $key, int $max_attempts = 5, int $decay_seconds = 900, $conn = null): array {
+        if ($conn === null) {
+            global $conn;
+        }
+        if ($conn) {
+            $db_res = qes_db_rate_limit_check($conn, $action, $key, $max_attempts, $decay_seconds);
+            if ($db_res !== null) {
+                return $db_res;
+            }
+        }
+        return qes_file_rate_limit_check($action, $key, $max_attempts, $decay_seconds);
+    }
+}
+
+if (!function_exists('qes_rate_limit_record_fail')) {
+    function qes_rate_limit_record_fail(string $action, string $key, int $max_attempts = 5, int $lockout_seconds = 900, $conn = null): int {
+        if ($conn === null) {
+            global $conn;
+        }
+        if ($conn) {
+            $db_res = qes_db_rate_limit_record_fail($conn, $action, $key, $max_attempts, $lockout_seconds);
+            if ($db_res !== null) {
+                return $db_res;
+            }
+        }
+        return qes_file_rate_limit_record_fail($action, $key, $max_attempts, $lockout_seconds);
+    }
+}
+
+if (!function_exists('qes_rate_limit_clear')) {
+    function qes_rate_limit_clear(string $action, string $key, $conn = null): void {
+        if ($conn === null) {
+            global $conn;
+        }
+        if ($conn) {
+            qes_db_rate_limit_clear($conn, $action, $key);
+        }
+        qes_file_rate_limit_clear($action, $key);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Admin Authentication Hardening Helpers
+// -------------------------------------------------------------------------
+
+if (!function_exists('qes_resolve_admin_user')) {
+    function qes_resolve_admin_user($conn, string $identifier): ?array {
+        if (!$conn || (isset($conn->connect_error) && $conn->connect_error)) {
+            return null;
+        }
+        $trimmed = trim($identifier);
+        if ($trimmed === '') {
+            return null;
+        }
+        try {
+            $stmt = $conn->prepare("SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1");
+            if (!$stmt) {
+                return null;
+            }
+            $stmt->bind_param("sss", $trimmed, $trimmed, $trimmed);
+            if (!$stmt->execute()) {
+                $stmt->close();
+                return null;
+            }
+            $res = $stmt->get_result();
+            $user = ($res && $res->num_rows === 1) ? $res->fetch_assoc() : null;
+            $stmt->close();
+            return $user;
+        } catch (\Throwable $e) {
+            error_log('[QES Resolve Admin User Error] ' . $e->getMessage());
+            return null;
+        }
+    }
+}
+
+if (!function_exists('qes_admin_login_account_key')) {
+    function qes_admin_login_account_key(?array $user, string $identifier): string {
+        if ($user !== null && !empty($user['id'])) {
+            return 'user:' . (int)$user['id'];
+        }
+        return 'unknown:' . hash('sha256', strtolower(trim($identifier)));
+    }
+}
+
+if (!function_exists('qes_process_admin_login')) {
+    function qes_process_admin_login($conn, string $identifier, string $password, ?string $client_ip = null): array {
+        $ip = $client_ip !== null ? $client_ip : qes_client_ip();
+        $ip_key = 'ip:' . $ip;
+
+        // 1. Check lenient per-IP cap (~20 fails / 15 min)
+        $ip_check = qes_rate_limit_check('admin_login_ip', $ip_key, ADMIN_LOGIN_IP_MAX_ATTEMPTS, ADMIN_LOGIN_IP_LOCKOUT_SECONDS, $conn);
+        if (!$ip_check['allowed']) {
+            $mins = max(1, (int)ceil($ip_check['retry_after'] / 60));
+            return [
+                'success' => false,
+                'user' => null,
+                'error' => "Too many failed attempts from your IP address. Please try again in {$mins} minute(s).",
+                'locked' => true,
+                'retry_after' => $ip_check['retry_after'],
+                'remaining' => 0,
+                'lock_type' => 'ip'
+            ];
+        }
+
+        // 2. Resolve identifier to user
+        $user = qes_resolve_admin_user($conn, $identifier);
+        $account_key = qes_admin_login_account_key($user, $identifier);
+
+        // 3. Check account lock BEFORE password_verify (locks reject valid passwords too)
+        $acct_check = qes_rate_limit_check('admin_login', $account_key, ADMIN_LOGIN_MAX_ATTEMPTS, ADMIN_LOGIN_LOCKOUT_SECONDS, $conn);
+        if (!$acct_check['allowed']) {
+            $mins = max(1, (int)ceil($acct_check['retry_after'] / 60));
+            return [
+                'success' => false,
+                'user' => null,
+                'error' => "Too many failed attempts. Please try again in {$mins} minute(s).",
+                'locked' => true,
+                'retry_after' => $acct_check['retry_after'],
+                'remaining' => 0,
+                'lock_type' => 'account'
+            ];
+        }
+
+        // 4. Verify password
+        $is_valid_pw = $user && !empty($user['password']) && password_verify($password, $user['password']);
+
+        if ($is_valid_pw) {
+            // Verify account status and admin privileges
+            if (($user['status'] ?? '') !== 'approved') {
+                return [
+                    'success' => false,
+                    'user' => null,
+                    'error' => "Your account is " . htmlspecialchars($user['status'] ?? 'inactive') . ".",
+                    'locked' => false,
+                    'retry_after' => 0,
+                    'remaining' => $acct_check['remaining'],
+                    'lock_type' => ''
+                ];
+            }
+            if (!in_array($user['role'] ?? '', ['admin', 'super_admin', 'main_admin'], true)) {
+                return [
+                    'success' => false,
+                    'user' => null,
+                    'error' => "Access denied. The Admin Portal is restricted to authorized administrators.",
+                    'locked' => false,
+                    'retry_after' => 0,
+                    'remaining' => $acct_check['remaining'],
+                    'lock_type' => ''
+                ];
+            }
+
+            // Success clears the account counter ONLY (IP counter remains unaffected)
+            qes_rate_limit_clear('admin_login', $account_key, $conn);
+
+            return [
+                'success' => true,
+                'user' => $user,
+                'error' => '',
+                'locked' => false,
+                'retry_after' => 0,
+                'remaining' => ADMIN_LOGIN_MAX_ATTEMPTS,
+                'lock_type' => ''
+            ];
+        }
+
+        // 5. Invalid credentials (wrong password or nonexistent user)
+        // Record failure on both account counter and per-IP counter
+        $fails = qes_rate_limit_record_fail('admin_login', $account_key, ADMIN_LOGIN_MAX_ATTEMPTS, ADMIN_LOGIN_LOCKOUT_SECONDS, $conn);
+        qes_rate_limit_record_fail('admin_login_ip', $ip_key, ADMIN_LOGIN_IP_MAX_ATTEMPTS, ADMIN_LOGIN_IP_LOCKOUT_SECONDS, $conn);
+
+        $remaining = max(0, ADMIN_LOGIN_MAX_ATTEMPTS - $fails);
+
+        if ($fails >= ADMIN_LOGIN_MAX_ATTEMPTS) {
+            return [
+                'success' => false,
+                'user' => null,
+                'error' => "Too many failed attempts. Please try again in 15 minute(s).",
+                'locked' => true,
+                'retry_after' => ADMIN_LOGIN_LOCKOUT_SECONDS,
+                'remaining' => 0,
+                'lock_type' => 'account'
+            ];
+        }
+
+        // Uniform message regardless of whether user exists or not (prevents enumeration)
+        return [
+            'success' => false,
+            'user' => null,
+            'error' => "Invalid credentials. {$remaining} attempt(s) left before a 15-minute lockout.",
+            'locked' => false,
+            'retry_after' => 0,
+            'remaining' => $remaining,
+            'lock_type' => ''
+        ];
     }
 }
 
@@ -321,10 +837,7 @@ if (!function_exists('track_user_session')) {
         }
         $_SESSION['last_session_tracked_at'] = $now;
 
-        $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        if (strpos($ip, ',') !== false) {
-            $ip = trim(explode(',', $ip)[0]);
-        }
+        $ip = qes_client_ip();
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown Browser';
         $device = get_device_info($ua);
         $device_name = $device['name'];
@@ -440,26 +953,141 @@ if (!function_exists('require_main_admin')) {
     }
 }
 
+// ============================================================
+// SYSTEM CACHING & LOAD BALANCING INFRASTRUCTURE
+// ============================================================
+if (!class_exists('QesCache')) {
+    class QesCache {
+        private static array $memory = [];
+        private static ?string $cache_dir = null;
+
+        public static function getCacheDir(): string {
+            if (self::$cache_dir === null) {
+                $dir = __DIR__ . '/cache';
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0755, true);
+                }
+                if (!is_writable($dir)) {
+                    $dir = sys_get_temp_dir() . '/tyoy_qes_cache';
+                    if (!is_dir($dir)) {
+                        @mkdir($dir, 0755, true);
+                    }
+                }
+                self::$cache_dir = $dir;
+            }
+            return self::$cache_dir;
+        }
+
+        public static function get(string $key, mixed $default = null): mixed {
+            if (array_key_exists($key, self::$memory)) {
+                return self::$memory[$key];
+            }
+
+            $file = self::getCacheDir() . '/' . md5($key) . '.cache';
+            if (is_file($file)) {
+                $content = @file_get_contents($file);
+                if ($content !== false) {
+                    $data = @unserialize($content);
+                    if (is_array($data) && isset($data['exp'], $data['val'])) {
+                        if ($data['exp'] === 0 || $data['exp'] >= time()) {
+                            self::$memory[$key] = $data['val'];
+                            return $data['val'];
+                        } else {
+                            @unlink($file);
+                        }
+                    }
+                }
+            }
+
+            return $default;
+        }
+
+        public static function set(string $key, mixed $val, int $ttl = 300): bool {
+            self::$memory[$key] = $val;
+            $file = self::getCacheDir() . '/' . md5($key) . '.cache';
+            $exp = $ttl > 0 ? (time() + $ttl) : 0;
+            $payload = serialize(['exp' => $exp, 'val' => $val]);
+            return (bool)@file_put_contents($file, $payload, LOCK_EX);
+        }
+
+        public static function remember(string $key, int $ttl, callable $callback): mixed {
+            $val = self::get($key);
+            if ($val !== null) {
+                return $val;
+            }
+            $val = $callback();
+            self::set($key, $val, $ttl);
+            return $val;
+        }
+
+        public static function delete(string $key): bool {
+            unset(self::$memory[$key]);
+            $file = self::getCacheDir() . '/' . md5($key) . '.cache';
+            if (is_file($file)) {
+                return @unlink($file);
+            }
+            return true;
+        }
+
+        public static function flush(): bool {
+            self::$memory = [];
+            $dir = self::getCacheDir();
+            if (is_dir($dir)) {
+                $files = glob($dir . '/*.cache');
+                if ($files) {
+                    foreach ($files as $f) {
+                        @unlink($f);
+                    }
+                }
+            }
+            return true;
+        }
+    }
+}
+
+if (!function_exists('qes_load_balancer_info')) {
+    function qes_load_balancer_info(): array {
+        $client_ip = function_exists('qes_client_ip') ? qes_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+        $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        return [
+            'node_id'     => gethostname() ?: ('node-' . substr(md5($_SERVER['SERVER_ADDR'] ?? 'localhost'), 0, 8)),
+            'client_ip'   => $client_ip,
+            'is_https'    => $is_https,
+            'proto'       => $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ($is_https ? 'https' : 'http'),
+            'cached_keys' => count(glob(QesCache::getCacheDir() . '/*.cache') ?: [])
+        ];
+    }
+}
+
 if (!function_exists('get_setting')) {
     function get_setting($conn, $key, $default = '') {
         static $settings_cache = null;
 
         if ($key === '__invalidate_cache__') {
             $settings_cache = null;
+            QesCache::delete('all_settings_map');
+            QesCache::delete('packages_pricing_theme_party');
+            QesCache::delete('packages_pricing_wedding');
             return '';
         }
 
         if ($settings_cache === null) {
-            $settings_cache = [];
-            if (is_object($conn) && method_exists($conn, 'query')) {
-                try {
-                    $res = $conn->query("SELECT setting_key, setting_value FROM settings");
-                    if ($res) {
-                        while ($row = $res->fetch_assoc()) {
-                            $settings_cache[$row['setting_key']] = $row['setting_value'];
+            $cached = QesCache::get('all_settings_map');
+            if (is_array($cached)) {
+                $settings_cache = $cached;
+            } else {
+                $settings_cache = [];
+                if (is_object($conn) && method_exists($conn, 'query')) {
+                    try {
+                        $res = $conn->query("SELECT setting_key, setting_value FROM settings");
+                        if ($res) {
+                            while ($row = $res->fetch_assoc()) {
+                                $settings_cache[$row['setting_key']] = $row['setting_value'];
+                            }
                         }
-                    }
-                } catch (\Throwable $e) {}
+                        QesCache::set('all_settings_map', $settings_cache, 600);
+                    } catch (\Throwable $e) {}
+                }
             }
         }
 
@@ -478,6 +1106,131 @@ if (!function_exists('set_setting')) {
             return $success;
         }
         return false;
+    }
+}
+
+// ============================================================
+// CLOUDFLARE TURNSTILE CAPTCHA PROTECTION HELPERS
+// ============================================================
+if (!function_exists('qes_get_turnstile_site_key')) {
+    function qes_get_turnstile_site_key($conn = null): string {
+        if ($conn && function_exists('get_setting')) {
+            $db_key = get_setting($conn, 'turnstile_site_key', '');
+            if (!empty($db_key)) return trim((string)$db_key);
+        }
+        return defined('ENV_TURNSTILE_SITE_KEY') ? trim((string)ENV_TURNSTILE_SITE_KEY) : '1x00000000000000000000AA';
+    }
+}
+
+if (!function_exists('qes_get_turnstile_secret_key')) {
+    function qes_get_turnstile_secret_key($conn = null): string {
+        if ($conn && function_exists('get_setting')) {
+            $db_key = get_setting($conn, 'turnstile_secret_key', '');
+            if (!empty($db_key)) return trim((string)$db_key);
+        }
+        return defined('ENV_TURNSTILE_SECRET_KEY') ? trim((string)ENV_TURNSTILE_SECRET_KEY) : '1x0000000000000000000000000000000AA';
+    }
+}
+
+if (!function_exists('qes_is_turnstile_enabled')) {
+    function qes_is_turnstile_enabled($conn = null): bool {
+        if ($conn && function_exists('get_setting')) {
+            $status = get_setting($conn, 'turnstile_enabled', '1');
+            if ($status === '0' || $status === 'false') return false;
+        }
+        $site_key = qes_get_turnstile_site_key($conn);
+        $secret_key = qes_get_turnstile_secret_key($conn);
+        return (!empty($site_key) && !empty($secret_key));
+    }
+}
+
+if (!function_exists('qes_verify_turnstile')) {
+    function qes_verify_turnstile(?string $token, ?string $client_ip = null, $conn = null): array {
+        if (!qes_is_turnstile_enabled($conn)) {
+            return ['success' => true, 'error' => null];
+        }
+
+        $token = trim((string)$token);
+        if (empty($token)) {
+            return [
+                'success' => false,
+                'error' => 'Please complete the Cloudflare Turnstile security check.'
+            ];
+        }
+
+        $secret_key = qes_get_turnstile_secret_key($conn);
+        if (empty($secret_key)) {
+            return ['success' => true, 'error' => null];
+        }
+
+        // Cloudflare official test dummy keys
+        if ($secret_key === '1x0000000000000000000000000000000AA') {
+            return ['success' => true, 'error' => null];
+        }
+        if ($secret_key === '2x0000000000000000000000000000000AA') {
+            return [
+                'success' => false,
+                'error' => 'Cloudflare Turnstile test verification failed (always-fails test key).'
+            ];
+        }
+
+        $post_data = [
+            'secret'   => $secret_key,
+            'response' => $token,
+        ];
+        if (!empty($client_ip)) {
+            $post_data['remoteip'] = $client_ip;
+        }
+
+        $url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+        $response = null;
+
+        if (function_exists('curl_init')) {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_data));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            $response = curl_exec($ch);
+            curl_close($ch);
+        }
+
+        if ($response === false || $response === null) {
+            $opts = [
+                'http' => [
+                    'method'  => 'POST',
+                    'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
+                    'content' => http_build_query($post_data),
+                    'timeout' => 10
+                ]
+            ];
+            $context = stream_context_create($opts);
+            $response = @file_get_contents($url, false, $context);
+        }
+
+        if ($response === false || empty($response)) {
+            error_log('[QES Turnstile] Could not connect to Cloudflare verification API.');
+            return [
+                'success' => false,
+                'error' => 'Unable to verify Cloudflare security challenge due to a network error. Please try again.'
+            ];
+        }
+
+        $result = json_decode($response, true);
+        if (!is_array($result) || empty($result['success'])) {
+            $err_codes = isset($result['error-codes']) ? implode(', ', (array)$result['error-codes']) : 'invalid-input-response';
+            error_log("[QES Turnstile] Verification failed: " . $err_codes);
+            return [
+                'success' => false,
+                'error' => 'Security challenge validation failed. Please check the box again to continue.',
+                'error_codes' => $result['error-codes'] ?? []
+            ];
+        }
+
+        return ['success' => true, 'error' => null];
     }
 }
 
@@ -1196,6 +1949,21 @@ if (!function_exists('get_default_packages_pricing')) {
                         ['id' => 'w_cat_500', 'label' => '500 pax', 'price' => 235000, 'value' => 'Catering: 500 pax'],
                     ]
                 ],
+                'catering_addons' => [
+                    'category_title' => 'Catering Inclusions & Add-ons',
+                    'icon' => 'fa-bowl-food',
+                    'package' => 'catering',
+                    'type' => 'checkbox',
+                    'field' => 'svc_catering_addons[]',
+                    'badge' => 'Pick Any',
+                    'items' => [
+                        ['id' => 'w_cat_add_f4', 'label' => 'Food: 4 main courses', 'price' => 0, 'value' => 'Food: 4 main courses'],
+                        ['id' => 'w_cat_add_f5', 'label' => 'Food: 5 main courses', 'price' => 0, 'value' => 'Food: 5 main courses'],
+                        ['id' => 'w_cat_add_f6', 'label' => 'Food: 6 main courses', 'price' => 0, 'value' => 'Food: 6 main courses'],
+                        ['id' => 'w_cat_add_s_basic', 'label' => 'Styling: Basic Presentation', 'price' => 0, 'value' => 'Catering Presentation: Basic'],
+                        ['id' => 'w_cat_add_s_prem',  'label' => 'Styling: Premium Presentation', 'price' => 0, 'value' => 'Catering Presentation: Premium'],
+                    ]
+                ],
                 'styling' => [
                     'category_title' => 'Styling',
                     'icon' => 'fa-wand-magic-sparkles',
@@ -1368,6 +2136,12 @@ if (!function_exists('get_default_packages_pricing')) {
 
 if (!function_exists('get_packages_pricing')) {
     function get_packages_pricing($conn, $family = 'theme_party') {
+        $cache_key = 'packages_pricing_' . $family;
+        $cached = QesCache::get($cache_key);
+        if ($cached !== null && is_array($cached)) {
+            return $cached;
+        }
+
         $all_defaults = get_default_packages_pricing();
         if (!isset($all_defaults[$family])) {
             $family = 'theme_party';
@@ -1376,10 +2150,12 @@ if (!function_exists('get_packages_pricing')) {
 
         $raw = get_setting($conn, 'pricing_packages', '');
         if (empty($raw)) {
+            QesCache::set($cache_key, $defaults, 300);
             return $defaults;
         }
         $data = json_decode($raw, true);
         if (!is_array($data)) {
+            QesCache::set($cache_key, $defaults, 300);
             return $defaults;
         }
 
@@ -1391,6 +2167,7 @@ if (!function_exists('get_packages_pricing')) {
 
         $family_data = $data[$family] ?? null;
         if (!is_array($family_data) || empty($family_data)) {
+            QesCache::set($cache_key, $defaults, 300);
             return $defaults;
         }
 
@@ -1424,6 +2201,7 @@ if (!function_exists('get_packages_pricing')) {
             }
         }
 
+        QesCache::set($cache_key, $result, 300);
         return $result;
     }
 }
@@ -1452,7 +2230,12 @@ if (!function_exists('save_packages_pricing')) {
 
         $existing[$family] = $pricing_data;
         $json = json_encode($existing, JSON_UNESCAPED_UNICODE);
-        return set_setting($conn, 'pricing_packages', $json);
+        $ok = set_setting($conn, 'pricing_packages', $json);
+        if ($ok) {
+            QesCache::delete('packages_pricing_theme_party');
+            QesCache::delete('packages_pricing_wedding');
+        }
+        return $ok;
     }
 }
 

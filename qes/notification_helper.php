@@ -335,6 +335,12 @@ class NotificationHelper {
         $enc_name     = qes_encrypt($recipient_name, false);
         $enc_contact  = qes_encrypt($recipient_contact, true);
 
+        // Enforce valid database check constraint values for Supabase ('approval','rejection','reminder','custom')
+        $valid_templates = ['approval', 'rejection', 'reminder', 'custom'];
+        if (!in_array($template_type, $valid_templates, true)) {
+            $template_type = 'custom';
+        }
+
         $stmt = $conn->prepare(
             "INSERT INTO notifications
                 (booking_id, recipient_name, recipient_contact, channel, template_type,
@@ -481,7 +487,7 @@ class NotificationHelper {
               . '<div style="background: #f0fdf4; border: 2px dashed #16a34a; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">'
               . '<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #15803d; font-weight: 700; margin-bottom: 6px;">Your One-Time Verification Code</div>'
               . '<div style="font-family: monospace, Courier, monospace; font-size: 38px; font-weight: 800; color: #14532d; letter-spacing: 12px;">' . htmlspecialchars($code) . '</div>'
-              . '<div style="font-size: 12px; color: #166534; margin-top: 6px; font-weight: 600;">&#9201; Valid for 10 minutes only</div>'
+              . '<div style="font-size: 12px; color: #166534; margin-top: 6px; font-weight: 600;">&#9201; Valid for 5 minutes only</div>'
               . '</div>'
               . '<h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700; color: #111827; text-transform: uppercase; letter-spacing: 0.05em;">Pending Booking Summary</h4>'
               . '<table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 22px; background: #f9fafb; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb;">'

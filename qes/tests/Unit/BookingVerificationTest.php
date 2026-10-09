@@ -60,7 +60,7 @@ class BookingVerificationTest extends TestCase
         $this->assertTrue($res['requires_verification']);
         $this->assertNotEmpty($res['verification_token']);
         $this->assertSame('m***a@example.com', $res['masked_email']);
-        $this->assertSame(600, $res['expires_in']);
+        $this->assertSame(300, $res['expires_in']);
 
         // Assert session contains staged data
         $this->assertArrayHasKey('pending_booking_verification', $_SESSION);
@@ -278,7 +278,7 @@ class BookingVerificationTest extends TestCase
         // Resend should now succeed
         $resend2 = BookingVerificationHelper::resendCode($this->conn, $token);
         $this->assertTrue($resend2['success']);
-        $this->assertSame(600, $resend2['expires_in']);
+        $this->assertSame(300, $resend2['expires_in']);
 
         $newCode = $_SESSION['pending_booking_verification']['code'];
         $this->assertSame(6, strlen($newCode));

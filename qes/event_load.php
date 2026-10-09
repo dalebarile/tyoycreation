@@ -8,6 +8,7 @@ if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'super_a
     echo json_encode(['error' => 'Unauthorized']);
     exit;
 }
+session_write_close();
 
 $query = "SELECT id, reference_no, client_name, client_email, client_phone, event_title, event_type, event_start, event_end, guest_count, location_venue, service_requirements, special_notes, status FROM bookings WHERE status = 'approved' ORDER BY event_start ASC";
 

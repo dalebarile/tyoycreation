@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $full_name = trim($_POST['full_name'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    $phone = preg_replace('/[^0-9]/', '', trim($_POST['phone'] ?? ''));
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
@@ -330,7 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="register-field">
                     <label>Phone Number</label>
                     <div class="input-group">
-                        <input type="tel" name="phone" placeholder="0917-xxx-xxxx" value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" autocomplete="tel">
+                        <input type="tel" name="phone" placeholder="09XXXXXXXXX (11 digits)" value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" autocomplete="tel" inputmode="numeric" pattern="[0-9]*" maxlength="11" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11);" onkeypress="if (!/[0-9]/.test(event.key)) event.preventDefault();">
                     </div>
                 </div>
             </div>

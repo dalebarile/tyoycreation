@@ -124,7 +124,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             exit;
         }
 
-        $stmt = $conn->prepare("SELECT * FROM users WHERE (email = ? OR username = ?) LIMIT 1");
+        $stmt = $conn->prepare("SELECT * FROM users WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)) LIMIT 1");
         $stmt->bind_param("ss", $identifier, $identifier);
         $stmt->execute();
         $res = $stmt->get_result();
@@ -473,15 +473,98 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             exit;
         }
 
-        $stmt = $conn->prepare("SELECT id, username, full_name, email, status FROM users WHERE (email = ? OR username = ?) LIMIT 1");
-        $stmt->bind_param("ss", $identifier, $identifier);
-        $stmt->execute();
-        $res = $stmt->get_result();
+        // Smart User Resolution: Case-insensitive, Token match, and Typo tolerance
+        if (!function_exists('qes_find_user_for_auth')) {
+            function qes_find_user_for_auth($conn, string $raw_identifier): ?array {
+                $id_trim = trim($raw_identifier);
+                if (empty($id_trim)) return null;
 
-        if ($res && $res->num_rows === 1) {
-            $user = $res->fetch_assoc();
-            $stmt->close();
+                // 1. Direct exact case-insensitive match on email, username, or full_name
+                $stmt = $conn->prepare("SELECT id, username, full_name, email, status FROM users WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) OR LOWER(full_name) = LOWER(?)) LIMIT 1");
+                if ($stmt) {
+                    $stmt->bind_param("sss", $id_trim, $id_trim, $id_trim);
+                    $stmt->execute();
+                    $res = $stmt->get_result();
+                    if ($res && $res->num_rows === 1) {
+                        $u = $res->fetch_assoc();
+                        $stmt->close();
+                        return $u;
+                    }
+                    $stmt->close();
+                }
 
+                // 2. Fetch active approved accounts for token & typo-tolerant matching
+                $stmt = $conn->prepare("SELECT id, username, full_name, email, status FROM users WHERE status = 'approved'");
+                if (!$stmt) return null;
+                $stmt->execute();
+                $all = $stmt->get_result();
+                $candidates = [];
+                while ($row = $all->fetch_assoc()) {
+                    $candidates[] = $row;
+                }
+                $stmt->close();
+
+                $clean_input = preg_replace('/[^a-z0-9]/', '', strtolower($id_trim));
+                $input_words = array_filter(explode(' ', strtolower(preg_replace('/[^a-z0-9 ]/', ' ', $id_trim))));
+
+                foreach ($candidates as $row) {
+                    $clean_full = preg_replace('/[^a-z0-9]/', '', strtolower($row['full_name'] ?? ''));
+                    if (!empty($clean_full) && !empty($clean_input)) {
+                        if ($clean_full === $clean_input || str_contains($clean_full, $clean_input) || str_contains($clean_input, $clean_full)) {
+                            return $row;
+                        }
+                    }
+                    if (count($input_words) >= 2) {
+                        $fn_lower = strtolower($row['full_name'] ?? '');
+                        $all_present = true;
+                        foreach ($input_words as $w) {
+                            if (!str_contains($fn_lower, $w)) {
+                                $all_present = false;
+                                break;
+                            }
+                        }
+                        if ($all_present) {
+                            return $row;
+                        }
+                    }
+                }
+
+                // 3. Typo-tolerant matching (Levenshtein distance <= 2 on username or email prefix)
+                $input_email = strtolower($id_trim);
+                $is_email = str_contains($input_email, '@');
+                $input_prefix = $is_email ? substr($input_email, 0, strpos($input_email, '@')) : $input_email;
+                $input_domain = $is_email ? substr(strrchr($input_email, '@'), 1) : '';
+
+                $best_match = null;
+                $min_distance = 999;
+
+                foreach ($candidates as $row) {
+                    $row_email = strtolower($row['email'] ?? '');
+                    $row_uname = strtolower($row['username'] ?? '');
+                    $row_domain = str_contains($row_email, '@') ? substr(strrchr($row_email, '@'), 1) : '';
+                    $row_prefix = str_contains($row_email, '@') ? substr($row_email, 0, strpos($row_email, '@')) : $row_email;
+
+                    if ($is_email && !empty($input_domain) && !empty($row_domain)) {
+                        if ($input_domain !== $row_domain) continue;
+                    }
+
+                    $dist1 = levenshtein($input_prefix, $row_prefix);
+                    $dist2 = levenshtein($input_prefix, $row_uname);
+                    $dist = min($dist1, $dist2);
+
+                    if ($dist <= 2 && strlen($input_prefix) >= 4 && $dist < $min_distance) {
+                        $min_distance = $dist;
+                        $best_match = $row;
+                    }
+                }
+
+                return $best_match;
+            }
+        }
+
+        $user = qes_find_user_for_auth($conn, $identifier);
+
+        if ($user) {
             if ($user['status'] !== 'approved') {
                 echo json_encode(['success' => false, 'message' => 'This account is currently ' . htmlspecialchars($user['status']) . '. Please contact support.']);
                 exit;
@@ -526,7 +609,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
             exit;
         } else {
-            if ($stmt) $stmt->close();
             if (!empty($conn->error)) {
                 error_log('[QES Reset] DB error: ' . $conn->error);
                 echo json_encode([
@@ -538,7 +620,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             qes_rate_limit_record_fail('pw_reset_request', $rate_key, 3, 600);
             echo json_encode([
                 'success' => false,
-                'message' => 'No active account found with that email address or username.'
+                'message' => 'No active account found with that email address or username. Please check your spelling or try entering your registered username.'
             ]);
             exit;
         }
@@ -564,7 +646,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         if (!$rate_check['allowed']) {
             // Invalidate code in DB immediately to stop further attacks
-            $invalidate = $conn->prepare("UPDATE users SET reset_code = NULL, reset_expires_at = NULL WHERE (email = ? OR username = ?)");
+            $invalidate = $conn->prepare("UPDATE users SET reset_code = NULL, reset_expires_at = NULL WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?))");
             $invalidate->bind_param("ss", $identifier, $identifier);
             $invalidate->execute();
             $invalidate->close();
@@ -574,7 +656,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             exit;
         }
 
-        $stmt = $conn->prepare("SELECT id, username, email, reset_code, reset_expires_at FROM users WHERE (email = ? OR username = ?) LIMIT 1");
+        $stmt = $conn->prepare("SELECT id, username, email, reset_code, reset_expires_at FROM users WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)) LIMIT 1");
         $stmt->bind_param("ss", $identifier, $identifier);
         $stmt->execute();
         $res = $stmt->get_result();

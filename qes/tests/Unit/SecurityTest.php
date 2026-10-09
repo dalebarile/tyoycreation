@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Qes\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use Qes\Tests\Fakes\FakeConnection;
 
 class SecurityTest extends TestCase
 {
@@ -140,6 +141,254 @@ class SecurityTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d{6}$/', $code);
         $this->assertGreaterThanOrEqual(100000, (int)$code);
         $this->assertLessThanOrEqual(999999, (int)$code);
+    }
+
+    public function test_admin_login_four_fails_allowed_and_fifth_locks(): void
+    {
+        $conn = new FakeConnection();
+        $ip = '10.0.1.' . random_int(1, 254);
+        $test_user = 'test_usr_' . bin2hex(random_bytes(4));
+
+        // Attempts 1 to 4 should be allowed with warning message
+        for ($i = 1; $i <= 4; $i++) {
+            $res = qes_process_admin_login($conn, $test_user, 'wrong_pass', $ip);
+            $this->assertFalse($res['success'], "Attempt {$i} must not succeed");
+            $this->assertFalse($res['locked'], "Attempt {$i} must not lock yet");
+            $expected_remaining = 5 - $i;
+            $this->assertSame($expected_remaining, $res['remaining'], "Remaining attempts mismatch on try {$i}");
+            $this->assertSame("Invalid credentials. {$expected_remaining} attempt(s) left before a 15-minute lockout.", $res['error']);
+        }
+
+        // 5th failed attempt triggers lockout
+        $res5 = qes_process_admin_login($conn, $test_user, 'wrong_pass', $ip);
+        $this->assertFalse($res5['success']);
+        $this->assertTrue($res5['locked'], '5th failed attempt must trigger lockout');
+        $this->assertSame(0, $res5['remaining']);
+        $this->assertGreaterThanOrEqual(890, $res5['retry_after']);
+        $this->assertStringContainsString('Too many failed attempts', $res5['error']);
+    }
+
+    public function test_admin_login_lockout_expires_and_resets(): void
+    {
+        $test_key = 'test_decay_' . bin2hex(random_bytes(6));
+        qes_rate_limit_clear('test_expire_action', $test_key);
+
+        // Record a failure with a 1-second lockout window
+        $fails = qes_rate_limit_record_fail('test_expire_action', $test_key, 1, 1);
+        $this->assertSame(1, $fails);
+
+        // Immediate check: locked out
+        $check1 = qes_rate_limit_check('test_expire_action', $test_key, 1, 1);
+        $this->assertFalse($check1['allowed'], 'Must be locked immediately after exceeding max attempts');
+        $this->assertGreaterThan(0, $check1['retry_after']);
+
+        // Sleep 2 seconds for decay window to elapse
+        sleep(2);
+
+        // Check after expiration: reset and allowed
+        $check2 = qes_rate_limit_check('test_expire_action', $test_key, 1, 1);
+        $this->assertTrue($check2['allowed'], 'Lockout must expire and allow new attempts after window elapses');
+        $this->assertSame(1, $check2['remaining']);
+    }
+
+    public function test_admin_login_username_email_and_admin_alias_share_one_counter(): void
+    {
+        $admin_pw = password_hash('ComplexPass123!', PASSWORD_BCRYPT);
+        $userData = [
+            'id' => 77,
+            'username' => 'super_admin_alex',
+            'email' => 'alex@eventvista.com',
+            'role' => 'admin',
+            'status' => 'approved',
+            'password' => $admin_pw
+        ];
+
+        $conn = new FakeConnection();
+        $conn->addQueryResult(
+            "SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1",
+            [$userData]
+        );
+
+        $ip = '10.0.2.' . random_int(1, 254);
+        qes_rate_limit_clear('admin_login', 'user:77');
+
+        // 2 fails via username
+        qes_process_admin_login($conn, 'super_admin_alex', 'badpass1', $ip);
+        qes_process_admin_login($conn, 'super_admin_alex', 'badpass2', $ip);
+
+        // 2 fails via email
+        qes_process_admin_login($conn, 'alex@eventvista.com', 'badpass3', $ip);
+        $res4 = qes_process_admin_login($conn, 'alex@eventvista.com', 'badpass4', $ip);
+        $this->assertSame(1, $res4['remaining'], '4 total fails across username/email should leave 1 try');
+
+        // 5th fail via the 'admin' alias keyword
+        $res5 = qes_process_admin_login($conn, 'admin', 'badpass5', $ip);
+        $this->assertTrue($res5['locked'], '5th fail via admin alias must lock the shared account');
+
+        // Verify account is now locked when tried via username, email, AND admin alias
+        $try_user = qes_process_admin_login($conn, 'super_admin_alex', 'badpass', $ip);
+        $this->assertTrue($try_user['locked']);
+
+        $try_email = qes_process_admin_login($conn, 'alex@eventvista.com', 'badpass', $ip);
+        $this->assertTrue($try_email['locked']);
+
+        $try_alias = qes_process_admin_login($conn, 'admin', 'badpass', $ip);
+        $this->assertTrue($try_alias['locked']);
+
+        // Cleanup
+        qes_rate_limit_clear('admin_login', 'user:77');
+    }
+
+    public function test_admin_login_per_ip_cap_works(): void
+    {
+        $conn = new FakeConnection();
+        $attacker_ip = '198.51.100.77';
+        qes_rate_limit_clear('admin_login_ip', 'ip:' . $attacker_ip);
+
+        // Simulate 20 attempts from the same IP using rotating unknown usernames
+        for ($i = 1; $i <= 20; $i++) {
+            $user_variant = 'victim_' . $i . '_' . bin2hex(random_bytes(3));
+            qes_process_admin_login($conn, $user_variant, 'guess_pass', $attacker_ip);
+        }
+
+        // 21st attempt from this IP must be blocked by the IP cap, even with a fresh identifier
+        $fresh_user = 'brand_new_target_' . bin2hex(random_bytes(3));
+        $res_blocked = qes_process_admin_login($conn, $fresh_user, 'guess_pass', $attacker_ip);
+
+        $this->assertTrue($res_blocked['locked'], 'IP limit must lock out after 20 failed attempts');
+        $this->assertSame('ip', $res_blocked['lock_type']);
+        $this->assertStringContainsString('Too many failed attempts from your IP address', $res_blocked['error']);
+
+        // Cleanup
+        qes_rate_limit_clear('admin_login_ip', 'ip:' . $attacker_ip);
+    }
+
+    public function test_admin_login_success_clears_counter_only(): void
+    {
+        $valid_password = 'CorrectAdminSecret#99';
+        $admin_pw_hash = password_hash($valid_password, PASSWORD_BCRYPT);
+        $userData = [
+            'id' => 88,
+            'username' => 'cleartest_admin',
+            'email' => 'cleartest@eventvista.com',
+            'role' => 'admin',
+            'status' => 'approved',
+            'password' => $admin_pw_hash
+        ];
+
+        $conn = new FakeConnection();
+        $conn->addQueryResult(
+            "SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1",
+            [$userData]
+        );
+
+        $ip = '10.0.3.' . random_int(1, 254);
+        qes_rate_limit_clear('admin_login', 'user:88');
+        qes_rate_limit_clear('admin_login_ip', 'ip:' . $ip);
+
+        // Fail 3 times
+        for ($i = 1; $i <= 3; $i++) {
+            qes_process_admin_login($conn, 'cleartest_admin', 'wrong_pass', $ip);
+        }
+
+        // Verify account counter currently has 3 fails (2 remaining)
+        $mid_check = qes_rate_limit_check('admin_login', 'user:88');
+        $this->assertSame(2, $mid_check['remaining']);
+
+        // Successful login with correct password
+        $success_res = qes_process_admin_login($conn, 'cleartest_admin', $valid_password, $ip);
+        $this->assertTrue($success_res['success']);
+
+        // Account counter must now be cleared (5 remaining)
+        $after_check = qes_rate_limit_check('admin_login', 'user:88');
+        $this->assertTrue($after_check['allowed']);
+        $this->assertSame(5, $after_check['remaining']);
+
+        // IP counter must NOT be cleared (must retain its recorded failure count)
+        $ip_check = qes_rate_limit_check('admin_login_ip', 'ip:' . $ip, 20, 900);
+        $this->assertSame(17, $ip_check['remaining'], 'IP counter must NOT be reset on account login success');
+
+        // Cleanup
+        qes_rate_limit_clear('admin_login', 'user:88');
+        qes_rate_limit_clear('admin_login_ip', 'ip:' . $ip);
+    }
+
+    public function test_admin_login_correct_password_during_lockout_is_rejected(): void
+    {
+        $valid_password = 'KnownSecretPassword#1';
+        $admin_pw_hash = password_hash($valid_password, PASSWORD_BCRYPT);
+        $userData = [
+            'id' => 99,
+            'username' => 'locked_admin',
+            'email' => 'locked@eventvista.com',
+            'role' => 'admin',
+            'status' => 'approved',
+            'password' => $admin_pw_hash
+        ];
+
+        $conn = new FakeConnection();
+        $conn->addQueryResult(
+            "SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1",
+            [$userData]
+        );
+
+        $ip = '10.0.4.' . random_int(1, 254);
+        qes_rate_limit_clear('admin_login', 'user:99');
+
+        // Trigger account lockout with 5 wrong password attempts
+        for ($i = 1; $i <= 5; $i++) {
+            qes_process_admin_login($conn, 'locked_admin', 'bad_pass', $ip);
+        }
+
+        // Now attempt login with the CORRECT password while locked
+        $res = qes_process_admin_login($conn, 'locked_admin', $valid_password, $ip);
+
+        // Must still be rejected!
+        $this->assertFalse($res['success'], 'Login with correct password must be rejected during active lockout');
+        $this->assertTrue($res['locked'], 'Result must report locked state');
+        $this->assertStringContainsString('Too many failed attempts', $res['error']);
+
+        // Cleanup
+        qes_rate_limit_clear('admin_login', 'user:99');
+    }
+
+    public function test_client_ip_detection_with_trusted_proxies(): void
+    {
+        // 1. Without trusted proxies: REMOTE_ADDR is strictly returned
+        $_SERVER['REMOTE_ADDR'] = '203.0.113.10';
+        $_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.5';
+        $this->assertSame('203.0.113.10', qes_client_ip([]), 'Untrusted proxy header must be ignored');
+
+        // 2. With trusted proxy matching REMOTE_ADDR: Forwarded IP is used
+        $trusted = ['203.0.113.10'];
+        $this->assertSame('198.51.100.5', qes_client_ip($trusted), 'Trusted proxy X-Forwarded-For should be accepted');
+
+        // 3. Invalid IP format in forwarded header falls back to REMOTE_ADDR
+        $_SERVER['HTTP_X_FORWARDED_FOR'] = 'malicious<script>alert(1)</script>';
+        $this->assertSame('203.0.113.10', qes_client_ip($trusted), 'Invalid IP in forwarded header must fall back to REMOTE_ADDR');
+
+        // Cleanup
+        unset($_SERVER['HTTP_X_FORWARDED_FOR']);
+        $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+    }
+
+    public function test_db_failure_falls_back_to_file_store(): void
+    {
+        $broken_conn = new \stdClass();
+        $broken_conn->connect_error = 'Database offline or query failure';
+
+        $key = 'test_fallback_' . bin2hex(random_bytes(4));
+        qes_rate_limit_clear('test_fallback_action', $key, $broken_conn);
+
+        $check = qes_rate_limit_check('test_fallback_action', $key, 5, 60, $broken_conn);
+        $this->assertTrue($check['allowed'], 'Should allow request via file fallback when DB connection fails');
+        $this->assertSame(5, $check['remaining']);
+
+        $fails = qes_rate_limit_record_fail('test_fallback_action', $key, 5, 60, $broken_conn);
+        $this->assertSame(1, $fails, 'Should record failure via file fallback when DB connection fails');
+
+        // Cleanup
+        qes_rate_limit_clear('test_fallback_action', $key, $broken_conn);
     }
 }
 

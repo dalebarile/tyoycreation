@@ -36,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pwd_error = "New password must be at least 6 characters long.";
         } elseif ($new_pwd !== $confirm_pwd) {
             $pwd_error = "New password and confirmation password do not match.";
+        } elseif ($current_pwd === $new_pwd) {
+            $pwd_error = "New password cannot be the same as your current password.";
         } else {
             $stmt = $conn->prepare("SELECT id, password FROM users WHERE id = ? LIMIT 1");
             $stmt->bind_param("i", $current_user_id);
@@ -300,21 +302,29 @@ if ($is_main_admin) {
     $all_admins_query = "SELECT id, username, full_name, email, phone, role, status, last_login_at, last_seen_at, last_logout_at, last_ip, last_device, created_at FROM users WHERE role IN ('main_admin', 'super_admin', 'admin') ORDER BY role DESC, id ASC";
     $all_admins_res = $conn->query($all_admins_query);
     if ($all_admins_res) {
+        $admin_rows = [];
+        $admin_ids = [];
         while ($r = $all_admins_res->fetch_assoc()) {
-            $s_stmt = $conn->prepare("SELECT id, session_id, ip_address, user_agent, device_name, device_type, is_blocked, is_logged_out, created_at, last_activity FROM user_sessions WHERE user_id = ? ORDER BY last_activity DESC");
-            $s_stmt->bind_param("i", $r['id']);
-            $s_stmt->execute();
-            $s_res = $s_stmt->get_result();
-            $sessions = [];
+            $admin_rows[] = $r;
+            $admin_ids[] = (int)$r['id'];
+        }
+
+        $sessions_by_user = [];
+        if (!empty($admin_ids)) {
+            $ids_str = implode(',', $admin_ids);
+            $s_res = $conn->query("SELECT id, user_id, session_id, ip_address, user_agent, device_name, device_type, is_blocked, is_logged_out, created_at, last_activity FROM user_sessions WHERE user_id IN ({$ids_str}) ORDER BY last_activity DESC");
             if ($s_res) {
                 while ($s = $s_res->fetch_assoc()) {
-                    $sessions[] = $s;
+                    $u_id = (int)($s['user_id'] ?? 0);
+                    $sessions_by_user[$u_id][] = $s;
                 }
             }
-            $s_stmt->close();
-            $r['sessions'] = $sessions;
+        }
+
+        foreach ($admin_rows as $r) {
+            $r['sessions'] = $sessions_by_user[(int)$r['id']] ?? [];
             $r['online_info'] = get_user_online_status($r);
-            if ($r['online_info']['is_online']) {
+            if (!empty($r['online_info']['is_online'])) {
                 $total_online_count++;
             }
             $all_admins[] = $r;
@@ -867,14 +877,19 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
             <!-- SECTION 1: Changing Password (For logged-in user)                  -->
             <!-- =================================================================== -->
             <div class="settings-card" id="changePasswordSection" style="border-top: 4px solid var(--primary);">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
-                    <div style="width: 38px; height: 38px; border-radius: 8px; background: #eef2ee; color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 18px;">
-                        <i class="fa-solid fa-key"></i>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 38px; height: 38px; border-radius: 8px; background: #eef2ee; color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <div>
+                            <h2 style="font-size: 18px; margin: 0;">Change Password</h2>
+                            <p style="color: var(--text-secondary); font-size: 13px; margin: 2px 0 0 0;">Update your administrator credentials with real-time requirements validation.</p>
+                        </div>
                     </div>
-                    <div>
-                        <h2 style="font-size: 18px; margin: 0;">Change Password</h2>
-                        <p style="color: var(--text-secondary); font-size: 13px; margin: 2px 0 0 0;">Update your administrator credentials to keep your account safe.</p>
-                    </div>
+                    <button type="button" class="btn-action-sm" onclick="openChangePasswordModal()" style="padding: 7px 14px; font-size: 12.5px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-window-maximize"></i> Open Password Modal
+                    </button>
                 </div>
 
                 <?php if (!empty($pwd_success)): ?>
@@ -891,14 +906,14 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
                     </div>
                 <?php endif; ?>
 
-                <form method="POST" action="a_settings.php#changePasswordSection" style="margin-top: 18px;">
+                <form method="POST" action="a_settings.php#changePasswordSection" id="changePasswordForm" style="margin-top: 18px;">
                     <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                     <input type="hidden" name="action" value="change_password">
 
                     <div class="form-group">
                         <label class="form-label">Current Password *</label>
                         <div class="pwd-input-wrap">
-                            <input type="password" name="current_password" id="currPwd" class="form-control" placeholder="Enter current password" required autocomplete="current-password">
+                            <input type="password" name="current_password" id="currPwd" class="form-control" placeholder="Enter current password" required autocomplete="current-password" oninput="validatePwdRealTime()">
                             <button type="button" class="pwd-toggle-btn" onclick="togglePwdVisibility('currPwd', this)" title="Show/Hide Password">
                                 <i class="fa-solid fa-eye"></i>
                             </button>
@@ -909,7 +924,7 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
                         <div class="form-group">
                             <label class="form-label">New Password *</label>
                             <div class="pwd-input-wrap">
-                                <input type="password" name="new_password" id="newPwd" class="form-control" placeholder="Minimum 6 characters" required minlength="6" autocomplete="new-password">
+                                <input type="password" name="new_password" id="newPwd" class="form-control" placeholder="Enter strong new password" required minlength="8" autocomplete="new-password" oninput="validatePwdRealTime()">
                                 <button type="button" class="pwd-toggle-btn" onclick="togglePwdVisibility('newPwd', this)" title="Show/Hide Password">
                                     <i class="fa-solid fa-eye"></i>
                                 </button>
@@ -918,7 +933,7 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
                         <div class="form-group">
                             <label class="form-label">Confirm New Password *</label>
                             <div class="pwd-input-wrap">
-                                <input type="password" name="confirm_password" id="confPwd" class="form-control" placeholder="Repeat new password" required minlength="6" autocomplete="new-password">
+                                <input type="password" name="confirm_password" id="confPwd" class="form-control" placeholder="Repeat new password" required minlength="8" autocomplete="new-password" oninput="validatePwdRealTime()">
                                 <button type="button" class="pwd-toggle-btn" onclick="togglePwdVisibility('confPwd', this)" title="Show/Hide Password">
                                     <i class="fa-solid fa-eye"></i>
                                 </button>
@@ -926,7 +941,58 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
                         </div>
                     </div>
 
-                    <button type="submit" class="btn-primary" style="padding: 11px 24px; font-size: 14px; margin-top: 6px;">
+                    <!-- Real-Time Password Criteria & Match Status Panel -->
+                    <div id="pwdCriteriaPanel" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin: 12px 0 16px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 13px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 7px;">
+                                <i class="fa-solid fa-shield-halved" style="color: var(--primary);"></i> Password Requirements:
+                            </span>
+                            <span id="pwdStrengthPill" style="font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 99px; background: #e2e8f0; color: #475569;">
+                                Enter password
+                            </span>
+                        </div>
+
+                        <!-- Password Strength Progress Bar -->
+                        <div style="height: 5px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-bottom: 12px;">
+                            <div id="pwdStrengthBar" style="height: 100%; width: 0%; background: #ef4444; transition: all 0.3s ease;"></div>
+                        </div>
+
+                        <!-- Real-Time Criteria Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 12px;" id="pwdCriteriaList">
+                            <div id="critLength" style="display: flex; align-items: center; gap: 7px; color: #64748b; transition: all 0.2s;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 13px;"></i>
+                                <span>At least 8 characters</span>
+                            </div>
+                            <div id="critUpper" style="display: flex; align-items: center; gap: 7px; color: #64748b; transition: all 0.2s;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 13px;"></i>
+                                <span>1 uppercase letter (A-Z)</span>
+                            </div>
+                            <div id="critLower" style="display: flex; align-items: center; gap: 7px; color: #64748b; transition: all 0.2s;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 13px;"></i>
+                                <span>1 lowercase letter (a-z)</span>
+                            </div>
+                            <div id="critNumber" style="display: flex; align-items: center; gap: 7px; color: #64748b; transition: all 0.2s;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 13px;"></i>
+                                <span>1 number (0-9)</span>
+                            </div>
+                            <div id="critSpecial" style="display: flex; align-items: center; gap: 7px; color: #64748b; transition: all 0.2s;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 13px;"></i>
+                                <span>1 special symbol (!@#$%^&*)</span>
+                            </div>
+                            <div id="critDiffCurrent" style="display: flex; align-items: center; gap: 7px; color: #64748b; transition: all 0.2s;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 13px;"></i>
+                                <span>Must not match current password</span>
+                            </div>
+                        </div>
+
+                        <!-- Real-Time Password Match / Mismatch Live Alert -->
+                        <div id="pwdMatchAlert" style="margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none; align-items: center; gap: 8px;">
+                            <i id="pwdMatchAlertIcon" class="fa-solid fa-circle-exclamation"></i>
+                            <span id="pwdMatchAlertText"></span>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btnSubmitChangePwd" class="btn-primary" style="padding: 11px 24px; font-size: 14px; margin-top: 6px;">
                         <i class="fa-solid fa-floppy-disk"></i> Update Password
                     </button>
                 </form>
@@ -1285,6 +1351,7 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
                     </table>
                 </div>
             </div>
+
             <?php endif; ?>
 
         </div>
@@ -1495,7 +1562,313 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
         </div>
     </div>
 
+    <!-- Modal 5: Change Password Modal (Requirement 1) -->
+    <div class="modal-backdrop" id="changePasswordModal" style="z-index: 9999;">
+        <div class="modal-card" style="max-width: 520px; flex-direction: column; border-radius: 16px; overflow: hidden; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.4);">
+            <form method="POST" action="a_settings.php#changePasswordSection" id="modalChangePasswordForm" style="margin: 0;">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="change_password">
+
+                <div style="padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 40px; height: 40px; border-radius: 12px; background: #eaf2ec; color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 2px 8px rgba(24, 57, 43, 0.15);">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 17px; margin: 0; font-weight: 700; color: #14532d;">Change Password</h3>
+                            <p style="font-size: 12px; color: #166534; margin: 2px 0 0 0;">Update account security credentials</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="closeChangePasswordModal()" style="background: transparent; border: none; font-size: 20px; color: #9ca3af; cursor: pointer;" aria-label="Close">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div style="padding: 24px;">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block;">Current Password *</label>
+                        <div class="pwd-input-wrap">
+                            <input type="password" name="current_password" id="m_currPwd" class="form-control" placeholder="Enter current password" required autocomplete="current-password" oninput="validatePwdRealTime(true)">
+                            <button type="button" class="pwd-toggle-btn" onclick="togglePwdVisibility('m_currPwd', this)" title="Show/Hide Password">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block;">New Password *</label>
+                        <div class="pwd-input-wrap">
+                            <input type="password" name="new_password" id="m_newPwd" class="form-control" placeholder="Enter strong new password" required minlength="8" autocomplete="new-password" oninput="validatePwdRealTime(true)">
+                            <button type="button" class="pwd-toggle-btn" onclick="togglePwdVisibility('m_newPwd', this)" title="Show/Hide Password">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block;">Confirm New Password *</label>
+                        <div class="pwd-input-wrap">
+                            <input type="password" name="confirm_password" id="m_confPwd" class="form-control" placeholder="Repeat new password" required minlength="8" autocomplete="new-password" oninput="validatePwdRealTime(true)">
+                            <button type="button" class="pwd-toggle-btn" onclick="togglePwdVisibility('m_confPwd', this)" title="Show/Hide Password">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Real-Time Password Criteria & Match Status Panel (Modal) -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin: 12px 0 6px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 12.5px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                                <i class="fa-solid fa-shield-halved" style="color: var(--primary);"></i> Requirements Checklist:
+                            </span>
+                            <span id="m_pwdStrengthPill" style="font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 99px; background: #e2e8f0; color: #475569;">
+                                Enter password
+                            </span>
+                        </div>
+
+                        <div style="height: 5px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-bottom: 10px;">
+                            <div id="m_pwdStrengthBar" style="height: 100%; width: 0%; background: #ef4444; transition: all 0.3s ease;"></div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 11.5px;">
+                            <div id="m_critLength" style="display: flex; align-items: center; gap: 6px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 12px;"></i>
+                                <span>At least 8 chars</span>
+                            </div>
+                            <div id="m_critUpper" style="display: flex; align-items: center; gap: 6px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 12px;"></i>
+                                <span>1 uppercase (A-Z)</span>
+                            </div>
+                            <div id="m_critLower" style="display: flex; align-items: center; gap: 6px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 12px;"></i>
+                                <span>1 lowercase (a-z)</span>
+                            </div>
+                            <div id="m_critNumber" style="display: flex; align-items: center; gap: 6px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 12px;"></i>
+                                <span>1 number (0-9)</span>
+                            </div>
+                            <div id="m_critSpecial" style="display: flex; align-items: center; gap: 6px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 12px;"></i>
+                                <span>1 symbol (!@#$)</span>
+                            </div>
+                            <div id="m_critDiffCurrent" style="display: flex; align-items: center; gap: 6px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 12px;"></i>
+                                <span>Different from current</span>
+                            </div>
+                        </div>
+
+                        <!-- Real-Time Password Match / Mismatch Alert -->
+                        <div id="m_pwdMatchAlert" style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; display: none; align-items: center; gap: 6px;">
+                            <i id="m_pwdMatchAlertIcon" class="fa-solid fa-circle-exclamation"></i>
+                            <span id="m_pwdMatchAlertText"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 16px 24px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px; background: #fafafa;">
+                    <button type="button" class="btn-secondary" onclick="closeChangePasswordModal()" style="padding: 10px 18px; font-size: 13px; font-weight: 600; border-radius: 8px;">Cancel</button>
+                    <button type="submit" id="m_btnSubmitChangePwd" style="padding: 10px 22px; font-size: 13px; font-weight: 700; background: var(--primary); color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(24, 57, 43, 0.25);">
+                        <i class="fa-solid fa-floppy-disk"></i> Update Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
+        // Real-Time Password Criteria & Match / Difference Validation (Requirement 1)
+        function validatePwdRealTime(isModal = false) {
+            const prefix = isModal ? 'm_' : '';
+            const currEl = document.getElementById(prefix + 'currPwd');
+            const newEl = document.getElementById(prefix + 'newPwd');
+            const confEl = document.getElementById(prefix + 'confPwd');
+            const submitBtn = document.getElementById(prefix + 'btnSubmitChangePwd');
+
+            const currVal = currEl ? currEl.value : '';
+            const newVal = newEl ? newEl.value : '';
+            const confVal = confEl ? confEl.value : '';
+
+            // Check criteria for new password
+            const hasLength = newVal.length >= 8;
+            const hasUpper = /[A-Z]/.test(newVal);
+            const hasLower = /[a-z]/.test(newVal);
+            const hasNumber = /[0-9]/.test(newVal);
+            const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(newVal);
+            const isDifferentFromCurrent = (newVal !== '' && currVal !== '' && newVal !== currVal);
+
+            function updateCrit(id, passed) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const icon = el.querySelector('i');
+                if (passed) {
+                    el.style.color = '#065f46';
+                    el.style.fontWeight = '600';
+                    if (icon) {
+                        icon.className = 'fa-solid fa-circle-check';
+                        icon.style.color = '#10b981';
+                    }
+                } else {
+                    el.style.color = '#64748b';
+                    el.style.fontWeight = '400';
+                    if (icon) {
+                        icon.className = 'fa-solid fa-circle-xmark';
+                        icon.style.color = '#cbd5e1';
+                    }
+                }
+            }
+
+            updateCrit(prefix + 'critLength', hasLength);
+            updateCrit(prefix + 'critUpper', hasUpper);
+            updateCrit(prefix + 'critLower', hasLower);
+            updateCrit(prefix + 'critNumber', hasNumber);
+            updateCrit(prefix + 'critSpecial', hasSpecial);
+            updateCrit(prefix + 'critDiffCurrent', isDifferentFromCurrent);
+
+            // Strength bar & label calculation
+            let score = 0;
+            if (hasLength) score++;
+            if (hasUpper) score++;
+            if (hasLower) score++;
+            if (hasNumber) score++;
+            if (hasSpecial) score++;
+            if (isDifferentFromCurrent) score++;
+
+            const bar = document.getElementById(prefix + 'pwdStrengthBar');
+            const pill = document.getElementById(prefix + 'pwdStrengthPill');
+            if (bar && pill) {
+                if (newVal.length === 0) {
+                    bar.style.width = '0%';
+                    bar.style.background = '#ef4444';
+                    pill.textContent = 'Enter password';
+                    pill.style.background = '#e2e8f0';
+                    pill.style.color = '#475569';
+                } else if (score <= 2) {
+                    bar.style.width = '25%';
+                    bar.style.background = '#ef4444';
+                    pill.textContent = 'Weak';
+                    pill.style.background = '#fee2e2';
+                    pill.style.color = '#b91c1c';
+                } else if (score <= 4) {
+                    bar.style.width = '60%';
+                    bar.style.background = '#f59e0b';
+                    pill.textContent = 'Medium';
+                    pill.style.background = '#fef3c7';
+                    pill.style.color = '#b45309';
+                } else {
+                    bar.style.width = '100%';
+                    bar.style.background = '#10b981';
+                    pill.textContent = 'Strong ✓';
+                    pill.style.background = '#d1fae5';
+                    pill.style.color = '#065f46';
+                }
+            }
+
+            // Real-Time Match & Current Difference Alert
+            const alertBox = document.getElementById(prefix + 'pwdMatchAlert');
+            const alertIcon = document.getElementById(prefix + 'pwdMatchAlertIcon');
+            const alertText = document.getElementById(prefix + 'pwdMatchAlertText');
+
+            let canSubmit = false;
+
+            if (alertBox && alertIcon && alertText) {
+                if (confVal.length === 0 && newVal.length === 0) {
+                    alertBox.style.display = 'none';
+                    if (confEl) confEl.style.borderColor = '#d1d5db';
+                    if (newEl) newEl.style.borderColor = '#d1d5db';
+                } else if (currVal !== '' && newVal !== '' && currVal === newVal) {
+                    // Current password and new password are identical
+                    alertBox.style.display = 'flex';
+                    alertBox.style.background = '#fee2e2';
+                    alertBox.style.color = '#991b1b';
+                    alertBox.style.border = '1px solid #fca5a5';
+                    alertIcon.className = 'fa-solid fa-triangle-exclamation';
+                    alertIcon.style.color = '#dc2626';
+                    alertText.textContent = 'New password cannot be the same as your current password.';
+                    if (newEl) newEl.style.borderColor = '#ef4444';
+                } else if (currVal !== '' && confVal !== '' && currVal === confVal) {
+                    // Current password and confirm password are identical
+                    alertBox.style.display = 'flex';
+                    alertBox.style.background = '#fee2e2';
+                    alertBox.style.color = '#991b1b';
+                    alertBox.style.border = '1px solid #fca5a5';
+                    alertIcon.className = 'fa-solid fa-triangle-exclamation';
+                    alertIcon.style.color = '#dc2626';
+                    alertText.textContent = 'Confirm password cannot be the same as your current password.';
+                    if (confEl) confEl.style.borderColor = '#ef4444';
+                } else if (confVal.length > 0) {
+                    if (confVal !== newVal) {
+                        // Mismatch between new password and confirm password
+                        alertBox.style.display = 'flex';
+                        alertBox.style.background = '#fee2e2';
+                        alertBox.style.color = '#991b1b';
+                        alertBox.style.border = '1px solid #fca5a5';
+                        alertIcon.className = 'fa-solid fa-circle-xmark';
+                        alertIcon.style.color = '#dc2626';
+                        alertText.textContent = 'Passwords do not match. Please verify your confirmation password.';
+                        if (confEl) confEl.style.borderColor = '#ef4444';
+                    } else {
+                        // Passwords match
+                        if (hasLength && hasUpper && hasLower && hasNumber && hasSpecial && isDifferentFromCurrent) {
+                            alertBox.style.display = 'flex';
+                            alertBox.style.background = '#d1fae5';
+                            alertBox.style.color = '#065f46';
+                            alertBox.style.border = '1px solid #86efac';
+                            alertIcon.className = 'fa-solid fa-circle-check';
+                            alertIcon.style.color = '#10b981';
+                            alertText.textContent = 'Passwords match and all security requirements are satisfied!';
+                            if (confEl) confEl.style.borderColor = '#10b981';
+                            if (newEl) newEl.style.borderColor = '#10b981';
+                            canSubmit = true;
+                        } else {
+                            alertBox.style.display = 'flex';
+                            alertBox.style.background = '#fef3c7';
+                            alertBox.style.color = '#92400e';
+                            alertBox.style.border = '1px solid #fcd34d';
+                            alertIcon.className = 'fa-solid fa-circle-info';
+                            alertIcon.style.color = '#d97706';
+                            alertText.textContent = 'Passwords match, but please fulfill all requirements above.';
+                            if (confEl) confEl.style.borderColor = '#f59e0b';
+                        }
+                    }
+                } else {
+                    alertBox.style.display = 'none';
+                    if (confEl) confEl.style.borderColor = '#d1d5db';
+                }
+            }
+
+            if (submitBtn) {
+                if (canSubmit) {
+                    submitBtn.removeAttribute('disabled');
+                    submitBtn.style.opacity = '1';
+                    submitBtn.style.cursor = 'pointer';
+                } else {
+                    submitBtn.setAttribute('disabled', 'disabled');
+                    submitBtn.style.opacity = '0.6';
+                    submitBtn.style.cursor = 'not-allowed';
+                }
+            }
+        }
+
+        // Modal Handlers: Change Password Modal
+        function openChangePasswordModal() {
+            const m = document.getElementById('changePasswordModal');
+            if (m) {
+                m.classList.add('active');
+                // Sync values if user already typed on page
+                const currVal = document.getElementById('currPwd')?.value || '';
+                const newVal = document.getElementById('newPwd')?.value || '';
+                const confVal = document.getElementById('confPwd')?.value || '';
+                if (currVal) document.getElementById('m_currPwd').value = currVal;
+                if (newVal) document.getElementById('m_newPwd').value = newVal;
+                if (confVal) document.getElementById('m_confPwd').value = confVal;
+                validatePwdRealTime(true);
+            }
+        }
+        function closeChangePasswordModal() {
+            const m = document.getElementById('changePasswordModal');
+            if (m) m.classList.remove('active');
+        }
+
         function switchAccountTab(tab) {
             const adminTab = document.getElementById('tabBtnAdmins');
             const userTab = document.getElementById('tabBtnUsers');
@@ -1604,7 +1977,7 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
 
         // Global backdrop click and escape handlers
         window.addEventListener('click', function(e) {
-            const modals = ['forceLogoutModal', 'blockDeviceModal', 'blockAllOtherDevicesModal', 'deleteAdminModal'];
+            const modals = ['forceLogoutModal', 'blockDeviceModal', 'blockAllOtherDevicesModal', 'deleteAdminModal', 'changePasswordModal'];
             modals.forEach(id => {
                 const m = document.getElementById(id);
                 if (m && e.target === m) {
@@ -1618,6 +1991,7 @@ $main_admin_info = $main_admin_res ? $main_admin_res->fetch_assoc() : null;
                 closeBlockDeviceModal();
                 closeBlockAllOtherDevicesModal();
                 closeDeleteAdminModal();
+                closeChangePasswordModal();
             }
         });
     </script>

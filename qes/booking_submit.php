@@ -36,6 +36,19 @@ if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
 // ACTION 1: VERIFY OTP CODE & COMMIT TO DATABASE
 // ============================================================
 if ($action === 'verify') {
+    // Cloudflare Turnstile Security Verification
+    if (qes_is_turnstile_enabled($conn)) {
+        $turnstile_token = trim($_POST['cf-turnstile-response'] ?? ($_POST['turnstile_token'] ?? ''));
+        $ts_check = qes_verify_turnstile($turnstile_token, $client_ip, $conn);
+        if (!$ts_check['success']) {
+            echo json_encode([
+                'success' => false,
+                'message' => $ts_check['error'] ?? 'Cloudflare Turnstile security verification failed. Please complete the security check.'
+            ]);
+            exit;
+        }
+    }
+
     // Rate limit verification attempts: 15 per 10 minutes per IP
     $rate = qes_rate_limit_check('booking_verify', $client_ip, 15, 600);
     if (!$rate['allowed']) {
@@ -116,6 +129,19 @@ if ($action === 'update_email') {
 // ACTION 3: SUBMIT BOOKING (STAGE & SEND OTP CODE)
 // ============================================================
 if ($action === 'submit') {
+    // Cloudflare Turnstile Verification if submitted from form
+    if (qes_is_turnstile_enabled($conn) && !empty($_POST['cf-turnstile-response'])) {
+        $ts_token = trim($_POST['cf-turnstile-response'] ?? '');
+        $ts_check = qes_verify_turnstile($ts_token, $client_ip, $conn);
+        if (!$ts_check['success']) {
+            echo json_encode([
+                'success' => false,
+                'message' => $ts_check['error'] ?? 'Cloudflare Turnstile security verification failed.'
+            ]);
+            exit;
+        }
+    }
+
     // Rate limit booking submissions: 6 per 10 minutes per IP
     $rate = qes_rate_limit_check('booking_submit', $client_ip, 6, 600);
     if (!$rate['allowed']) {
@@ -128,7 +154,7 @@ if ($action === 'submit') {
 
     $client_name    = trim($_POST['client_name'] ?? '');
     $client_email   = trim($_POST['client_email'] ?? '');
-    $client_phone   = trim($_POST['client_phone'] ?? '');
+    $client_phone   = preg_replace('/[^0-9]/', '', trim($_POST['client_phone'] ?? ''));
     $client_address = trim($_POST['client_address'] ?? '');
 
     $event_title    = trim($_POST['event_title'] ?? '');

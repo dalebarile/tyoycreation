@@ -141,6 +141,121 @@ $page_url = function($p) use ($search) {
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .table-responsive-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .custom-table {
+            width: 100%;
+            min-width: 980px;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        .custom-table th {
+            background: #f8fafc;
+            padding: 13px 16px;
+            font-weight: 700;
+            color: #475569;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 11.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+        .custom-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            vertical-align: middle;
+            font-size: 13px;
+        }
+        .custom-table tr:hover {
+            background: #fafcfb;
+        }
+        .client-name-cell {
+            font-weight: 700;
+            color: #1e293b;
+            white-space: nowrap;
+        }
+        .client-phone-cell {
+            font-family: 'SF Mono', Consolas, Menlo, monospace;
+            font-size: 12.5px;
+            color: #475569;
+            white-space: nowrap;
+        }
+        .client-email-cell {
+            color: #334155;
+            white-space: nowrap;
+        }
+        .client-loc-cell {
+            color: #64748b;
+            max-width: 240px;
+            white-space: normal;
+            line-height: 1.4;
+        }
+        .client-events-cell {
+            color: #64748b;
+            font-size: 12.5px;
+            white-space: nowrap;
+        }
+        .client-count-cell {
+            text-align: center;
+            white-space: nowrap;
+        }
+        .client-actions-cell {
+            text-align: center;
+            white-space: nowrap;
+            min-width: 180px;
+        }
+        .btn-action-view, .btn-action-delete {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px !important;
+            font-size: 12px !important;
+            font-weight: 600;
+            border-radius: 7px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-action-view {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+            text-decoration: none;
+        }
+        .btn-action-view:hover {
+            background: #dcfce7;
+            color: #14532d;
+        }
+        .btn-action-delete {
+            background: #fff1f2;
+            color: #be123c;
+            border: 1px solid #fecdd3;
+        }
+        .btn-action-delete:hover {
+            background: #ffe4e6;
+            color: #9f1239;
+        }
+        .security-badge {
+            font-size: 11px;
+            font-weight: 600;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+    </style>
 </head>
 <body class="admin-app">
 
@@ -170,9 +285,9 @@ $page_url = function($p) use ($search) {
 
             <div class="table-card">
                 <div class="table-header-bar">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div style="font-weight: 700; font-size: 16px;">Registered Client Inquiries</div>
-                        <span style="font-size: 11px; font-weight: 600; background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; padding: 3px 8px; border-radius: 20px; display: inline-flex; align-items: center; gap: 4px;" title="Client personal identifiable data is securely encrypted in the database at rest and decrypted for authorized system accounts.">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <div style="font-weight: 700; font-size: 16px; color: var(--primary);">Registered Client Inquiries</div>
+                        <span class="security-badge" title="Client personal identifiable data is securely encrypted in the database at rest and decrypted for authorized system accounts.">
                             <i class="fa-solid fa-shield-halved"></i> 256-Bit Encrypted at Rest
                         </span>
                     </div>
@@ -182,7 +297,7 @@ $page_url = function($p) use ($search) {
                     </form>
                 </div>
 
-                <div style="overflow-x: auto;">
+                <div class="table-responsive-container">
                     <table class="custom-table">
                         <thead>
                             <tr>
@@ -191,33 +306,33 @@ $page_url = function($p) use ($search) {
                                 <th>Email Address</th>
                                 <th>Location / Address</th>
                                 <th>Event History</th>
-                                <th>Total Bookings</th>
-                                <th style="text-align: center;">Actions</th>
+                                <th style="text-align: center;">Total Bookings</th>
+                                <th style="text-align: center; min-width: 180px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($clients)): ?>
                                 <tr>
-                                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 36px;">
                                         No client records found.
                                     </td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($clients as $c): ?>
                                     <tr>
-                                        <td style="font-weight: 700;"><?= htmlspecialchars($c['client_name']) ?></td>
-                                        <td><?= htmlspecialchars($c['client_phone']) ?></td>
-                                        <td><?= htmlspecialchars($c['client_email']) ?></td>
-                                        <td><?= htmlspecialchars($c['client_address'] ?: 'N/A') ?></td>
-                                        <td style="font-size: 13px; color: var(--text-secondary);"><?= htmlspecialchars($c['event_types']) ?></td>
-                                        <td>
-                                            <span class="badge" style="background: #eef2ee; color: var(--primary);">
+                                        <td class="client-name-cell"><?= htmlspecialchars($c['client_name']) ?></td>
+                                        <td class="client-phone-cell"><?= htmlspecialchars($c['client_phone']) ?></td>
+                                        <td class="client-email-cell"><?= htmlspecialchars($c['client_email']) ?></td>
+                                        <td class="client-loc-cell"><?= htmlspecialchars($c['client_address'] ?: 'N/A') ?></td>
+                                        <td class="client-events-cell"><?= htmlspecialchars($c['event_types']) ?></td>
+                                        <td class="client-count-cell">
+                                            <span class="badge" style="background: #eef2ee; color: var(--primary); font-weight: 700; padding: 4px 10px; border-radius: 99px; font-size: 11.5px; display: inline-block;">
                                                 <?= $c['total_events'] ?> Event<?= $c['total_events'] > 1 ? 's' : '' ?>
                                             </span>
                                         </td>
-                                        <td>
-                                            <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                                                <a href="a_notifications.php?recipient=<?= urlencode($c['client_name']) ?>&contact=<?= urlencode($c['client_email']) ?>" class="btn-action-view" style="display: inline-flex; align-items: center; gap: 4px;" title="Message Client">
+                                        <td class="client-actions-cell">
+                                            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap;">
+                                                <a href="a_notifications.php?recipient=<?= urlencode($c['client_name']) ?>&contact=<?= urlencode($c['client_email']) ?>" class="btn-action-view" title="Message Client">
                                                     <i class="fa-solid fa-paper-plane"></i> Message
                                                 </a>
                                                 <button type="button" class="btn-action-delete" onclick="openDeleteClientModal(<?= htmlspecialchars(json_encode($c['client_name'])) ?>, <?= htmlspecialchars(json_encode($c['client_phone'])) ?>, <?= htmlspecialchars(json_encode($c['client_email'])) ?>, <?= (int)$c['total_events'] ?>, <?= htmlspecialchars(json_encode($c['booking_ids'] ?? '')) ?>)" title="Delete Client and All Inquiries">

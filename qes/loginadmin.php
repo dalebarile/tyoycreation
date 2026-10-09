@@ -18,66 +18,67 @@ if (isset($_SESSION['id']) && !empty($_SESSION['role'])) {
 }
 
 $login_error = '';
+$is_locked = false;
+$retry_after = 0;
 
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+$client_ip = qes_client_ip();
+$ip_key = 'ip:' . $client_ip;
+
+// Proactively check if this IP is already locked out on initial load
+$ip_initial_check = qes_rate_limit_check('admin_login_ip', $ip_key, ADMIN_LOGIN_IP_MAX_ATTEMPTS, ADMIN_LOGIN_IP_LOCKOUT_SECONDS, $conn);
+if (!$ip_initial_check['allowed']) {
+    $is_locked = true;
+    $retry_after = (int)($ip_initial_check['retry_after'] ?? 0);
+    $mins = max(1, (int)ceil($retry_after / 60));
+    $login_error = "Too many failed attempts from your IP address. Please try again in {$mins} minute(s).";
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && !$is_locked) {
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
         die('CSRF token validation failed.');
     }
-    $identifier = trim($_POST['identifier'] ?? '');
-    $password = $_POST['password'] ?? '';
 
-    if (empty($identifier) || empty($password)) {
-        $login_error = "Please enter your username/email and password.";
-    } else {
-        $client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $rate_key = $client_ip . '|' . strtolower($identifier);
-        $rate_check = qes_rate_limit_check('admin_login', $rate_key, 5, 900);
+    // Cloudflare Turnstile Verification
+    if (qes_is_turnstile_enabled($conn)) {
+        $ts_token = $_POST['cf-turnstile-response'] ?? '';
+        $ts_check = qes_verify_turnstile($ts_token, $client_ip, $conn);
+        if (!$ts_check['success']) {
+            $login_error = $ts_check['error'] ?? 'Security check failed. Please complete the Cloudflare Turnstile verification.';
+        }
+    }
 
-        if (!$rate_check['allowed']) {
-            $login_error = $rate_check['message'];
+    if (empty($login_error)) {
+        $identifier = trim($_POST['identifier'] ?? '');
+        $password = $_POST['password'] ?? '';
+
+        if (empty($identifier) || empty($password)) {
+            $login_error = "Please enter your username/email and password.";
         } else {
-            $stmt = $conn->prepare("SELECT * FROM users WHERE (email = ? OR username = ? OR (role IN ('admin', 'super_admin', 'main_admin') AND ? = 'admin')) LIMIT 1");
-            $stmt->bind_param("sss", $identifier, $identifier, $identifier);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($result->num_rows === 1) {
-                $user = $result->fetch_assoc();
-                if (password_verify($password, $user['password'])) {
-                    if ($user['status'] !== 'approved') {
-                        $login_error = "Your account is " . htmlspecialchars($user['status']) . ".";
-                    } elseif (!in_array($user['role'], ['admin', 'super_admin', 'main_admin'])) {
-                        // Strictly restrict to administrators
-                        $login_error = "Access denied. The Admin Portal is restricted to authorized administrators.";
-                    } else {
-                        // Clear failed attempts upon successful login
-                        qes_rate_limit_clear('admin_login', $rate_key);
+            $login_res = qes_process_admin_login($conn, $identifier, $password, $client_ip);
 
-                        // Prevent session fixation
-                        session_regenerate_id(true);
-                        
-                        $_SESSION['id'] = (int)$user['id'];
-                        $_SESSION['username'] = $user['username'];
-                        $_SESSION['role'] = $user['role'];
-                        $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
-                        $_SESSION['email'] = $user['email'];
-                        $_SESSION['phone'] = $user['phone'] ?? '';
-                        
-                        // Track device & active session (is_login=true ensures last_login_at is recorded immediately)
-                        track_user_session($conn, (int)$user['id'], true);
+            if ($login_res['success']) {
+                $user = $login_res['user'];
 
-                        header("Location: " . $base_href . "a_home.php");
-                        exit;
-                    }
-                } else {
-                    qes_rate_limit_record_fail('admin_login', $rate_key, 5, 900);
-                    $login_error = "Invalid credentials. Please verify your username/email and password.";
-                }
+                // Prevent session fixation
+                session_regenerate_id(true);
+
+                $_SESSION['id'] = (int)$user['id'];
+                $_SESSION['username'] = $user['username'];
+                $_SESSION['role'] = $user['role'];
+                $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
+                $_SESSION['email'] = $user['email'];
+                $_SESSION['phone'] = $user['phone'] ?? '';
+
+                // Track device & active session
+                track_user_session($conn, (int)$user['id'], true);
+
+                header("Location: " . $base_href . "a_home.php");
+                exit;
             } else {
-                qes_rate_limit_record_fail('admin_login', $rate_key, 5, 900);
-                $login_error = "Invalid credentials. Please verify your username/email and password.";
+                $login_error = $login_res['error'];
+                $is_locked = !empty($login_res['locked']);
+                $retry_after = (int)($login_res['retry_after'] ?? 0);
             }
-            $stmt->close();
         }
     }
 }
@@ -98,6 +99,9 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <?php if (qes_is_turnstile_enabled($conn)): ?>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <?php endif; ?>
     <style>
         body {
             background-color: #142e23;
@@ -321,35 +325,48 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         <p class="login-title" style="font-size: 13.5px; color: #6b7280; margin-bottom: 24px;">Access your dashboard to manage events and bookings.</p>
 
         <?php if (!empty($login_error)): ?>
-            <div class="login-error" style="border-radius: 12px; padding: 12px 16px; border: 1px solid #fecaca; background: #fef2f2; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08);">
-                <div style="width: 28px; height: 28px; border-radius: 50%; background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">
-                    <i class="fa-solid fa-circle-exclamation"></i>
+            <div class="login-error" id="loginAlertBox" style="border-radius: 12px; padding: 12px 16px; border: 1px solid #fecaca; background: #fef2f2; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08); margin-bottom: 20px; display: flex; align-items: center; gap: 12px;">
+                <div id="loginAlertIcon" style="width: 28px; height: 28px; border-radius: 50%; background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">
+                    <i class="fa-solid <?= $is_locked ? 'fa-lock' : 'fa-circle-exclamation' ?>"></i>
                 </div>
-                <span style="font-size: 13px; font-weight: 500; color: #991b1b; text-align: left;"><?= htmlspecialchars($login_error) ?></span>
+                <span id="loginAlertMessage" style="font-size: 13px; font-weight: 500; color: #991b1b; text-align: left;">
+                    <?php if ($is_locked && $retry_after > 0): ?>
+                        Too many failed attempts. Please try again in <strong id="lockCountdownDisplay"><?= sprintf('%02d:%02d', floor($retry_after / 60), $retry_after % 60) ?></strong>.
+                    <?php else: ?>
+                        <?= htmlspecialchars($login_error) ?>
+                    <?php endif; ?>
+                </span>
             </div>
         <?php endif; ?>
 
-        <form method="POST" action="">
+        <form method="POST" action="" id="adminLoginForm">
             <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             
             <div class="login-field">
                 <label style="font-weight: 600; font-size: 13px; color: #374151;">Email Address</label>
                 <div class="input-group">
-                    <input type="text" name="identifier" placeholder="Enter your email" required autocomplete="username" autofocus style="border-radius: 8px; border-color: #d1d5db; padding: 11px 14px;">
+                    <input type="text" id="identifierInput" name="identifier" value="<?= htmlspecialchars($_POST['identifier'] ?? '') ?>" placeholder="Enter your email" required autocomplete="username" autofocus style="border-radius: 8px; border-color: #d1d5db; padding: 11px 14px;" <?= $is_locked ? 'disabled' : '' ?>>
                 </div>
             </div>
 
             <div class="login-field" style="margin-bottom: 22px;">
                 <label style="font-weight: 600; font-size: 13px; color: #374151;">Password</label>
                 <div class="input-group">
-                    <input type="password" id="passwordInput" name="password" placeholder="Enter your password" required autocomplete="current-password" style="border-radius: 8px; border-color: #d1d5db; padding: 11px 14px;">
+                    <input type="password" id="passwordInput" name="password" placeholder="Enter your password" required autocomplete="current-password" style="border-radius: 8px; border-color: #d1d5db; padding: 11px 14px;" <?= $is_locked ? 'disabled' : '' ?>>
                     <button type="button" class="toggle-password-btn" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility">
                         <i class="fa-solid fa-eye" id="passwordEyeIcon"></i>
                     </button>
                 </div>
             </div>
 
-            <button type="submit" class="btn-login" style="background: #18392b; color: #ffffff; border-radius: 8px; font-weight: 700; padding: 12px; font-size: 14.5px; width: 100%; box-shadow: 0 4px 14px rgba(24, 57, 43, 0.28);">
+            <?php if (qes_is_turnstile_enabled($conn)): ?>
+            <!-- Cloudflare Turnstile CAPTCHA Protection -->
+            <div class="login-field" style="margin-bottom: 18px; display: flex; justify-content: center;">
+                <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars(qes_get_turnstile_site_key($conn)) ?>" data-theme="light"></div>
+            </div>
+            <?php endif; ?>
+
+            <button type="submit" id="loginSubmitBtn" class="btn-login" style="background: #18392b; color: #ffffff; border-radius: 8px; font-weight: 700; padding: 12px; font-size: 14.5px; width: 100%; box-shadow: 0 4px 14px rgba(24, 57, 43, 0.28); <?= $is_locked ? 'opacity: 0.6; cursor: not-allowed;' : '' ?>" <?= $is_locked ? 'disabled' : '' ?>>
                 Login
             </button>
 
@@ -373,44 +390,44 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
     </div>
 
     <!-- Multi-Step Forgot Password Verification & Reset Modal -->
-    <div class="modal-backdrop" id="forgotPasswordModal" style="z-index: 9999;">
-        <div class="modal-card" style="max-width: 480px; flex-direction: column; border-radius: 16px; overflow: hidden; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5); background: #ffffff;">
+    <div class="modal-backdrop" id="forgotPasswordModal" style="z-index: 9999; padding: 15px;">
+        <div class="modal-card" style="max-width: 450px; width: 100%; max-height: 92vh; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5); background: #ffffff; margin: auto;">
             <!-- Modal Header -->
-            <div style="padding: 20px 24px; border-bottom: 1px solid #eef2ee; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #f7faf7 0%, #eef2ee 100%);">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <div id="fpHeaderIcon" style="width: 42px; height: 42px; border-radius: 12px; background: #e0ece0; color: #364735; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 2px 8px rgba(54, 71, 53, 0.15);">
+            <div style="padding: 14px 20px; border-bottom: 1px solid #eef2ee; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #f7faf7 0%, #eef2ee 100%); flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div id="fpHeaderIcon" style="width: 36px; height: 36px; border-radius: 10px; background: #e0ece0; color: #364735; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 2px 6px rgba(54, 71, 53, 0.12);">
                         <i class="fa-solid fa-key"></i>
                     </div>
                     <div style="text-align: left;">
-                        <h3 id="fpHeaderTitle" style="font-size: 17px; margin: 0; font-weight: 700; color: #1f291e;">Forgot Password</h3>
-                        <p id="fpHeaderSubtitle" style="font-size: 12px; color: #527952; margin: 2px 0 0 0;">Account Recovery &amp; Security</p>
+                        <h3 id="fpHeaderTitle" style="font-size: 16px; margin: 0; font-weight: 700; color: #1f291e;">Forgot Password</h3>
+                        <p id="fpHeaderSubtitle" style="font-size: 11.5px; color: #527952; margin: 1px 0 0 0;">Account Recovery &amp; Security</p>
                     </div>
                 </div>
-                <button type="button" onclick="closeForgotPasswordModal()" style="background: transparent; border: none; font-size: 20px; color: #9ca3af; cursor: pointer; border-radius: 6px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;" aria-label="Close">
+                <button type="button" onclick="closeForgotPasswordModal()" style="background: transparent; border: none; font-size: 18px; color: #9ca3af; cursor: pointer; border-radius: 6px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;" aria-label="Close">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 
-            <!-- Modal Content Steps -->
-            <div style="padding: 24px;">
+            <!-- Modal Content Steps (Scrollable Container) -->
+            <div style="padding: 18px 22px 22px 22px; overflow-y: auto; max-height: calc(92vh - 65px); flex: 1; -webkit-overflow-scrolling: touch;">
                 <!-- STEP 1: Ask for Email / Identifier -->
                 <div id="fpStep1">
-                    <p style="font-size: 14px; color: #374151; margin: 0 0 16px 0; line-height: 1.5; text-align: left;">
+                    <p style="font-size: 13.5px; color: #374151; margin: 0 0 14px 0; line-height: 1.5; text-align: left;">
                         Enter your registered email address or username. The system will dispatch a <strong>6-digit security code</strong> to your email.
                     </p>
 
-                    <div id="fpStep1Alert" style="display: none; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; text-align: left;"></div>
+                    <div id="fpStep1Alert" style="display: none; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; text-align: left;"></div>
 
-                    <div style="text-align: left; margin-bottom: 20px;">
-                        <label style="display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px;">Email or Username</label>
+                    <div style="text-align: left; margin-bottom: 16px;">
+                        <label style="display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 5px;">Email or Username</label>
                         <div class="input-group">
-                            <input type="text" id="fpIdentifierInput" placeholder="e.g. admin@gmail.com or username" style="width: 100%; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; box-sizing: border-box;" onkeydown="if(event.key==='Enter')submitForgotRequest();">
+                            <input type="text" id="fpIdentifierInput" placeholder="e.g. admin@gmail.com or username" style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13.5px; outline: none; box-sizing: border-box;" onkeydown="if(event.key==='Enter')submitForgotRequest();">
                         </div>
                     </div>
 
-                    <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                        <button type="button" class="btn-secondary" onclick="closeForgotPasswordModal()" style="padding: 10px 18px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer;">Cancel</button>
-                        <button type="button" id="btnSendCode" onclick="submitForgotRequest()" style="padding: 10px 22px; font-size: 13px; font-weight: 700; background: #364735; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(54, 71, 53, 0.25);">
+                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+                        <button type="button" class="btn-secondary" onclick="closeForgotPasswordModal()" style="padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer;">Cancel</button>
+                        <button type="button" id="btnSendCode" onclick="submitForgotRequest()" style="padding: 9px 20px; font-size: 13px; font-weight: 700; background: #364735; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(54, 71, 53, 0.25);">
                             <i class="fa-solid fa-paper-plane"></i> Send Verification Code
                         </button>
                     </div>
@@ -418,67 +435,109 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
 
                 <!-- STEP 2: Input 6-Digit Code -->
                 <div id="fpStep2" style="display: none;">
-                    <p style="font-size: 14px; color: #374151; margin: 0 0 16px 0; line-height: 1.5; text-align: left;">
+                    <p style="font-size: 13.5px; color: #374151; margin: 0 0 14px 0; line-height: 1.5; text-align: left;">
                         A 6-digit verification code has been dispatched to <strong id="fpMaskedEmailText" style="color: #364735;"></strong>. Enter the code below:
                     </p>
 
-                    <div id="fpStep2Alert" style="display: none; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; text-align: left;"></div>
+                    <div id="fpStep2Alert" style="display: none; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; text-align: left;"></div>
 
-                    <div style="text-align: center; margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px;">6-Digit Security Code</label>
-                        <input type="text" id="fpCodeInput" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="••••••" style="letter-spacing: 12px; font-size: 28px; font-weight: 800; text-align: center; padding: 12px; font-family: monospace, Courier, monospace; width: 100%; border: 2px solid #d1d5db; border-radius: 10px; box-sizing: border-box; outline: none; background: #f9fafb;" onkeydown="if(event.key==='Enter')submitVerifyCode();">
-                        <div style="font-size: 12px; color: #6b7280; margin-top: 8px;"><i class="fa-solid fa-clock"></i> Valid for 15 minutes</div>
+                    <div style="text-align: center; margin-bottom: 14px;">
+                        <label style="display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 6px;">6-Digit Security Code</label>
+                        <input type="text" id="fpCodeInput" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="••••••" style="letter-spacing: 10px; font-size: 24px; font-weight: 800; text-align: center; padding: 10px; font-family: monospace, Courier, monospace; width: 100%; border: 2px solid #d1d5db; border-radius: 8px; box-sizing: border-box; outline: none; background: #f9fafb;" onkeydown="if(event.key==='Enter')submitVerifyCode();">
+                        <div style="font-size: 11.5px; color: #6b7280; margin-top: 6px;"><i class="fa-solid fa-clock"></i> Valid for 15 minutes</div>
                     </div>
 
-                    <div style="margin-bottom: 20px; font-size: 13px; color: #6b7280; text-align: center;">
+                    <div style="margin-bottom: 16px; font-size: 12.5px; color: #6b7280; text-align: center;">
                         Didn't receive the email? 
-                        <button type="button" id="btnResendCode" onclick="submitForgotRequest(true)" style="background: none; border: none; font-size: 13px; font-weight: 700; color: #364735; text-decoration: underline; cursor: pointer; padding: 0;">
+                        <button type="button" id="btnResendCode" onclick="submitForgotRequest(true)" style="background: none; border: none; font-size: 12.5px; font-weight: 700; color: #364735; text-decoration: underline; cursor: pointer; padding: 0;">
                             Resend Code
                         </button>
                     </div>
 
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-                        <button type="button" class="btn-secondary" onclick="backToStep1()" style="padding: 10px 16px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px;">
+                        <button type="button" class="btn-secondary" onclick="backToStep1()" style="padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer;">
                             <i class="fa-solid fa-arrow-left"></i> Back
                         </button>
-                        <button type="button" id="btnVerifyCode" onclick="submitVerifyCode()" style="padding: 10px 22px; font-size: 13px; font-weight: 700; background: #364735; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(54, 71, 53, 0.25);">
+                        <button type="button" id="btnVerifyCode" onclick="submitVerifyCode()" style="padding: 9px 20px; font-size: 13px; font-weight: 700; background: #364735; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(54, 71, 53, 0.25);">
                             <i class="fa-solid fa-check"></i> Verify Code
                         </button>
                     </div>
                 </div>
 
-                <!-- STEP 3: Change Password with Warning on Mismatch (Requirement 4 & 5) -->
+                <!-- STEP 3: Change Password with Warning on Mismatch -->
                 <div id="fpStep3" style="display: none;">
-                    <p style="font-size: 14px; color: #374151; margin: 0 0 16px 0; line-height: 1.5; text-align: left;">
+                    <p style="font-size: 13px; color: #374151; margin: 0 0 11px 0; line-height: 1.4; text-align: left;">
                         Code verified! Please enter your <strong>new password</strong> and confirm below:
                     </p>
 
-                    <!-- Warning notice if inputs differ (Requirement 5) -->
-                    <div id="fpStep3Alert" style="display: none; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; text-align: left;"></div>
+                    <!-- Warning notice if inputs differ -->
+                    <div id="fpStep3Alert" style="display: none; border-radius: 8px; padding: 9px 12px; margin-bottom: 10px; font-size: 12.5px; text-align: left;"></div>
 
-                    <div style="text-align: left; margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px;">New Password</label>
+                    <div style="text-align: left; margin-bottom: 10px;">
+                        <label style="display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 4px;">New Password</label>
                         <div class="input-group" style="position: relative;">
-                            <input type="password" id="fpNewPassword" placeholder="Minimum 6 characters" style="width: 100%; padding: 12px 42px 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; box-sizing: border-box;" oninput="clearPasswordErrorHighlights()">
-                            <button type="button" onclick="togglePassField('fpNewPassword', 'fpNewEye')" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #6b7280; cursor: pointer; padding: 4px;" aria-label="Toggle password">
-                                <i class="fa-solid fa-eye" id="fpNewEye"></i>
+                            <input type="password" id="fpNewPassword" placeholder="Minimum 8 characters" style="width: 100%; padding: 9px 38px 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13.5px; outline: none; box-sizing: border-box;" oninput="validateFpPasswordCriteria()">
+                            <button type="button" onclick="togglePassField('fpNewPassword', 'fpNewEye')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #6b7280; cursor: pointer; padding: 4px;" aria-label="Toggle password">
+                                <i class="fa-solid fa-eye" id="fpNewEye" style="font-size: 13px;"></i>
                             </button>
                         </div>
                     </div>
 
-                    <div style="text-align: left; margin-bottom: 22px;">
-                        <label style="display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px;">Confirm Password</label>
+                    <div style="text-align: left; margin-bottom: 10px;">
+                        <label style="display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 4px;">Confirm Password</label>
                         <div class="input-group" style="position: relative;">
-                            <input type="password" id="fpConfirmPassword" placeholder="Repeat your new password" style="width: 100%; padding: 12px 42px 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; box-sizing: border-box;" onkeydown="if(event.key==='Enter')submitPasswordReset();" oninput="clearPasswordErrorHighlights()">
-                            <button type="button" onclick="togglePassField('fpConfirmPassword', 'fpConfEye')" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #6b7280; cursor: pointer; padding: 4px;" aria-label="Toggle password">
-                                <i class="fa-solid fa-eye" id="fpConfEye"></i>
+                            <input type="password" id="fpConfirmPassword" placeholder="Repeat your new password" style="width: 100%; padding: 9px 38px 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13.5px; outline: none; box-sizing: border-box;" onkeydown="if(event.key==='Enter')submitPasswordReset();" oninput="validateFpPasswordCriteria()">
+                            <button type="button" onclick="togglePassField('fpConfirmPassword', 'fpConfEye')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #6b7280; cursor: pointer; padding: 4px;" aria-label="Toggle password">
+                                <i class="fa-solid fa-eye" id="fpConfEye" style="font-size: 13px;"></i>
                             </button>
                         </div>
                     </div>
 
-                    <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                        <button type="button" id="btnResetPassword" onclick="submitPasswordReset()" style="width: 100%; padding: 12px; font-size: 14px; font-weight: 700; background: #364735; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(54, 71, 53, 0.25);">
-                            <i class="fa-solid fa-shield-halved"></i> Update Password &amp; Continue
+                    <!-- Compact Real-Time Password Criteria Box (Step 3) -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; margin-bottom: 13px; text-align: left;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <span style="font-size: 11.5px; font-weight: 700; color: #1e293b;">Requirements:</span>
+                            <span id="fpStrengthPill" style="font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: #e2e8f0; color: #475569;">Enter password</span>
+                        </div>
+                        <div style="height: 3px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-bottom: 7px;">
+                            <div id="fpStrengthBar" style="height: 100%; width: 0%; background: #ef4444; transition: all 0.3s ease;"></div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; font-size: 11px;">
+                            <div id="fpCritLength" style="display: flex; align-items: center; gap: 5px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 10.5px;"></i>
+                                <span>8+ chars</span>
+                            </div>
+                            <div id="fpCritUpper" style="display: flex; align-items: center; gap: 5px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 10.5px;"></i>
+                                <span>Uppercase (A-Z)</span>
+                            </div>
+                            <div id="fpCritLower" style="display: flex; align-items: center; gap: 5px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 10.5px;"></i>
+                                <span>Lowercase (a-z)</span>
+                            </div>
+                            <div id="fpCritNumber" style="display: flex; align-items: center; gap: 5px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 10.5px;"></i>
+                                <span>Number (0-9)</span>
+                            </div>
+                            <div id="fpCritSpecial" style="display: flex; align-items: center; gap: 5px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 10.5px;"></i>
+                                <span>Symbol (!@#$)</span>
+                            </div>
+                            <div id="fpCritMatch" style="display: flex; align-items: center; gap: 5px; color: #64748b;">
+                                <i class="fa-solid fa-circle-xmark" style="color: #cbd5e1; font-size: 10.5px;"></i>
+                                <span>Passwords match</span>
+                            </div>
+                        </div>
+                        <div id="fpLiveMatchAlert" style="margin-top: 5px; font-size: 11px; font-weight: 600; display: none; align-items: center; gap: 5px;">
+                            <i id="fpLiveMatchIcon" class="fa-solid fa-circle-exclamation"></i>
+                            <span id="fpLiveMatchText"></span>
+                        </div>
+                    </div>
+
+                    <!-- Spacious Confirm Button with Bottom Margin -->
+                    <div style="display: flex; justify-content: flex-end; margin-top: 4px; padding-bottom: 6px;">
+                        <button type="button" id="btnResetPassword" onclick="submitPasswordReset()" style="width: 100%; padding: 11px 16px; font-size: 13.5px; font-weight: 700; background: #364735; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(54, 71, 53, 0.25); transition: all 0.2s;">
+                            <i class="fa-solid fa-circle-check"></i> Confirm &amp; Update Password
                         </button>
                     </div>
                 </div>
@@ -760,6 +819,113 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             }
         }
 
+        // Real-time Password Criteria validation for Step 3 (Requirement 1)
+        function validateFpPasswordCriteria() {
+            const newPassword = document.getElementById('fpNewPassword')?.value || '';
+            const confirmPassword = document.getElementById('fpConfirmPassword')?.value || '';
+            const newEl = document.getElementById('fpNewPassword');
+            const confEl = document.getElementById('fpConfirmPassword');
+
+            const hasLength = newPassword.length >= 8;
+            const hasUpper = /[A-Z]/.test(newPassword);
+            const hasLower = /[a-z]/.test(newPassword);
+            const hasNumber = /[0-9]/.test(newPassword);
+            const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(newPassword);
+            const isMatch = (newPassword !== '' && confirmPassword !== '' && newPassword === confirmPassword);
+
+            function updateItem(id, passed) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const icon = el.querySelector('i');
+                if (passed) {
+                    el.style.color = '#065f46';
+                    el.style.fontWeight = '600';
+                    if (icon) {
+                        icon.className = 'fa-solid fa-circle-check';
+                        icon.style.color = '#10b981';
+                    }
+                } else {
+                    el.style.color = '#64748b';
+                    el.style.fontWeight = '400';
+                    if (icon) {
+                        icon.className = 'fa-solid fa-circle-xmark';
+                        icon.style.color = '#cbd5e1';
+                    }
+                }
+            }
+
+            updateItem('fpCritLength', hasLength);
+            updateItem('fpCritUpper', hasUpper);
+            updateItem('fpCritLower', hasLower);
+            updateItem('fpCritNumber', hasNumber);
+            updateItem('fpCritSpecial', hasSpecial);
+            updateItem('fpCritMatch', isMatch);
+
+            let score = 0;
+            if (hasLength) score++;
+            if (hasUpper) score++;
+            if (hasLower) score++;
+            if (hasNumber) score++;
+            if (hasSpecial) score++;
+            if (isMatch) score++;
+
+            const bar = document.getElementById('fpStrengthBar');
+            const pill = document.getElementById('fpStrengthPill');
+            if (bar && pill) {
+                if (newPassword.length === 0) {
+                    bar.style.width = '0%';
+                    bar.style.background = '#ef4444';
+                    pill.textContent = 'Enter password';
+                    pill.style.background = '#e2e8f0';
+                    pill.style.color = '#475569';
+                } else if (score <= 2) {
+                    bar.style.width = '25%';
+                    bar.style.background = '#ef4444';
+                    pill.textContent = 'Weak';
+                    pill.style.background = '#fee2e2';
+                    pill.style.color = '#b91c1c';
+                } else if (score <= 4) {
+                    bar.style.width = '60%';
+                    bar.style.background = '#f59e0b';
+                    pill.textContent = 'Medium';
+                    pill.style.background = '#fef3c7';
+                    pill.style.color = '#b45309';
+                } else {
+                    bar.style.width = '100%';
+                    bar.style.background = '#10b981';
+                    pill.textContent = 'Strong ✓';
+                    pill.style.background = '#d1fae5';
+                    pill.style.color = '#065f46';
+                }
+            }
+
+            const alertBox = document.getElementById('fpLiveMatchAlert');
+            const alertIcon = document.getElementById('fpLiveMatchIcon');
+            const alertText = document.getElementById('fpLiveMatchText');
+            if (alertBox && alertIcon && alertText) {
+                if (confirmPassword.length > 0) {
+                    alertBox.style.display = 'flex';
+                    if (newPassword !== confirmPassword) {
+                        alertBox.style.color = '#dc2626';
+                        alertIcon.className = 'fa-solid fa-circle-xmark';
+                        alertIcon.style.color = '#dc2626';
+                        alertText.textContent = 'Passwords do not match';
+                        if (confEl) confEl.style.borderColor = '#ef4444';
+                    } else {
+                        alertBox.style.color = '#059669';
+                        alertIcon.className = 'fa-solid fa-circle-check';
+                        alertIcon.style.color = '#10b981';
+                        alertText.textContent = 'Passwords match!';
+                        if (confEl) confEl.style.borderColor = '#10b981';
+                        if (newEl) newEl.style.borderColor = '#10b981';
+                    }
+                } else {
+                    alertBox.style.display = 'none';
+                    if (confEl) confEl.style.borderColor = '#d1d5db';
+                }
+            }
+        }
+
         // STEP 3: Re-read & Reset Password (Requirement 4 & 5)
         async function submitPasswordReset() {
             const newPassword = document.getElementById('fpNewPassword').value;
@@ -846,6 +1012,60 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         window.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeForgotPasswordModal();
         });
+
+        // Live Lockout Countdown & Automatic Re-enabling (Zero Reload Required)
+        (function() {
+            let retryAfter = <?= (int)($retry_after ?? 0) ?>;
+            const isLocked = <?= $is_locked ? 'true' : 'false' ?>;
+
+            if (isLocked && retryAfter > 0) {
+                const countdownEl = document.getElementById('lockCountdownDisplay');
+                const alertBox = document.getElementById('loginAlertBox');
+                const alertMsg = document.getElementById('loginAlertMessage');
+                const alertIcon = document.getElementById('loginAlertIcon');
+                const idInput = document.getElementById('identifierInput');
+                const passInput = document.getElementById('passwordInput');
+                const submitBtn = document.getElementById('loginSubmitBtn');
+
+                function formatTime(sec) {
+                    const m = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+                }
+
+                const timer = setInterval(function() {
+                    retryAfter--;
+                    if (retryAfter > 0) {
+                        if (countdownEl) {
+                            countdownEl.textContent = formatTime(retryAfter);
+                        }
+                    } else {
+                        clearInterval(timer);
+                        // Re-enable form inputs & button at 0 without a page reload
+                        if (idInput) idInput.disabled = false;
+                        if (passInput) passInput.disabled = false;
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.style.opacity = '1';
+                            submitBtn.style.cursor = 'pointer';
+                        }
+                        if (alertBox && alertMsg) {
+                            alertBox.style.background = '#f0fdf4';
+                            alertBox.style.borderColor = '#bbf7d0';
+                            alertBox.style.boxShadow = '0 4px 12px rgba(22, 163, 74, 0.08)';
+                            if (alertIcon) {
+                                alertIcon.style.background = '#dcfce7';
+                                alertIcon.style.color = '#16a34a';
+                                alertIcon.innerHTML = '<i class="fa-solid fa-lock-open"></i>';
+                            }
+                            alertMsg.style.color = '#166534';
+                            alertMsg.textContent = 'Lockout has expired. You may attempt to log in now.';
+                        }
+                        if (idInput) idInput.focus();
+                    }
+                }, 1000);
+            }
+        })();
     </script>
 </body>
 </html>

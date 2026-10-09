@@ -11,7 +11,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/notification_helper.php';
 
 class BookingVerificationHelper {
-    const CODE_EXPIRY_SECONDS = 600; // 10 minutes
+    const CODE_EXPIRY_SECONDS = 300; // 5 minutes
     const RESEND_COOLDOWN_SECONDS = 60; // 1 minute between resends
     const MAX_VERIFY_ATTEMPTS = 5;
 
@@ -76,8 +76,9 @@ class BookingVerificationHelper {
         // 3. Strict Phone Validation (10 to 13 digits)
         $clean_phone = preg_replace('/[^0-9]/', '', $client_phone);
         if (preg_match('/[a-zA-Z]/', $client_phone) || strlen($clean_phone) < 10 || strlen($clean_phone) > 13) {
-            return ['success' => false, 'message' => 'Please enter a valid Contact Number with 10 to 13 digits (e.g. 0917-123-4567).'];
+            return ['success' => false, 'message' => 'Please enter a valid numeric Contact Number with 10 to 13 digits (e.g. 09171234567).'];
         }
+        $client_phone = $clean_phone;
 
         // 4. Minimum Length Checks
         if (strlen($event_title) < 3) {

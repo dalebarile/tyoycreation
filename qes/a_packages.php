@@ -133,6 +133,7 @@ $wedding_item_count = 0;
 foreach ($wedding_pricing as $c) {
     $wedding_item_count += count($c['items'] ?? []);
 }
+$current_family_item_count = ($active_family === 'wedding') ? $wedding_item_count : $theme_item_count;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -752,133 +753,169 @@ foreach ($wedding_pricing as $c) {
                     <p>Create, update, and delete service packages, equipment add-ons, and real-time live pricing</p>
                 </div>
 
-            <div class="packages-actions">
-                <button type="button" class="btn-add-item" onclick="openAddItemModal()">
-                    <i class="fa-solid fa-plus"></i> Add New Package / Item
-                </button>
-                <button type="button" class="btn-add-cat" onclick="openAddCatModal()">
-                    <i class="fa-solid fa-folder-plus"></i> Add Category
-                </button>
-                <button type="button" class="btn-reset-defaults" onclick="openResetDefaultsModal()">
-                    <i class="fa-solid fa-rotate-left"></i> Reset Defaults
-                </button>
+                <div class="packages-actions">
+                    <button type="button" class="btn-add-item" onclick="openAddItemModal()">
+                        <i class="fa-solid fa-plus"></i> Add New Package / Item
+                    </button>
+                    <button type="button" class="btn-add-cat" onclick="openAddCatModal()">
+                        <i class="fa-solid fa-folder-plus"></i> Add Category
+                    </button>
+                </div>
             </div>
-        </div>
 
-        <!-- Family Tabs -->
-        <div class="family-tabs-bar">
-            <a href="a_packages.php?family=theme_party" class="family-tab-btn <?= ($active_family === 'theme_party') ? 'active' : '' ?>">
-                <i class="fa-solid fa-cake-candles"></i>
-                <span>Kids Party Packages</span>
-                <span class="tab-counter"><?= $theme_item_count ?> items</span>
-            </a>
-            <a href="a_packages.php?family=wedding" class="family-tab-btn <?= ($active_family === 'wedding') ? 'active' : '' ?>">
-                <i class="fa-solid fa-rings-wedding"></i>
-                <span>Wedding Packages</span>
-                <span class="tab-counter"><?= $wedding_item_count ?> items</span>
-            </a>
-        </div>
-
-        <!-- Search & Filter Card -->
-        <div class="search-filter-card">
-            <div class="search-input-wrap">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="packageSearchInput" placeholder="Filter packages or items by name..." oninput="filterPackageItems()">
+            <!-- Family Tabs -->
+            <div class="family-tabs-bar">
+                <a href="a_packages.php?family=theme_party" class="family-tab-btn <?= ($active_family === 'theme_party') ? 'active' : '' ?>">
+                    <i class="fa-solid fa-cake-candles"></i>
+                    <span>Kids Party Packages</span>
+                    <span class="tab-counter"><?= $theme_item_count ?> items</span>
+                </a>
+                <a href="a_packages.php?family=wedding" class="family-tab-btn <?= ($active_family === 'wedding') ? 'active' : '' ?>">
+                    <i class="fa-solid fa-rings-wedding"></i>
+                    <span>Wedding Packages</span>
+                    <span class="tab-counter"><?= $wedding_item_count ?> items</span>
+                </a>
             </div>
-            <div>
-                <select id="categoryFilterSelect" onchange="filterByCategory(this.value)" style="padding: 9px 14px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 13px; outline: none; background: #ffffff;">
-                    <option value="all">All Categories (<?= count($current_catalog) ?>)</option>
-                    <?php foreach ($current_catalog as $cat_key => $cat_info): ?>
-                        <option value="<?= htmlspecialchars($cat_key) ?>"><?= htmlspecialchars($cat_info['category_title'] ?? $cat_key) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-        </div>
 
-        <!-- Categories & Items Display -->
-        <div id="categoriesContainer">
-            <?php foreach ($current_catalog as $cat_key => $cat_info): 
-                $items = $cat_info['items'] ?? [];
-                $is_checkbox = (($cat_info['type'] ?? '') === 'checkbox');
-            ?>
-                <div class="category-box" id="cat_block_<?= htmlspecialchars($cat_key) ?>" data-category="<?= htmlspecialchars($cat_key) ?>">
-                    <div class="category-box-header">
-                        <div class="category-header-title">
-                            <div class="cat-icon-badge">
-                                <i class="fa-solid <?= htmlspecialchars($cat_info['icon'] ?? 'fa-circle-dot') ?>"></i>
-                            </div>
-                            <div>
-                                <h3 class="cat-title-text"><?= htmlspecialchars($cat_info['category_title'] ?? $cat_key) ?></h3>
-                            </div>
-                            <div class="cat-meta-pills">
-                                <span class="pill-badge <?= $is_checkbox ? 'pill-check' : 'pill-radio' ?>">
-                                    <?= $is_checkbox ? 'Pick Any (Checkbox)' : 'Pick One (Radio)' ?>
-                                </span>
-                                <span class="pill-badge pill-count">
-                                    <?= count($items) ?> items
-                                </span>
-                            </div>
+            <!-- Single Unified Catalog Table Card -->
+            <div class="unified-catalog-card" style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03); margin-bottom: 30px;">
+                <!-- Table Controls / Toolbar: Category Dropdown & Reset Defaults on Top Right -->
+                <div class="unified-table-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color); background: #fbfdfa; flex-wrap: wrap; gap: 14px;">
+                    <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <label for="unifiedCategorySelect" style="font-weight: 700; font-size: 13px; color: var(--text-primary); display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+                                <i class="fa-solid fa-layer-group" style="color: var(--primary);"></i> Category:
+                            </label>
+                            <select id="unifiedCategorySelect" onchange="filterUnifiedTableByCategory(this.value)" style="padding: 9px 14px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 13px; font-weight: 600; outline: none; background: #ffffff; min-width: 290px; cursor: pointer;">
+                                <option value="all">All Categories (<?= $current_family_item_count ?> Total Items)</option>
+                                <?php foreach ($current_catalog as $cat_key => $cat_info): ?>
+                                    <option value="<?= htmlspecialchars($cat_key) ?>" data-title="<?= htmlspecialchars($cat_info['category_title'] ?? $cat_key) ?>">
+                                        <?= htmlspecialchars($cat_info['category_title'] ?? $cat_key) ?> (<?= count($cat_info['items'] ?? []) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
 
-                        <div class="category-header-actions">
-                            <button type="button" class="btn-inline-add" onclick="openAddItemModal('<?= htmlspecialchars($cat_key) ?>')">
-                                <i class="fa-solid fa-plus"></i> Add Item
-                            </button>
-                            <button type="button" class="btn-del-cat" title="Delete Category" onclick="confirmDeleteCategory('<?= htmlspecialchars($cat_key) ?>', '<?= htmlspecialchars(addslashes($cat_info['category_title'] ?? $cat_key)) ?>')">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </button>
+                        <div style="position: relative; flex: 1; max-width: 320px; min-width: 200px;">
+                            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 13px;"></i>
+                            <input type="text" id="unifiedSearchInput" placeholder="Filter item by name..." oninput="filterUnifiedTableBySearch(this.value)" style="width: 100%; padding: 8px 12px 8px 34px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 13px; outline: none; box-sizing: border-box;">
                         </div>
                     </div>
 
-                    <?php if (empty($items)): ?>
-                        <div class="empty-cat-message">
-                            <i class="fa-solid fa-box-open" style="font-size: 24px; color: #cbd5e1; display: block; margin-bottom: 6px;"></i>
-                            No items in this category yet. Click <strong>Add Item</strong> above to add one.
-                        </div>
-                    <?php else: ?>
-                        <table class="items-table">
-                            <thead>
-                                <tr>
-                                    <th style="width: 50%;">Package / Item Name</th>
-                                    <th style="width: 25%;">Price (PHP)</th>
-                                    <th style="width: 25%; text-align: right;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($items as $item): 
-                                    $price = (int)($item['price'] ?? 0);
-                                ?>
-                                    <tr class="package-item-row" data-label="<?= strtolower(htmlspecialchars($item['label'] ?? '')) ?>">
-                                        <td>
-                                            <div class="item-label-text"><?= htmlspecialchars($item['label'] ?? '') ?></div>
-                                        </td>
-                                        <td>
-                                            <?php if ($price > 0): ?>
-                                                <div class="item-price-display">&#8369;<?= number_format($price) ?></div>
-                                            <?php else: ?>
-                                                <span class="price-badge-free">Included / &#8369;0</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <div class="action-btns-wrap">
-                                                <button type="button" class="btn-action-edit" 
-                                                        onclick="openEditItemModal('<?= htmlspecialchars(addslashes($cat_key)) ?>', '<?= htmlspecialchars(addslashes($item['id'])) ?>', '<?= htmlspecialchars(addslashes($item['label'])) ?>', <?= $price ?>)">
-                                                    <i class="fa-solid fa-pen-to-square"></i> Edit
-                                                </button>
-                                                <button type="button" class="btn-action-delete" 
-                                                        onclick="confirmDeleteItem('<?= htmlspecialchars(addslashes($cat_key)) ?>', '<?= htmlspecialchars(addslashes($item['id'])) ?>', '<?= htmlspecialchars(addslashes($item['label'])) ?>')">
-                                                    <i class="fa-solid fa-trash"></i> Delete
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    <?php endif; ?>
+                    <!-- Reset Defaults strictly on the top right side of the table -->
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <button type="button" class="btn-reset-defaults" onclick="openResetDefaultsModal()" title="Restore default catalog configuration" style="margin: 0; box-shadow: 0 1px 3px rgba(185, 28, 28, 0.1);">
+                            <i class="fa-solid fa-rotate-left"></i> Reset Defaults
+                        </button>
+                    </div>
                 </div>
-            <?php endforeach; ?>
-        </div>
+
+                <!-- Category Sub-Bar (Active when a specific category is selected) -->
+                <div id="categoryActiveInfoBar" style="display: none; padding: 10px 20px; background: #f0fdf4; border-bottom: 1px solid #bbf7d0; font-size: 13px; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #166534; font-weight: 700;">Selected Category:</span>
+                        <span id="activeCategoryNameDisplay" style="color: #15803d; font-weight: 600;">-</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button type="button" class="btn-inline-add" id="activeCategoryAddBtn" onclick="openAddItemForActiveCategory()">
+                            <i class="fa-solid fa-plus"></i> Add Item to Category
+                        </button>
+                        <button type="button" class="btn-del-cat" id="activeCategoryDelBtn" title="Delete Category" onclick="confirmDeleteActiveCategory()">
+                            <i class="fa-solid fa-trash-can"></i> Delete Category
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Single Unified Table -->
+                <div style="overflow-x: auto;">
+                    <table class="items-table" id="unifiedPackagesTable" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr>
+                                <th style="width: 26%;">Category / Service</th>
+                                <th style="width: 37%;">Package / Item Name</th>
+                                <th style="width: 15%;">Price (PHP)</th>
+                                <th style="width: 11%;">Selection Type</th>
+                                <th style="width: 11%; text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unifiedTableBody">
+                            <?php 
+                            $total_rendered = 0;
+                            foreach ($current_catalog as $cat_key => $cat_info): 
+                                $items = $cat_info['items'] ?? [];
+                                $is_checkbox = (($cat_info['type'] ?? '') === 'checkbox');
+                                $cat_title = $cat_info['category_title'] ?? $cat_key;
+                                $cat_icon = $cat_info['icon'] ?? 'fa-circle-dot';
+                                foreach ($items as $item):
+                                    $total_rendered++;
+                                    $price = (int)($item['price'] ?? 0);
+                            ?>
+                                <tr class="unified-package-row" 
+                                    data-cat="<?= htmlspecialchars($cat_key) ?>" 
+                                    data-cat-title="<?= strtolower(htmlspecialchars($cat_title)) ?>" 
+                                    data-label="<?= strtolower(htmlspecialchars($item['label'] ?? '')) ?>">
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <div class="cat-icon-badge" style="width: 30px; height: 30px; font-size: 13px; flex-shrink: 0;">
+                                                <i class="fa-solid <?= htmlspecialchars($cat_icon) ?>"></i>
+                                            </div>
+                                            <div>
+                                                <span style="font-weight: 700; color: var(--text-primary); font-size: 13px;"><?= htmlspecialchars($cat_title) ?></span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="item-label-text"><?= htmlspecialchars($item['label'] ?? '') ?></div>
+                                    </td>
+                                    <td>
+                                        <?php if ($price > 0): ?>
+                                            <div class="item-price-display">&#8369;<?= number_format($price) ?></div>
+                                        <?php else: ?>
+                                            <span class="price-badge-free">Included / &#8369;0</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="pill-badge <?= $is_checkbox ? 'pill-check' : 'pill-radio' ?>" style="font-size: 10px; padding: 2px 8px;">
+                                            <?= $is_checkbox ? 'Pick Any' : 'Pick One' ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="action-btns-wrap">
+                                            <button type="button" class="btn-action-edit" 
+                                                    onclick="openEditItemModal('<?= htmlspecialchars(addslashes($cat_key)) ?>', '<?= htmlspecialchars(addslashes($item['id'])) ?>', '<?= htmlspecialchars(addslashes($item['label'])) ?>', <?= $price ?>)">
+                                                <i class="fa-solid fa-pen-to-square"></i> Edit
+                                            </button>
+                                            <button type="button" class="btn-action-delete" 
+                                                    onclick="confirmDeleteItem('<?= htmlspecialchars(addslashes($cat_key)) ?>', '<?= htmlspecialchars(addslashes($item['id'])) ?>', '<?= htmlspecialchars(addslashes($item['label'])) ?>')">
+                                                <i class="fa-solid fa-trash"></i> Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php 
+                                endforeach;
+                            endforeach; 
+                            ?>
+
+                            <?php if ($total_rendered === 0): ?>
+                                <tr>
+                                    <td colspan="5" style="text-align: center; padding: 40px 20px; color: #64748b;">
+                                        <i class="fa-solid fa-box-open" style="font-size: 28px; color: #cbd5e1; display: block; margin-bottom: 10px;"></i>
+                                        No items registered in this catalog yet. Click <strong>Add New Package / Item</strong> above to get started.
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+
+                            <tr id="noUnifiedResultsRow" style="display: none;">
+                                <td colspan="5" style="text-align: center; padding: 36px 20px; color: #64748b;">
+                                    <i class="fa-solid fa-magnifying-glass" style="font-size: 22px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>
+                                    No package or item matches your selected category or search filter.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
         </div> <!-- .admin-body -->
     </main>
@@ -1154,42 +1191,78 @@ foreach ($wedding_pricing as $c) {
         }
 
         // Live text filter
-        function filterPackageItems() {
-            const query = document.getElementById('packageSearchInput').value.toLowerCase().trim();
-            const rows = document.querySelectorAll('.package-item-row');
-            
+        let currentFilteredCat = 'all';
+
+        function filterUnifiedTableByCategory(selectedCat) {
+            currentFilteredCat = selectedCat;
+            const selectEl = document.getElementById('unifiedCategorySelect');
+            const selectedOpt = selectEl ? selectEl.options[selectEl.selectedIndex] : null;
+            const catTitle = selectedOpt ? selectedOpt.getAttribute('data-title') : '';
+
+            const infoBar = document.getElementById('categoryActiveInfoBar');
+            const nameDisplay = document.getElementById('activeCategoryNameDisplay');
+            if (infoBar && nameDisplay) {
+                if (selectedCat !== 'all') {
+                    infoBar.style.display = 'flex';
+                    nameDisplay.textContent = catTitle || selectedCat;
+                } else {
+                    infoBar.style.display = 'none';
+                }
+            }
+
+            applyUnifiedFilters();
+        }
+
+        function filterUnifiedTableBySearch(query) {
+            applyUnifiedFilters();
+        }
+
+        function applyUnifiedFilters() {
+            const selectEl = document.getElementById('unifiedCategorySelect');
+            const selectedCat = selectEl ? selectEl.value : 'all';
+            const searchInput = document.getElementById('unifiedSearchInput');
+            const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
+            const rows = document.querySelectorAll('.unified-package-row');
+            let visibleCount = 0;
+
             rows.forEach(row => {
-                const label = row.getAttribute('data-label') || '';
-                if (!query || label.includes(query)) {
+                const rowCat = row.getAttribute('data-cat') || '';
+                const rowCatTitle = row.getAttribute('data-cat-title') || '';
+                const rowLabel = row.getAttribute('data-label') || '';
+
+                const matchesCat = (selectedCat === 'all' || rowCat === selectedCat);
+                const matchesSearch = (!query || rowLabel.includes(query) || rowCatTitle.includes(query));
+
+                if (matchesCat && matchesSearch) {
                     row.style.display = '';
+                    visibleCount++;
                 } else {
                     row.style.display = 'none';
                 }
             });
 
-            // Hide category boxes if all items are hidden by search query
-            const catBoxes = document.querySelectorAll('.category-box');
-            catBoxes.forEach(box => {
-                if (!query) {
-                    box.style.display = '';
-                } else {
-                    const visibleRows = box.querySelectorAll('.package-item-row:not([style*="display: none"])');
-                    box.style.display = (visibleRows.length > 0) ? '' : 'none';
-                }
-            });
+            const noResultsRow = document.getElementById('noUnifiedResultsRow');
+            if (noResultsRow) {
+                noResultsRow.style.display = (visibleCount === 0 && rows.length > 0) ? '' : 'none';
+            }
         }
 
-        // Filter by category dropdown
-        function filterByCategory(selectedCat) {
-            const catBoxes = document.querySelectorAll('.category-box');
-            catBoxes.forEach(box => {
-                const catKey = box.getAttribute('data-category');
-                if (selectedCat === 'all' || catKey === selectedCat) {
-                    box.style.display = '';
-                } else {
-                    box.style.display = 'none';
-                }
-            });
+        function openAddItemForActiveCategory() {
+            if (currentFilteredCat && currentFilteredCat !== 'all') {
+                openAddItemModal(currentFilteredCat);
+            } else {
+                openAddItemModal();
+            }
+        }
+
+        function confirmDeleteActiveCategory() {
+            if (currentFilteredCat && currentFilteredCat !== 'all') {
+                const selectEl = document.getElementById('unifiedCategorySelect');
+                const selectedOpt = selectEl ? selectEl.options[selectEl.selectedIndex] : null;
+                const catTitle = selectedOpt ? (selectedOpt.getAttribute('data-title') || currentFilteredCat) : currentFilteredCat;
+                confirmDeleteCategory(currentFilteredCat, catTitle);
+            }
         }
 
         // Modal Handlers: Reset Defaults

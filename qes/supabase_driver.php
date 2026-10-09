@@ -4,6 +4,8 @@
  * Drop-in polymorphic replacement for mysqli, connecting directly to Supabase
  */
 
+require_once __DIR__ . '/cache_helper.php';
+
 class SupabaseResult {
     public $num_rows = 0;
     private $rows = [];
@@ -316,7 +318,55 @@ class SupabaseConnection {
         return $this->executeApi($sql, $params);
     }
 
+    private function isQueryCacheable(string $sql): bool {
+        if (!preg_match('/^\s*(SELECT|WITH|SHOW)\b/i', $sql)) {
+            return false;
+        }
+        if (stripos($sql, 'login_attempts') !== false) {
+            return false;
+        }
+        if (stripos($sql, 'is_blocked') !== false) {
+            return false;
+        }
+        if (stripos($sql, 'password') !== false && stripos($sql, 'users') !== false) {
+            return false;
+        }
+        if (stripos($sql, 'FOR UPDATE') !== false || stripos($sql, '/* NO_CACHE */') !== false) {
+            return false;
+        }
+        return true;
+    }
+
+    private function getCacheKey(string $sql, array $params = []): ?string {
+        if (!$this->isQueryCacheable($sql)) {
+            return null;
+        }
+        $ver = class_exists('QesCache') ? (int)QesCache::get('qes_db_cache_ver', 1) : 1;
+        $hash = md5($sql . (!empty($params) ? ':' . serialize($params) : ''));
+        return "sqc_{$ver}_{$hash}";
+    }
+
+    private function invalidateQueryCache(): void {
+        $this->queryCache = [];
+        if (class_exists('QesCache')) {
+            QesCache::set('qes_db_cache_ver', time(), 86400);
+            QesCache::delete('all_settings_map');
+        }
+    }
+
     private function executePdo(string $sql, array $params): SupabaseResult|bool {
+        $cacheKey = $this->getCacheKey($sql, $params);
+        if ($cacheKey && isset($this->queryCache[$cacheKey])) {
+            return new SupabaseResult($this->queryCache[$cacheKey]);
+        }
+        if ($cacheKey && class_exists('QesCache')) {
+            $cachedRows = QesCache::get($cacheKey);
+            if (is_array($cachedRows)) {
+                $this->queryCache[$cacheKey] = $cachedRows;
+                return new SupabaseResult($cachedRows);
+            }
+        }
+
         try {
             $stmt = $this->pdo->prepare($sql);
             $exec = $stmt->execute($params);
@@ -331,9 +381,16 @@ class SupabaseConnection {
                 if (stripos($sql, 'RETURNING id') !== false && !empty($rows[0]['id'])) {
                     $this->insert_id = (int)$rows[0]['id'];
                 }
+                if ($cacheKey) {
+                    $this->queryCache[$cacheKey] = $rows;
+                    if (class_exists('QesCache')) {
+                        QesCache::set($cacheKey, $rows, 25);
+                    }
+                }
                 return new SupabaseResult($rows);
             }
             $this->affected_rows = $stmt->rowCount();
+            $this->invalidateQueryCache();
             return true;
         } catch (Exception $e) {
             $this->error = $e->getMessage();
@@ -369,11 +426,20 @@ class SupabaseConnection {
         }
 
         $isSelect = (bool)preg_match('/^\s*(SELECT|WITH|SHOW)\b/i', $sql);
-        $cacheKey = $isSelect ? md5($sql) : null;
+        $cacheKey = $this->getCacheKey($sql);
 
-        // In-memory query cache check
+        // 1. In-memory query cache check
         if ($cacheKey && isset($this->queryCache[$cacheKey])) {
             return new SupabaseResult($this->queryCache[$cacheKey]);
+        }
+
+        // 2. Persistent Cross-request cache check
+        if ($cacheKey && class_exists('QesCache')) {
+            $cachedRows = QesCache::get($cacheKey);
+            if (is_array($cachedRows)) {
+                $this->queryCache[$cacheKey] = $cachedRows;
+                return new SupabaseResult($cachedRows);
+            }
         }
 
         // Reuse persistent cURL handle for Keep-Alive / connection reuse
@@ -385,6 +451,8 @@ class SupabaseConnection {
                 "Authorization: Bearer {$this->token}",
                 "Content-Type: application/json"
             ]);
+            curl_setopt($this->curlHandle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+            curl_setopt($this->curlHandle, CURLOPT_CONNECTTIMEOUT, 4);
             curl_setopt($this->curlHandle, CURLOPT_TIMEOUT, 12);
             curl_setopt($this->curlHandle, CURLOPT_TCP_KEEPALIVE, 1);
             curl_setopt($this->curlHandle, CURLOPT_TCP_KEEPIDLE, 120);
@@ -416,6 +484,7 @@ class SupabaseConnection {
             if (!$isSelect && (stripos($errMessage, 'read-only') !== false || stripos($errMessage, '25006') !== false || stripos($errMessage, 'permission denied') !== false)) {
                 $pgRes = $this->executePostgrestFallback($sql, $originalParams, $originalSql);
                 if ($pgRes !== false) {
+                    $this->invalidateQueryCache();
                     return $pgRes;
                 }
             }
@@ -436,17 +505,20 @@ class SupabaseConnection {
             if ($isSelect || stripos($sql, 'RETURNING') !== false) {
                 if ($cacheKey) {
                     $this->queryCache[$cacheKey] = $json;
+                    if (class_exists('QesCache')) {
+                        QesCache::set($cacheKey, $json, 25);
+                    }
                 }
                 return new SupabaseResult($json);
             }
             $this->affected_rows = count($json);
             // Invalidate cache on write operations
-            $this->queryCache = [];
+            $this->invalidateQueryCache();
             return true;
         }
 
         // Invalidate cache on non-select writes
-        $this->queryCache = [];
+        $this->invalidateQueryCache();
         return true;
     }
 

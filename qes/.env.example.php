@@ -41,3 +41,13 @@ define('ENV_EMAIL_PORT',      587);
 define('ENV_EMAIL_USERNAME',  'your_gmail_address@gmail.com');
 define('ENV_EMAIL_PASSWORD',  'your_16_char_gmail_app_password');
 define('ENV_EMAIL_FROM_NAME', 'Tyoy Creation Events');
+
+// ============================================================
+// CLOUDFLARE TURNSTILE (CAPTCHA ALTERNATIVE)
+// Site Key (Public) & Secret Key (Private)
+// Official Cloudflare Test Keys:
+//   Site Key:   1x00000000000000000000AA
+//   Secret Key: 1x0000000000000000000000000000000AA
+// ============================================================
+define('ENV_TURNSTILE_SITE_KEY',   'YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY_HERE');
+define('ENV_TURNSTILE_SECRET_KEY', 'YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY_HERE');

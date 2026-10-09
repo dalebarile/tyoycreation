@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die('CSRF token validation failed.');
     }
     $client_name = trim($_POST['client_name'] ?? '');
-    $client_phone = trim($_POST['client_phone'] ?? '');
+    $client_phone = preg_replace('/[^0-9]/', '', trim($_POST['client_phone'] ?? ''));
     $client_email = trim($_POST['client_email'] ?? '');
     $client_address = trim($_POST['client_address'] ?? '');
     
@@ -119,11 +119,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-row-2">
                         <div class="form-group">
                             <label class="form-label">Client Full Name *</label>
-                            <input type="text" name="client_name" class="form-control" placeholder="e.g. Robert Tan" required>
+                            <input type="text" name="client_name" id="manualClientName" class="form-control" placeholder="e.g. Robert Tan" required oninput="validateManualField(this)">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Contact Number *</label>
-                            <input type="text" name="client_phone" class="form-control" placeholder="e.g. 0917-888-9999" required>
+                            <input type="tel" name="client_phone" id="manualClientPhone" class="form-control" placeholder="09XXXXXXXXX (11 digits)" required inputmode="numeric" pattern="09[0-9]{9}" maxlength="11" oninput="validatePhoneOnly(this)" onkeypress="return isNumberKey(event)" onpaste="handlePhonePaste(event)">
+                            <small id="manualPhoneFeedback" style="display: none; margin-top: 5px; font-size: 11.5px; font-weight: 600;"></small>
                         </div>
                     </div>
 
@@ -142,13 +143,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <div class="form-group">
                         <label class="form-label">Event Title *</label>
-                        <input type="text" name="event_title" class="form-control" placeholder="e.g. Tan & Lim Silver Anniversary" required>
+                        <input type="text" name="event_title" id="manualEventTitle" class="form-control" placeholder="e.g. Tan & Lim Silver Anniversary" required oninput="validateManualField(this)">
                     </div>
 
                     <div class="form-row-2">
                         <div class="form-group">
                             <label class="form-label">Event Type *</label>
-                            <select name="event_type" id="manualEventType" class="form-control" required>
+                            <select name="event_type" id="manualEventType" class="form-control" required onchange="validateManualField(this)">
                                 <option value="Kids Party">Kids Party</option>
                                 <option value="Weddings">Weddings</option>
                                 <option value="Birthday Parties">Birthday Parties (Legacy)</option>
@@ -163,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-row-2">
                         <div class="form-group">
                             <label class="form-label">Event Date *</label>
-                            <input type="date" name="event_date" id="manualEventDate" class="form-control" required>
+                            <input type="date" name="event_date" id="manualEventDate" class="form-control" required oninput="validateManualField(this)">
                             <small id="manualLeadTimeHint" style="display: block; margin-top: 6px; font-size: 11px; line-height: 1.35; color: var(--text-secondary);"></small>
                         </div>
                         <div class="form-group">
@@ -174,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <div class="form-group">
                         <label class="form-label">Venue / Location *</label>
-                        <input type="text" name="location_venue" class="form-control" placeholder="e.g. Shangri-La Grand Ballroom" required>
+                        <input type="text" name="location_venue" id="manualLocationVenue" class="form-control" placeholder="e.g. Shangri-La Grand Ballroom" required oninput="validateManualField(this)">
                     </div>
 
                     <div class="form-group">
@@ -219,15 +220,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </label>
                     </div>
 
-                    <button type="submit" class="btn-primary" style="width: 100%; padding: 13px; font-size: 15px;">
-                        <i class="fa-solid fa-calendar-check"></i> Save Booking Directly
-                    </button>
+                    <!-- Visible Validation Alert Box (Requirement 9) -->
+                    <div id="manualValidationAlert" style="display: none; background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 14px 18px; border-radius: 10px; margin-bottom: 20px; font-size: 13.5px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 6px;">
+                            <i class="fa-solid fa-circle-exclamation" style="color: #dc2626;"></i>
+                            <span>Please complete the required fields with valid details:</span>
+                        </div>
+                        <ul id="manualValidationErrorsList" style="margin: 0; padding-left: 24px; font-size: 13px; line-height: 1.5;"></ul>
+                    </div>
+
+                    <!-- Lower Right Button Container (Requirement 7) -->
+                    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-color);">
+                        <a href="a_calendar.php" class="btn-secondary" style="padding: 11px 20px; font-size: 14px; text-decoration: none;">Cancel</a>
+                        <button type="submit" id="btnSubmitManualEntry" class="btn-primary" style="padding: 12px 28px; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(24, 57, 43, 0.25);">
+                            <i class="fa-solid fa-calendar-check"></i> Save Manual Entry
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
     </main>
 
     <script>
+        // Task 8: Contact number field should not accept alphabets
+        function isNumberKey(evt) {
+            const charCode = (evt.which) ? evt.which : evt.keyCode;
+            if (charCode > 31 && (charCode < 48 || charCode > 57)) {
+                evt.preventDefault();
+                return false;
+            }
+            return true;
+        }
+
+        function handlePhonePaste(e) {
+            e.preventDefault();
+            const paste = (e.clipboardData || window.clipboardData).getData('text');
+            const numbersOnly = paste.replace(/[^0-9]/g, '').slice(0, 11);
+            e.target.value = numbersOnly;
+            validatePhoneOnly(e.target);
+        }
+
+        function validatePhoneOnly(input) {
+            // Strictly strip any non-numeric character
+            input.value = input.value.replace(/[^0-9]/g, '').slice(0, 11);
+            const feedback = document.getElementById('manualPhoneFeedback');
+            if (!feedback) return;
+
+            if (input.value.length === 0) {
+                feedback.style.display = 'none';
+                input.style.borderColor = '#d1d5db';
+            } else if (input.value.length < 11 || !input.value.startsWith('09')) {
+                feedback.style.display = 'block';
+                feedback.style.color = '#dc2626';
+                feedback.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Must be 11 numeric digits starting with 09 (e.g., 09171234567)';
+                input.style.borderColor = '#ef4444';
+            } else {
+                feedback.style.display = 'block';
+                feedback.style.color = '#059669';
+                feedback.innerHTML = '<i class="fa-solid fa-circle-check"></i> Valid Philippine numerical contact number';
+                input.style.borderColor = '#10b981';
+            }
+        }
+
+        function validateManualField(input) {
+            if (input.hasAttribute('required')) {
+                if (input.value.trim().length === 0) {
+                    input.style.borderColor = '#ef4444';
+                } else {
+                    input.style.borderColor = '#10b981';
+                }
+            }
+        }
+
+        // Task 9: Visible validations on form submit
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const errors = [];
+            const name = document.getElementById('manualClientName');
+            const phone = document.getElementById('manualClientPhone');
+            const title = document.getElementById('manualEventTitle');
+            const date = document.getElementById('manualEventDate');
+            const venue = document.getElementById('manualLocationVenue');
+
+            if (!name || name.value.trim().length === 0) {
+                errors.push('Client Full Name is required.');
+                if (name) name.style.borderColor = '#ef4444';
+            }
+            if (!phone || phone.value.trim().length !== 11 || !phone.value.startsWith('09')) {
+                errors.push('Contact Number must be exactly 11 digits starting with 09.');
+                if (phone) phone.style.borderColor = '#ef4444';
+            }
+            if (!title || title.value.trim().length === 0) {
+                errors.push('Event Title is required.');
+                if (title) title.style.borderColor = '#ef4444';
+            }
+            if (!date || date.value.trim().length === 0) {
+                errors.push('Event Date is required.');
+                if (date) date.style.borderColor = '#ef4444';
+            } else if (date.min && date.value < date.min) {
+                errors.push(`Event Date must meet advance booking notice (minimum: ${date.min}).`);
+                date.style.borderColor = '#ef4444';
+            }
+            if (!venue || venue.value.trim().length === 0) {
+                errors.push('Venue / Location is required.');
+                if (venue) venue.style.borderColor = '#ef4444';
+            }
+
+            const alertBox = document.getElementById('manualValidationAlert');
+            const list = document.getElementById('manualValidationErrorsList');
+            if (errors.length > 0) {
+                e.preventDefault();
+                list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
+                alertBox.style.display = 'block';
+                alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else {
+                alertBox.style.display = 'none';
+            }
+        });
+
         function calculateMinimumDate(eventType) {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -239,7 +348,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Weddings require at least 6 months advance notice
                 const curMonth = minDate.getMonth();
                 minDate.setMonth(curMonth + 6);
-                // Protect against month-end rollover (e.g. Aug 31 + 6 months -> Feb 28, not March)
                 if (minDate.getMonth() !== (curMonth + 6) % 12) {
                     minDate.setDate(0);
                 }
@@ -259,16 +367,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const eventType = typeSelect.value || 'Weddings';
             const { minDate, isWedding } = calculateMinimumDate(eventType);
 
-            // Format YYYY-MM-DD dynamically
             const yyyy = minDate.getFullYear();
             const mm = String(minDate.getMonth() + 1).padStart(2, '0');
             const dd = String(minDate.getDate()).padStart(2, '0');
             const minDateStr = `${yyyy}-${mm}-${dd}`;
 
-            // Set the date input min attribute correctly
             dateInput.min = minDateStr;
 
-            // Formatted earliest available date displayed to user
             const options = { year: 'numeric', month: 'short', day: 'numeric' };
             const formattedMin = minDate.toLocaleDateString('en-US', options);
 
@@ -280,8 +385,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Do not overwrite a valid future date selected by the user.
-            // Only adjust the date if it is earlier than the allowed minimum.
             if (dateInput.value && dateInput.value < minDateStr) {
                 dateInput.value = minDateStr;
             }

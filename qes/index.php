@@ -886,9 +886,32 @@ if ($has_wedding) {
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow: auto;
             animation: modalFadeIn 0.25s ease;
             position: relative;
+        }
+
+        /* Wedding Package Modal: strictly do not scroll */
+        #weddingPackageModal .package-view-modal {
+            overflow: hidden !important;
+            max-height: 90vh;
+        }
+        #weddingPackageModal .modal-split-layout {
+            overflow: hidden !important;
+            padding: 20px 24px;
+            gap: 20px;
+            align-items: center;
+        }
+        #weddingPackageModal .modal-split-img {
+            max-height: 250px;
+            object-fit: cover;
+        }
+        #weddingPackageModal .modal-inclusions-checklist {
+            margin: 0 0 12px 0;
+        }
+        #weddingPackageModal .modal-inclusions-checklist li {
+            margin-bottom: 6px;
+            font-size: 13px;
         }
 
         @keyframes modalFadeIn {
@@ -1317,7 +1340,7 @@ if ($has_wedding) {
         .chatbot-messages::-webkit-scrollbar-thumb:hover {
             background: #9ca3af;
         }
-        .chat-bubble {
+        .chat-bubble, .chat-msg {
             max-width: 85%;
             padding: 11px 15px;
             border-radius: 16px;
@@ -1327,20 +1350,20 @@ if ($has_wedding) {
             word-break: break-word;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .chat-bubble strong {
+        .chat-bubble strong, .chat-msg strong {
             font-weight: 700;
         }
-        .chat-bubble em {
+        .chat-bubble em, .chat-msg em {
             font-style: italic;
         }
-        .chat-bubble.bot {
+        .chat-bubble.bot, .chat-msg.bot {
             align-self: flex-start;
             background: #ffffff;
             color: #1f2937;
             border: 1px solid #e5e7eb;
             border-bottom-left-radius: 4px;
         }
-        .chat-bubble.user {
+        .chat-bubble.user, .chat-msg.user {
             align-self: flex-end;
             background: #2a3c29;
             color: #ffffff;
@@ -1997,61 +2020,8 @@ if ($has_wedding) {
                         <li><i class="fa-solid fa-check"></i> Full-Day Coordination &amp; Master of Ceremonies</li>
                     </ul>
 
-                    <div class="modal-pricing-title"><i class="fa-solid fa-tag"></i> Packages &amp; Pricing</div>
-                    <div class="modal-pricing-rows">
-                        <?php 
-                        $w_items = $pricing_wedding['reception_styling']['items'] ?? [];
-                        if (!empty($w_items)):
-                            foreach ($w_items as $item): 
-                                $price = (int)$item['price'];
-                                $price_text = ($price > 0) ? '&#8369; ' . number_format($price) : 'Custom Quote';
-                                $item_label = $item['label'];
-                        ?>
-                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
-                                <div>
-                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);"><?= htmlspecialchars($item_label) ?></span>
-                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;"><?= $price_text ?></span>
-                                </div>
-                                <a href="booking.php?event_type=Weddings&package=<?= urlencode($item_label) ?>" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-                                    <i class="fa-solid fa-lock"></i> Select
-                                </a>
-                            </div>
-                        <?php 
-                            endforeach;
-                        else:
-                        ?>
-                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
-                                <div>
-                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Basic Package</span>
-                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 15,000</span>
-                                </div>
-                                <a href="booking.php?event_type=Weddings&package=Basic+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-                                    <i class="fa-solid fa-lock"></i> Select
-                                </a>
-                            </div>
-                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
-                                <div>
-                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Standard Package</span>
-                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 25,000</span>
-                                </div>
-                                <a href="booking.php?event_type=Weddings&package=Standard+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-                                    <i class="fa-solid fa-lock"></i> Select
-                                </a>
-                            </div>
-                            <div class="modal-price-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; gap: 8px;">
-                                <div>
-                                    <span class="p-name" style="font-weight: 700; color: var(--text-primary);">Premium Package</span>
-                                    <span class="p-val" style="display: block; font-size: 13px; color: var(--primary); font-weight: 800;">&#8369; 45,000</span>
-                                </div>
-                                <a href="booking.php?event_type=Weddings&package=Premium+Package" class="btn-event-pill" style="font-size: 11px; padding: 6px 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-                                    <i class="fa-solid fa-lock"></i> Select
-                                </a>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px; margin-top: 10px;">
-                        <i class="fa-solid fa-lock" style="color: var(--primary);"></i> Selecting a package locks this service in your booking form to preserve your reservation details.
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px; margin-top: 12px;">
+                        <i class="fa-solid fa-lock" style="color: var(--primary);"></i> Booking locks Weddings as your selected service in the reservation form.
                     </p>
 
                     <a href="booking.php?event_type=Weddings" class="btn-event-pill" style="width: 100%; text-align: center; display: block; box-sizing: border-box; text-decoration: none;">
@@ -2073,16 +2043,21 @@ if ($has_wedding) {
             <div class="chatbot-header">
                 <div class="chatbot-header-info">
                     <div class="chatbot-avatar">
-                        <i class="fa-solid fa-sparkles"></i>
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
                     </div>
                     <div>
                         <div style="font-weight: 700; font-size: 14px;">Event Concierge AI</div>
                         <div style="font-size: 11px; opacity: 0.85;">Here to answer general FAQs &amp; packages</div>
                     </div>
                 </div>
-                <button type="button" onclick="toggleChatWindow()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" onclick="resetChatConversation()" title="Reset Conversation" style="background: none; border: none; color: white; cursor: pointer; font-size: 15px; opacity: 0.85; transition: opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.85'" aria-label="Reset Conversation">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                    <button type="button" onclick="toggleChatWindow()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;" aria-label="Close Chat">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
 
             <div class="chatbot-messages" id="chatbotMessages">
@@ -2102,6 +2077,25 @@ if ($has_wedding) {
                     <button type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane"></i></button>
                 </form>
                 <div class="chat-input-hint">Press <strong>Enter</strong> to send • <strong>Shift + Enter</strong> for new line</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cookie Consent Banner -->
+    <div id="cookieConsentBanner" class="cookie-consent-bar" style="display: none;">
+        <div class="cookie-consent-content">
+            <div class="cookie-consent-icon">
+                <i class="fa-solid fa-cookie-bite"></i>
+            </div>
+            <div class="cookie-consent-text">
+                <h4>We value your privacy &amp; experience</h4>
+                <p>
+                    We use cookies and local storage to optimize your navigation, ensure session security, remember your customized package preferences, and synchronize chat concierge inquiries. Do you accept the use of cookies?
+                </p>
+            </div>
+            <div class="cookie-consent-actions">
+                <button type="button" class="btn-cookie-decline" onclick="handleCookieConsent('declined')">Decline</button>
+                <button type="button" class="btn-cookie-accept" onclick="handleCookieConsent('accepted')">Accept Cookies</button>
             </div>
         </div>
     </div>
@@ -2196,6 +2190,109 @@ if ($has_wedding) {
                 .replace(/\n/g, '<br>');
         }
 
+        // Cookie Consent Engine
+        function checkCookieConsent() {
+            const consent = localStorage.getItem('tyoy_cookie_consent');
+            if (!consent) {
+                setTimeout(() => {
+                    const el = document.getElementById('cookieConsentBanner');
+                    if (el) el.style.display = 'block';
+                }, 500);
+            }
+        }
+
+        function handleCookieConsent(choice) {
+            localStorage.setItem('tyoy_cookie_consent', choice);
+            document.cookie = 'cookie_consent=' + choice + '; max-age=31536000; path=/; SameSite=Lax';
+            const el = document.getElementById('cookieConsentBanner');
+            if (el) {
+                el.style.animation = 'cookieSlideDown 0.25s ease forwards';
+                setTimeout(() => { el.style.display = 'none'; }, 250);
+            }
+        }
+
+        // Synchronized Chatbot Concierge Engine
+        const CHAT_SYNC_KEY = 'tyoy_synchronized_chat_history';
+
+        function getStoredChatHistory() {
+            try {
+                const data = localStorage.getItem(CHAT_SYNC_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveMessageToStorage(role, text) {
+            try {
+                const hist = getStoredChatHistory();
+                hist.push({ role: role, text: text, time: Date.now() });
+                localStorage.setItem(CHAT_SYNC_KEY, JSON.stringify(hist));
+            } catch (e) {}
+        }
+
+        function renderSynchronizedChat() {
+            const container = document.getElementById('chatbotMessages');
+            if (!container) return;
+            const history = getStoredChatHistory();
+            if (!history || history.length === 0) {
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="chat-bubble bot">
+                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong>. I can answer questions regarding our services, Birthday and Wedding packages, pricing, and booking requirements!
+                    <div class="quick-chips-wrapper">
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                    </div>
+                </div>
+            `;
+
+            history.forEach(item => {
+                const d = document.createElement('div');
+                d.className = (item.role === 'user') ? 'chat-bubble user' : 'chat-bubble bot';
+                d.innerHTML = formatChatMessage(item.text);
+                container.appendChild(d);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function resetChatConversation() {
+            if (!confirm('Are you sure you want to reset the conversation?')) return;
+            try {
+                await fetch('chatbot.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'clear_history' })
+                });
+            } catch (e) {}
+
+            localStorage.removeItem(CHAT_SYNC_KEY);
+            const container = document.getElementById('chatbotMessages');
+            if (container) {
+                container.innerHTML = `
+                    <div class="chat-bubble bot">
+                        Conversation has been reset. You have full message capacity available! How can I assist you today?
+                        <div class="quick-chips-wrapper">
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                        </div>
+                    </div>
+                `;
+                container.scrollTop = 0;
+            }
+            window.dispatchEvent(new StorageEvent('storage', { key: CHAT_SYNC_KEY, newValue: null }));
+        }
+
+        window.addEventListener('storage', (e) => {
+            if (e.key === CHAT_SYNC_KEY) {
+                renderSynchronizedChat();
+            }
+        });
+
         // Chatbot Window Controls
         function toggleChatWindow() {
             const win = document.getElementById('chatbotWindow');
@@ -2227,6 +2324,7 @@ if ($has_wedding) {
             uDiv.className = 'chat-bubble user';
             uDiv.innerHTML = formatChatMessage(msg);
             chatMessages.appendChild(uDiv);
+            saveMessageToStorage('user', msg);
             
             // Reset input and its height
             input.value = '';
@@ -2256,18 +2354,28 @@ if ($has_wedding) {
                         try { data = JSON.parse(jsonMatch[0]); } catch (e) {}
                     }
                 }
+                let replyText = '';
                 if (data && (data.reply || data.response)) {
-                    botDiv.innerHTML = formatChatMessage(data.reply || data.response);
+                    replyText = data.reply || data.response;
                 } else if (data && data.message) {
-                    botDiv.innerHTML = formatChatMessage(data.message);
+                    replyText = data.message;
                 } else {
-                    botDiv.innerHTML = "I am here to assist you! Feel free to ask about our event packages, check date availability, or click <strong>'Book Now'</strong> above to submit your inquiry directly!";
+                    replyText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
                 }
+                botDiv.innerHTML = formatChatMessage(replyText);
+                saveMessageToStorage('bot', replyText);
             } catch (err) {
-                botDiv.innerHTML = "I am here to assist you! Feel free to ask about our event packages, check date availability, or click <strong>'Book Now'</strong> above to submit your inquiry directly!";
+                const fallbackText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
+                botDiv.innerHTML = formatChatMessage(fallbackText);
+                saveMessageToStorage('bot', fallbackText);
             }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            renderSynchronizedChat();
+            checkCookieConsent();
+        });
     </script>
 </body>
 </html>

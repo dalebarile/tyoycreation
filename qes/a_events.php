@@ -12,11 +12,15 @@ $search = trim($_GET['search'] ?? '');
 $alert_message = '';
 $alert_type = 'success';
 
-// Auto-purge: permanently delete rejected bookings older than 7 days
-$conn->query("DELETE FROM bookings WHERE status = 'rejected' AND updated_at < (NOW() - INTERVAL '7 DAY')");
+// Auto-purge: permanently delete rejected bookings older than 7 days (throttled to once daily)
+$now_ts = time();
+if (($now_ts - ($_SESSION['last_rejected_purge_at'] ?? 0)) > 86400) {
+    $_SESSION['last_rejected_purge_at'] = $now_ts;
+    $conn->query("DELETE FROM bookings WHERE status = 'rejected' AND updated_at < (NOW() - INTERVAL '7 DAY')");
+}
 
-// Status counts for navigation tabs
-$status_counts = ['all' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
+// Status counts for navigation tabs (Requirement 5: Unified Bookings tab)
+$status_counts = ['all' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'bookings' => 0];
 $c_res = $conn->query("SELECT status, COUNT(*) as cnt FROM bookings GROUP BY status");
 if ($c_res) {
     while ($r = $c_res->fetch_assoc()) {
@@ -28,6 +32,8 @@ if ($c_res) {
         $status_counts['all'] += $cnt;
     }
 }
+$status_counts['bookings'] = $status_counts['approved'] + $status_counts['rejected'];
+
 
 // Handle Actions (POST)
 
@@ -67,11 +73,26 @@ $where_clauses = [];
 $params = [];
 $types = "";
 
-if ($status_filter !== 'all' && in_array($status_filter, ['pending', 'approved', 'rejected'])) {
+$sub_filter = $_GET['sub'] ?? '';
+
+if ($status_filter === 'bookings') {
+    if ($sub_filter === 'approved') {
+        $where_clauses[] = "status = ?";
+        $params[] = 'approved';
+        $types .= "s";
+    } elseif ($sub_filter === 'rejected') {
+        $where_clauses[] = "status = ?";
+        $params[] = 'rejected';
+        $types .= "s";
+    } else {
+        $where_clauses[] = "status IN ('approved', 'rejected')";
+    }
+} elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'approved', 'rejected'])) {
     $where_clauses[] = "status = ?";
     $params[] = $status_filter;
     $types .= "s";
 }
+
 
 $per_page = 10;
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
@@ -161,12 +182,15 @@ if (!empty($search)) {
 }
 
 // Helper to preserve GET params for pagination links
-$page_url = function($p) use ($status_filter, $search) {
+$page_url = function($p) use ($status_filter, $sub_filter, $search) {
     $params = ['page' => $p];
     if ($status_filter !== 'all') {
         $params['status'] = $status_filter;
     } else {
         $params['status'] = 'all';
+    }
+    if (!empty($sub_filter)) {
+        $params['sub'] = $sub_filter;
     }
     if (!empty($search)) {
         $params['search'] = $search;
@@ -177,8 +201,10 @@ $page_url = function($p) use ($status_filter, $search) {
 // Page title determination
 $page_title = "Request Queue";
 if ($status_filter === 'pending') $page_title = "Pending Requests";
+elseif ($status_filter === 'bookings') $page_title = "Bookings";
 elseif ($status_filter === 'approved') $page_title = "Approved Bookings";
 elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -598,7 +624,7 @@ elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
                 </div>
             <?php endif; ?>
 
-            <?php if ($status_filter === 'rejected'): ?>
+            <?php if ($status_filter === 'rejected' || ($status_filter === 'bookings' && $sub_filter === 'rejected')): ?>
                 <div style="background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 13px;">
                     <i class="fa-solid fa-clock" style="color: #d97706;"></i>
                     <span><strong>Auto-Delete Policy:</strong> Rejected booking requests are automatically and permanently deleted after <strong>7 days</strong> if not manually deleted or re-approved before that.</span>
@@ -607,28 +633,44 @@ elseif ($status_filter === 'rejected') $page_title = "Rejected Requests";
 
             <!-- Table Card -->
             <div class="table-card">
-                <div class="table-header-bar">
+                <div class="table-header-bar" style="flex-wrap: wrap; gap: 12px;">
                     <div class="table-tabs">
                         <a href="a_events.php?status=all" class="tab-btn <?= $status_filter === 'all' ? 'active' : '' ?>">
                             All Requests <span class="tab-count"><?= $status_counts['all'] ?></span>
                         </a>
                         <a href="a_events.php?status=pending" class="tab-btn <?= $status_filter === 'pending' ? 'active' : '' ?>">
-                            Pending <span class="tab-count badge-pending-count"><?= $status_counts['pending'] ?></span>
+                            Pending Requests <span class="tab-count badge-pending-count"><?= $status_counts['pending'] ?></span>
                         </a>
-                        <a href="a_events.php?status=approved" class="tab-btn <?= $status_filter === 'approved' ? 'active' : '' ?>">
-                            Approved <span class="tab-count"><?= $status_counts['approved'] ?></span>
-                        </a>
-                        <a href="a_events.php?status=rejected" class="tab-btn <?= $status_filter === 'rejected' ? 'active' : '' ?>">
-                            Rejected <span class="tab-count"><?= $status_counts['rejected'] ?></span>
+                        <a href="a_events.php?status=bookings" class="tab-btn <?= in_array($status_filter, ['bookings', 'approved', 'rejected']) ? 'active' : '' ?>">
+                            <i class="fa-solid fa-calendar-check" style="margin-right: 4px;"></i> Bookings <span class="tab-count"><?= $status_counts['bookings'] ?></span>
                         </a>
                     </div>
 
                     <form method="GET" action="a_events.php" class="search-input-wrap">
                         <input type="hidden" name="status" value="<?= htmlspecialchars($status_filter) ?>">
+                        <?php if (!empty($sub_filter)): ?>
+                            <input type="hidden" name="sub" value="<?= htmlspecialchars($sub_filter) ?>">
+                        <?php endif; ?>
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input type="text" name="search" placeholder="Search by name, type, venue..." value="<?= htmlspecialchars($search) ?>">
                     </form>
                 </div>
+
+                <?php if (in_array($status_filter, ['bookings', 'approved', 'rejected'])): ?>
+                    <!-- Sub-filter pills for Bookings tab -->
+                    <div style="padding: 10px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px;">Filter:</span>
+                        <a href="a_events.php?status=bookings" style="font-size: 12px; font-weight: <?= (empty($sub_filter) || $sub_filter === 'all') ? '700' : '500' ?>; padding: 4px 12px; border-radius: 99px; text-decoration: none; background: <?= (empty($sub_filter) || $sub_filter === 'all') ? 'var(--primary, #18392b)' : '#ffffff' ?>; color: <?= (empty($sub_filter) || $sub_filter === 'all') ? '#ffffff' : '#475569' ?>; border: 1px solid <?= (empty($sub_filter) || $sub_filter === 'all') ? 'var(--primary, #18392b)' : '#cbd5e1' ?>; transition: all 0.2s;">
+                            All Bookings (<?= $status_counts['bookings'] ?>)
+                        </a>
+                        <a href="a_events.php?status=bookings&sub=approved" style="font-size: 12px; font-weight: <?= $sub_filter === 'approved' ? '700' : '500' ?>; padding: 4px 12px; border-radius: 99px; text-decoration: none; background: <?= $sub_filter === 'approved' ? '#10b981' : '#ffffff' ?>; color: <?= $sub_filter === 'approved' ? '#ffffff' : '#065f46' ?>; border: 1px solid <?= $sub_filter === 'approved' ? '#10b981' : '#a7f3d0' ?>; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                            <i class="fa-solid fa-circle-check" style="<?= $sub_filter === 'approved' ? 'color:#fff;' : 'color:#10b981;' ?>"></i> Approved (<?= $status_counts['approved'] ?>)
+                        </a>
+                        <a href="a_events.php?status=bookings&sub=rejected" style="font-size: 12px; font-weight: <?= $sub_filter === 'rejected' ? '700' : '500' ?>; padding: 4px 12px; border-radius: 99px; text-decoration: none; background: <?= $sub_filter === 'rejected' ? '#dc2626' : '#ffffff' ?>; color: <?= $sub_filter === 'rejected' ? '#ffffff' : '#991b1b' ?>; border: 1px solid <?= $sub_filter === 'rejected' ? '#dc2626' : '#fecaca' ?>; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                            <i class="fa-solid fa-circle-xmark" style="<?= $sub_filter === 'rejected' ? 'color:#fff;' : 'color:#dc2626;' ?>"></i> Rejected (<?= $status_counts['rejected'] ?>)
+                        </a>
+                    </div>
+                <?php endif; ?>
 
                 <div class="table-responsive">
                     <table class="custom-table">

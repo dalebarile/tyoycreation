@@ -368,7 +368,7 @@ foreach ($wedding_packages_data as $c) {
                     </div>
                 </div>
 
-                <form method="POST" action="a_sitemanager.php?tab=business">
+                <form id="businessForm" method="POST" action="a_sitemanager.php?tab=business">
                     <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                     <input type="hidden" name="action" value="save_business">
 
@@ -419,10 +419,56 @@ foreach ($wedding_packages_data as $c) {
                         <textarea name="vision_statement" class="form-control" rows="3"><?= htmlspecialchars($b_vision) ?></textarea>
                     </div>
 
-                    <button type="submit" class="btn-primary" style="padding: 11px 26px; font-size: 14px; margin-top: 10px;">
-                        <i class="fa-solid fa-floppy-disk"></i> Save Business Information
-                    </button>
+                    <div style="display: flex; align-items: center; gap: 15px; margin-top: 15px;">
+                        <button type="submit" id="btnSaveBusiness" class="btn-primary" disabled style="padding: 11px 26px; font-size: 14px; opacity: 0.5; cursor: not-allowed; transition: all 0.2s ease;">
+                            <i class="fa-solid fa-floppy-disk"></i> Save Business Information
+                        </button>
+                        <span id="businessFormStatus" style="font-size: 13px; color: var(--text-secondary); font-style: italic;">No modifications detected</span>
+                    </div>
                 </form>
+
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const bizForm = document.getElementById('businessForm');
+                    const saveBtn = document.getElementById('btnSaveBusiness');
+                    const statusText = document.getElementById('businessFormStatus');
+                    if (!bizForm || !saveBtn) return;
+
+                    const inputs = bizForm.querySelectorAll('input:not([type="hidden"]), textarea');
+                    const initialValues = new Map();
+                    inputs.forEach(el => {
+                        initialValues.set(el, (el.value || '').trim());
+                    });
+
+                    function checkBizChanges() {
+                        let hasChanges = false;
+                        for (const [el, originalVal] of initialValues.entries()) {
+                            if ((el.value || '').trim() !== originalVal) {
+                                hasChanges = true;
+                                break;
+                            }
+                        }
+                        if (hasChanges) {
+                            saveBtn.removeAttribute('disabled');
+                            saveBtn.style.opacity = '1';
+                            saveBtn.style.cursor = 'pointer';
+                            if (statusText) statusText.textContent = 'Unsaved modifications detected';
+                            if (statusText) statusText.style.color = '#c28135';
+                        } else {
+                            saveBtn.setAttribute('disabled', 'disabled');
+                            saveBtn.style.opacity = '0.5';
+                            saveBtn.style.cursor = 'not-allowed';
+                            if (statusText) statusText.textContent = 'No modifications detected';
+                            if (statusText) statusText.style.color = 'var(--text-secondary)';
+                        }
+                    }
+
+                    inputs.forEach(el => {
+                        el.addEventListener('input', checkBizChanges);
+                        el.addEventListener('change', checkBizChanges);
+                    });
+                });
+                </script>
             </div>
             <?php endif; ?>
 

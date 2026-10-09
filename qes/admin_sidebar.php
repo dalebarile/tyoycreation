@@ -10,11 +10,21 @@ if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'super_a
 
 $is_main_admin = in_array($_SESSION['role'] ?? '', ['main_admin', 'super_admin']);
 
-// Fetch pending count for badge
+// Fetch pending count for badge (cached / reused if already computed on page)
 $pending_count = 0;
-$p_res = $conn->query("SELECT COUNT(*) as cnt FROM bookings WHERE status = 'pending'");
-if ($p_res && $p_row = $p_res->fetch_assoc()) {
-    $pending_count = (int)$p_row['cnt'];
+if (isset($status_counts['pending'])) {
+    $pending_count = (int)$status_counts['pending'];
+    $_SESSION['admin_pending_badge_cnt'] = $pending_count;
+    $_SESSION['admin_pending_badge_at'] = time();
+} elseif (isset($_SESSION['admin_pending_badge_cnt']) && (time() - ($_SESSION['admin_pending_badge_at'] ?? 0)) < 15) {
+    $pending_count = (int)$_SESSION['admin_pending_badge_cnt'];
+} else {
+    $p_res = $conn->query("SELECT COUNT(*) as cnt FROM bookings WHERE status = 'pending'");
+    if ($p_res && $p_row = $p_res->fetch_assoc()) {
+        $pending_count = (int)$p_row['cnt'];
+        $_SESSION['admin_pending_badge_cnt'] = $pending_count;
+        $_SESSION['admin_pending_badge_at'] = time();
+    }
 }
 
 $current_page = basename($_SERVER['PHP_SELF']);
@@ -45,15 +55,11 @@ $current_status = $_GET['status'] ?? '';
             <?php endif; ?>
         </a>
 
-        <a href="a_events.php?status=approved" class="sidebar-link <?= ($current_page === 'a_events.php' && $current_status === 'approved') ? 'active' : '' ?>">
+        <a href="a_events.php?status=bookings" class="sidebar-link <?= ($current_page === 'a_events.php' && in_array($current_status, ['bookings', 'approved', 'rejected'])) ? 'active' : '' ?>">
             <i class="fa-solid fa-calendar-check"></i>
-            <span>Approved Bookings</span>
+            <span>Bookings</span>
         </a>
 
-        <a href="a_events.php?status=rejected" class="sidebar-link <?= ($current_page === 'a_events.php' && $current_status === 'rejected') ? 'active' : '' ?>">
-            <i class="fa-solid fa-circle-xmark"></i>
-            <span>Rejected Requests</span>
-        </a>
 
         <a href="a_calendar.php" class="sidebar-link <?= ($current_page === 'a_calendar.php') ? 'active' : '' ?>">
             <i class="fa-solid fa-calendar-days"></i>

@@ -7,6 +7,39 @@ require_login();
 $admin_username = $_SESSION['username'] ?? 'Admin';
 $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
 
+// Greeting Determination (Requirement 3: "Good Morning, Jayson Pogi")
+$current_hour = (int)date('G');
+if ($current_hour >= 5 && $current_hour < 12) {
+    $time_greeting = "Good Morning";
+} elseif ($current_hour >= 12 && $current_hour < 18) {
+    $time_greeting = "Good Afternoon";
+} else {
+    $time_greeting = "Good Evening";
+}
+
+// Fetch admin display name
+$greeting_name = 'Jayson Pogi';
+$sess_user = $_SESSION['username'] ?? '';
+$sess_full = $_SESSION['full_name'] ?? '';
+
+if (!empty($sess_full)) {
+    if (stripos($sess_full, 'jayson') !== false) {
+        $greeting_name = 'Jayson Pogi';
+    } else {
+        $greeting_name = $sess_full;
+    }
+} elseif (!empty($sess_user)) {
+    if (stripos($sess_user, 'jysn') !== false || stripos($sess_user, 'jayson') !== false || $sess_user === 'creationtyoy') {
+        $greeting_name = 'Jayson Pogi';
+    } else {
+        $greeting_name = $sess_user;
+    }
+} else {
+    $greeting_name = 'Jayson Pogi';
+}
+
+$admin_greeting = "{$time_greeting}, {$greeting_name}";
+
 // Fetch summary counts
 $pending_count = 0;
 $approved_count = 0;
@@ -21,6 +54,7 @@ if ($res) {
         if ($row['status'] === 'rejected') $rejected_count = (int)$row['cnt'];
         $total_count += (int)$row['cnt'];
     }
+    $status_counts = ['pending' => $pending_count, 'approved' => $approved_count, 'rejected' => $rejected_count];
 }
 
 // Fetch upcoming approved events
@@ -283,7 +317,12 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
     <!-- Main Content Area -->
     <main class="admin-main">
         <header class="admin-header">
-            <h1 class="admin-page-title">Dashboard</h1>
+            <div>
+                <h1 class="admin-page-title" style="margin-bottom: 2px;">Dashboard</h1>
+                <p style="margin: 0; font-size: 13.5px; color: var(--text-muted); font-weight: 500;">
+                    <?= htmlspecialchars($admin_greeting) ?> 👋
+                </p>
+            </div>
             <div class="admin-profile">
                 <div class="admin-avatar" style="background: <?= is_main_admin() ? '#d97706' : '#18392b' ?>; color: #fff;">
                     <?= strtoupper(substr($admin_username, 0, 1)) ?>
@@ -300,6 +339,30 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
         </header>
 
         <div class="admin-body">
+
+            <!-- Welcome Greeting Card (Requirement 3: "Good Morning, Jayson Pogi") -->
+            <div class="admin-greeting-banner" style="background: linear-gradient(135deg, #18392b 0%, #2b5643 100%); color: #ffffff; border-radius: var(--radius-lg); padding: 22px 26px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 25px -5px rgba(24, 57, 43, 0.22); position: relative; overflow: hidden; flex-wrap: wrap; gap: 16px;">
+                <div style="position: relative; z-index: 2;">
+                    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #a7f3d0; margin-bottom: 6px;">
+                        <i class="fa-solid fa-sparkles"></i> Administrative Overview
+                    </span>
+                    <h2 style="font-size: 23px; font-weight: 800; margin: 0 0 6px 0; color: #ffffff; letter-spacing: -0.02em;">
+                        <?= htmlspecialchars($admin_greeting) ?>! 👋
+                    </h2>
+                    <p style="margin: 0; font-size: 13.5px; color: rgba(255, 255, 255, 0.88); max-width: 620px; line-height: 1.5;">
+                        Welcome back to the portal. You have <strong><?= $pending_count ?></strong> pending inquiry<?= $pending_count === 1 ? '' : 's' ?> waiting for review and <strong><?= count($upcoming_events) ?></strong> upcoming confirmed event<?= count($upcoming_events) === 1 ? '' : 's' ?> scheduled.
+                    </p>
+                </div>
+                <div style="position: relative; z-index: 2; display: flex; gap: 10px; align-items: center;" class="greeting-action-btns">
+                    <a href="a_calendar.php" class="btn-secondary" style="background: rgba(255, 255, 255, 0.15); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.25); font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: 8px; backdrop-filter: blur(4px);">
+                        <i class="fa-solid fa-calendar-days"></i> Master Calendar
+                    </a>
+                    <a href="a_events.php?status=bookings" class="btn-primary" style="background: #ffffff; color: #18392b; font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                        <i class="fa-solid fa-calendar-check"></i> Bookings
+                    </a>
+                </div>
+                <i class="fa-solid fa-crown" style="position: absolute; right: -15px; bottom: -20px; font-size: 140px; color: rgba(255, 255, 255, 0.05); pointer-events: none;"></i>
+            </div>
 
             <!-- Gemini Free Tier AI Quota Monitor -->
             <div class="ai-quota-card">
