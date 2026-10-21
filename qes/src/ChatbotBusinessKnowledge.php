@@ -124,7 +124,7 @@ class ChatbotBusinessKnowledge {
         }
 
         // ── 2. SERVICE AREAS, OFFICE LOCATION & OPERATING HOURS ───────────────
-        if (preg_match('/\b(service\s*area|service\s*areas|areas?\s*covered|location\s*covered|where\s*do\s*you\s*(?:cater|serve|service)|saan\s*(?:kayo\s*)?nagse-?serve|coverage|out\s*of\s*town|out-of-town|office\s*location|where\s*is\s*your\s*office|saan\s*ang\s*office|saan\s*ang\s*opisina|nasaan\s*(?:ang\s*)?(?:office|opisina)|nasaan\s*kayo|saan\s*kayo\s*matatagpuan|where\s*are\s*you\s*located|address|opisina|taga\s*saan|taga\s*saan\s*kayo|saan\s*po\s*kayo|saan\s*kayo\s*galing|saan\s*ang\s*shop|saan\s*ang\s*pwesto|meron\s*ba\s*kayong\s*office|may\s*office\s*ba|may\s*physical\s*office|operating\s*hours|business\s*hours|office\s*hours|anong\s*oras\s*(?:ang\s*)?(?:bukas|office|sarado|operasyon)|anong\s*oras\s*kayo\s*bukas|what\s*time\s*(?:are\s*you\s*)?(?:open|closed)|working\s*hours)\b/i', $lower)) {
+        if (preg_match('/\b(service\s*area|service\s*areas|areas?\s*covered|location\s*covered|where\s*do\s*you\s*(?:cater|serve|service)|saan\s*(?:kayo\s*)?nagse-?serve|coverage|out\s*of\s*town|out-of-town|office\s*location|where\s*(?:is\s*)?(?:your\s*)?office|saan\s*(?:po\s*)?(?:ang\s*)?office|saan\s*(?:po\s*)?(?:ang\s*)?opisina|nasaan\s*(?:ang\s*)?(?:office|opisina)|nasaan\s*kayo|saan\s*kayo\s*matatagpuan|where\s*are\s*you\s*located|address|\boffice\b|\bopisina\b|taga\s*saan|taga\s*saan\s*kayo|saan\s*po\s*kayo|saan\s*kayo\s*galing|saan\s*ang\s*shop|saan\s*ang\s*pwesto|meron\s*ba\s*kayong\s*office|may\s*office\s*ba|may\s*physical\s*office|operating\s*hours|business\s*hours|office\s*hours|anong\s*oras\s*(?:ang\s*)?(?:bukas|office|sarado|operasyon)|anong\s*oras\s*kayo\s*bukas|what\s*time\s*(?:are\s*you\s*)?(?:open|closed)|working\s*hours)\b/i', $lower)) {
             if ($is_tagalog) {
                 return "📍 **Lokasyon at Serbisyo ng {$b_name}:**\n\n"
                     . "• 🏠 **Lokasyon:** Kami po ay taga-**San Jose del Monte, Bulacan**.\n"
@@ -420,7 +420,7 @@ class ChatbotBusinessKnowledge {
         }
 
         // ── 15. GENERAL PACKAGES & PRICING OVERVIEW ───────────────────────────
-        if (preg_match('/\b(package|packages|what\s*do\s*you\s*offer|services|anong\s*meron|rates|anong\s*ino-?offer|ano\s*ang\s*mga\s*package)\b/i', $lower)) {
+        if (preg_match('/\b(package|packages|pricing|prices|presyo|magkano|how\s*much|cost|costs|what\s*do\s*you\s*offer|services|anong\s*meron|rates|anong\s*ino-?offer|ano\s*ang\s*mga\s*package)\b/i', $lower)) {
             if ($is_tagalog) {
                 return "🌸🎈 **Ang Aming Mga Event Packages at Styling Services ({$b_name}):**\n\n"
                     . "Kami ang inyong katuwang sa paggawa ng di-malilimutang selebrasyon:\n\n"

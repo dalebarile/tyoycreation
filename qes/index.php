@@ -1556,6 +1556,20 @@ if ($has_wedding) {
             border: 1px solid #e5e7eb;
             border-bottom-left-radius: 4px;
         }
+        .typing-cursor {
+            display: inline-block;
+            width: 6px;
+            height: 13px;
+            background: #285440;
+            margin-left: 3px;
+            vertical-align: middle;
+            border-radius: 2px;
+            animation: cursorBlink 0.6s infinite ease-in-out;
+        }
+        @keyframes cursorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
         .chat-bubble.user, .chat-msg.user {
             align-self: flex-end;
             background: #2a3c29;
@@ -3059,6 +3073,41 @@ if ($has_wedding) {
             sendChatMessage(new Event('submit'));
         }
 
+        function streamBotReply(targetElement, fullText, onDone) {
+            if (!targetElement) return;
+            const container = document.getElementById('chatbotMessages');
+            
+            // Fast direct render for very short messages
+            if (!fullText || fullText.length < 50) {
+                targetElement.innerHTML = formatChatMessage(fullText || '');
+                if (container) container.scrollTop = container.scrollHeight;
+                if (typeof onDone === 'function') onDone();
+                return;
+            }
+
+            // Progressive word/token streaming for silky-smooth readability
+            const words = fullText.split(/(\s+)/);
+            let index = 0;
+            let displayed = '';
+            targetElement.innerHTML = '<span class="typing-cursor"></span>';
+
+            const interval = setInterval(() => {
+                if (index < words.length) {
+                    // 2 to 3 word tokens per frame for brisk, natural 60fps reading stream
+                    const chunk = words.slice(index, index + 3).join('');
+                    index += 3;
+                    displayed += chunk;
+                    targetElement.innerHTML = formatChatMessage(displayed) + '<span class="typing-cursor"></span>';
+                    if (container) container.scrollTop = container.scrollHeight;
+                } else {
+                    clearInterval(interval);
+                    targetElement.innerHTML = formatChatMessage(fullText);
+                    if (container) container.scrollTop = container.scrollHeight;
+                    if (typeof onDone === 'function') onDone();
+                }
+            }, 14);
+        }
+
         async function sendChatMessage(e) {
             if (e && e.preventDefault) e.preventDefault();
             const input = document.getElementById('chatInput');
@@ -3119,12 +3168,14 @@ if ($has_wedding) {
                     }
                 }
 
-                botDiv.innerHTML = formatChatMessage(replyText);
-                saveMessageToStorage('bot', replyText);
+                streamBotReply(botDiv, replyText, () => {
+                    saveMessageToStorage('bot', replyText);
+                });
             } catch (err) {
                 const fallbackText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
-                botDiv.innerHTML = formatChatMessage(fallbackText);
-                saveMessageToStorage('bot', fallbackText);
+                streamBotReply(botDiv, fallbackText, () => {
+                    saveMessageToStorage('bot', fallbackText);
+                });
             }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
