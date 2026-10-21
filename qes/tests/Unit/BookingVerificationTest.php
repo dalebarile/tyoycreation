@@ -333,4 +333,113 @@ class BookingVerificationTest extends TestCase
         $this->assertFalse($res['success']);
         $this->assertStringContainsString('valid email', $res['message']);
     }
+
+    public function test_stage_booking_handles_email_delivery_failure_without_false_success(): void
+    {
+        $GLOBALS['TEST_MOCK_EMAIL_FAILURE'] = 'Connection timed out to smtp.gmail.com:587';
+        try {
+            $params = [
+                'client_name'    => 'Failure Test User',
+                'client_email'   => 'failuser@gmail.com',
+                'client_phone'   => '09171234567',
+                'client_address' => 'Quezon City',
+                'event_title'    => 'Birthday Celebration',
+                'event_type'     => 'Kids Party',
+                'event_date'     => date('Y-m-d', strtotime('+25 days')),
+                'location_venue' => 'Clubhouse'
+            ];
+
+            $res = BookingVerificationHelper::stageBooking($this->conn, $params);
+
+            // Staging succeeds so data is not lost, but email_sent is accurately reported as false
+            $this->assertTrue($res['success']);
+            $this->assertFalse($res['email_sent']);
+            $this->assertNotEmpty($res['email_error']);
+            $this->assertStringContainsString('could not deliver the verification code', $res['message']);
+
+            // Session preserves pending state so customer can edit or resend
+            $this->assertArrayHasKey('pending_booking_verification', $_SESSION);
+            $this->assertTrue($_SESSION['pending_booking_verification']['last_send_failed']);
+        } finally {
+            unset($GLOBALS['TEST_MOCK_EMAIL_FAILURE']);
+        }
+    }
+
+    public function test_resend_code_does_not_corrupt_existing_code_on_email_failure(): void
+    {
+        $params = [
+            'client_name'    => 'Resend Guard User',
+            'client_email'   => 'resendguard@gmail.com',
+            'client_phone'   => '09171234567',
+            'client_address' => 'Pasig City',
+            'event_title'    => 'Debut Celebration',
+            'event_type'     => 'Kids Party',
+            'event_date'     => date('Y-m-d', strtotime('+30 days')),
+            'location_venue' => 'Ballroom'
+        ];
+
+        // 1. Stage initial booking successfully
+        BookingVerificationHelper::stageBooking($this->conn, $params);
+        $initialCode = $_SESSION['pending_booking_verification']['code'];
+        $token       = $_SESSION['pending_booking_verification']['token'];
+        $this->assertNotEmpty($initialCode);
+
+        // Fast-forward initial cooldown
+        $_SESSION['pending_booking_verification']['last_resend_at'] = time() - 65;
+
+        // 2. Simulate SMTP delivery failure during resend
+        $GLOBALS['TEST_MOCK_EMAIL_FAILURE'] = 'Recipient mailbox unavailable';
+        try {
+            $res = BookingVerificationHelper::resendCode($this->conn, $token);
+
+            // Must NOT report success when email failed
+            $this->assertFalse($res['success']);
+            $this->assertFalse($res['email_sent']);
+            $this->assertStringContainsString('Unable to deliver verification code', $res['message']);
+
+            // The original working code must NOT be destroyed or overwritten
+            $this->assertSame($initialCode, $_SESSION['pending_booking_verification']['code']);
+            $this->assertTrue($_SESSION['pending_booking_verification']['last_send_failed']);
+        } finally {
+            unset($GLOBALS['TEST_MOCK_EMAIL_FAILURE']);
+        }
+    }
+
+    public function test_update_email_does_not_commit_state_on_email_failure(): void
+    {
+        $params = [
+            'client_name'    => 'Update Guard User',
+            'client_email'   => 'original@gmail.com',
+            'client_phone'   => '09171234567',
+            'client_address' => 'Taguig City',
+            'event_title'    => 'Corporate Gala',
+            'event_type'     => 'Kids Party',
+            'event_date'     => date('Y-m-d', strtotime('+40 days')),
+            'location_venue' => 'BGC Hall'
+        ];
+
+        BookingVerificationHelper::stageBooking($this->conn, $params);
+        $originalEmail = $_SESSION['pending_booking_verification']['email'];
+        $originalCode  = $_SESSION['pending_booking_verification']['code'];
+        $token         = $_SESSION['pending_booking_verification']['token'];
+
+        // Fast-forward cooldown
+        $_SESSION['pending_booking_verification']['last_resend_at'] = time() - 15;
+
+        // Simulate SMTP delivery failure when changing email
+        $GLOBALS['TEST_MOCK_EMAIL_FAILURE'] = 'Domain DNS resolution failed';
+        try {
+            $res = BookingVerificationHelper::updateEmail($this->conn, 'newtarget@gmail.com', $token);
+
+            $this->assertFalse($res['success']);
+            $this->assertFalse($res['email_sent']);
+            $this->assertStringContainsString('Failed to deliver verification code', $res['message']);
+
+            // Session email and code remain intact with original valid state
+            $this->assertSame($originalEmail, $_SESSION['pending_booking_verification']['email']);
+            $this->assertSame($originalCode, $_SESSION['pending_booking_verification']['code']);
+        } finally {
+            unset($GLOBALS['TEST_MOCK_EMAIL_FAILURE']);
+        }
+    }
 }

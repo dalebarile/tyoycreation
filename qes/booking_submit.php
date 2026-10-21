@@ -36,7 +36,7 @@ if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
 // ACTION 1: VERIFY OTP CODE & COMMIT TO DATABASE
 // ============================================================
 if ($action === 'verify') {
-    // Cloudflare Turnstile Security Verification
+    // Cloudflare Turnstile Security Verification (mandatory when enabled)
     if (qes_is_turnstile_enabled($conn)) {
         $turnstile_token = trim($_POST['cf-turnstile-response'] ?? ($_POST['turnstile_token'] ?? ''));
         $ts_check = qes_verify_turnstile($turnstile_token, $client_ip, $conn);
@@ -92,6 +92,19 @@ if ($action === 'resend') {
         exit;
     }
 
+    // Per-email rate limit for resend (3 per 10 min per email)
+    $resend_email = strtolower(trim($_POST['client_email'] ?? ''));
+    if (!empty($resend_email)) {
+        $rate_email = qes_rate_limit_check('booking_resend_email', 'email:' . $resend_email, 3, 600);
+        if (!$rate_email['allowed']) {
+            echo json_encode([
+                'success' => false,
+                'message' => "Too many resend requests for this email. Please wait {$rate_email['wait_seconds']} seconds."
+            ]);
+            exit;
+        }
+    }
+
     $token = trim($_POST['verification_token'] ?? ($_POST['token'] ?? ''));
     $res = BookingVerificationHelper::resendCode($conn, $token ?: null);
     echo json_encode($res);
@@ -112,11 +125,21 @@ if ($action === 'update_email') {
         exit;
     }
 
-    $new_email = trim($_POST['new_email'] ?? ($_POST['client_email'] ?? ''));
+    $new_email = strtolower(trim($_POST['new_email'] ?? ($_POST['client_email'] ?? '')));
     $token     = trim($_POST['verification_token'] ?? ($_POST['token'] ?? ''));
 
     if (empty($new_email) || !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
         echo json_encode(['success' => false, 'message' => 'Please provide a valid email address (e.g. name@gmail.com).']);
+        exit;
+    }
+
+    // Per-email rate limit for email updates (4 per 10 min)
+    $rate_email = qes_rate_limit_check('booking_update_email_addr', 'email:' . $new_email, 4, 600);
+    if (!$rate_email['allowed']) {
+        echo json_encode([
+            'success' => false,
+            'message' => "Too many update attempts for this email address. Please wait {$rate_email['wait_seconds']} seconds."
+        ]);
         exit;
     }
 
@@ -129,14 +152,14 @@ if ($action === 'update_email') {
 // ACTION 3: SUBMIT BOOKING (STAGE & SEND OTP CODE)
 // ============================================================
 if ($action === 'submit') {
-    // Cloudflare Turnstile Verification if submitted from form
-    if (qes_is_turnstile_enabled($conn) && !empty($_POST['cf-turnstile-response'])) {
-        $ts_token = trim($_POST['cf-turnstile-response'] ?? '');
+    // Cloudflare Turnstile Verification (mandatory when enabled)
+    if (qes_is_turnstile_enabled($conn)) {
+        $ts_token = trim($_POST['cf-turnstile-response'] ?? ($_POST['turnstile_token'] ?? ''));
         $ts_check = qes_verify_turnstile($ts_token, $client_ip, $conn);
         if (!$ts_check['success']) {
             echo json_encode([
                 'success' => false,
-                'message' => $ts_check['error'] ?? 'Cloudflare Turnstile security verification failed.'
+                'message' => $ts_check['error'] ?? 'Cloudflare Turnstile security verification failed. Please complete the security check.'
             ]);
             exit;
         }
@@ -152,10 +175,44 @@ if ($action === 'submit') {
         exit;
     }
 
+    // Mandatory Data Privacy Consent Verification (Republic Act No. 10173)
+    $privacy_consent = !empty($_POST['privacy_consent']) && in_array(strtolower(trim((string)$_POST['privacy_consent'])), ['1', 'true', 'on', 'yes'], true);
+    if (!$privacy_consent) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Data privacy consent is required. Please review the Data Privacy Notice and check the consent box to submit your booking.'
+        ]);
+        exit;
+    }
+
     $client_name    = trim($_POST['client_name'] ?? '');
-    $client_email   = trim($_POST['client_email'] ?? '');
+    $client_email   = strtolower(trim($_POST['client_email'] ?? ''));
     $client_phone   = preg_replace('/[^0-9]/', '', trim($_POST['client_phone'] ?? ''));
     $client_address = trim($_POST['client_address'] ?? '');
+
+    // Per-email rate limit: 4 bookings per 30 minutes per email address
+    if (!empty($client_email)) {
+        $rate_email = qes_rate_limit_check('booking_submit_email', 'email:' . $client_email, 4, 1800);
+        if (!$rate_email['allowed']) {
+            echo json_encode([
+                'success' => false,
+                'message' => "Too many booking submissions from this email address. Please wait " . ceil($rate_email['wait_seconds'] / 60) . " minutes before submitting another request."
+            ]);
+            exit;
+        }
+    }
+
+    // Per-phone rate limit: 4 bookings per 30 minutes per phone number
+    if (!empty($client_phone) && strlen($client_phone) >= 7) {
+        $rate_phone = qes_rate_limit_check('booking_submit_phone', 'phone:' . $client_phone, 4, 1800);
+        if (!$rate_phone['allowed']) {
+            echo json_encode([
+                'success' => false,
+                'message' => "Too many booking submissions from this phone number. Please wait " . ceil($rate_phone['wait_seconds'] / 60) . " minutes before submitting another request."
+            ]);
+            exit;
+        }
+    }
 
     $event_title    = trim($_POST['event_title'] ?? '');
     $event_type     = trim($_POST['event_type'] ?? 'Kids Party');
@@ -203,11 +260,19 @@ if ($action === 'submit') {
         'location_venue'       => $location_venue,
         'service_requirements' => $service_requirements,
         'special_notes'        => $special_notes,
+        'privacy_consent'      => 1,
+        'privacy_consent_at'   => date('Y-m-d H:i:s'),
         'source'               => 'online_inquiry'
     ]);
 
     if (!$result['success']) {
         qes_rate_limit_record_fail('booking_submit', $client_ip, 6, 600);
+        if (!empty($client_email)) {
+            qes_rate_limit_record_fail('booking_submit_email', 'email:' . $client_email, 4, 1800);
+        }
+        if (!empty($client_phone) && strlen($client_phone) >= 7) {
+            qes_rate_limit_record_fail('booking_submit_phone', 'phone:' . $client_phone, 4, 1800);
+        }
     }
 
     echo json_encode($result);

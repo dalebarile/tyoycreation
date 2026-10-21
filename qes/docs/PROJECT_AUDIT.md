@@ -27,14 +27,14 @@ The **Tyoy Creation Quick Event System (QES)** is a full-featured web platform a
 1. **Public Clients & Visitors:** A showcase landing page, full portfolio gallery, interactive package catalog, 4-step booking reservation wizard, and an embedded Google Gemini AI concierge capable of date checking, package inquiries, and direct in-chat booking.
 2. **Administrative Personnel:** A secured back-office portal supporting role-based access (`admin`, `super_admin`, `main_admin`), master event scheduling via FullCalendar, walk-in manual reservation entry, booking lifecycle management (approval, rejection, rescheduling), client records, package customization, website content management, automated notification dispatch (Email via Gmail SMTP / PHPMailer), active device/session monitoring, multi-step "Forgot Password" verification flow, and 100% custom UI confirmation dialogs replacing all browser-native popups.
 
-All legacy prototypes, outdated campus-facility schemas, test data, and scratch scripts have been systematically purged, leaving a clean, hardened production codebase operating on a dual-database architecture (Cloud Supabase PostgreSQL primary with local MySQL fallback), application-level AES-256-GCM client PII encryption, prepared statements, and rigorous session security.
+All legacy prototypes, outdated campus-facility schemas, test data, and scratch scripts have been systematically purged, leaving a clean, hardened production codebase operating on a dual-database architecture (Cloud Supabase PostgreSQL primary with local MySQL fallback), application-level AES-256-CBC with HMAC-SHA256 authenticated encryption client PII encryption, prepared statements, and rigorous session security.
 
 ### Security & Quality Scorecard
 
 | Category | Rating | Status | Summary |
 | :--- | :---: | :---: | :--- |
 | **Authentication & Session Security** | 🟢 9.5 / 10 | **Production Ready** | `session_regenerate_id(true)` on login; role-based access control; real-time device tracking and session revocation; CSRF tokens on all POST handlers; multi-step email OTP password recovery. |
-| **Data Protection & Cryptography** | 🟢 9.5 / 10 | **Production Ready** | Application-level AES-256-GCM encryption (`crypto_helper.php`) for client contact details (email, phone, address). Bcrypt password hashing for all credentials. |
+| **Data Protection & Cryptography** | 🟢 9.5 / 10 | **Production Ready** | Application-level AES-256-CBC with HMAC-SHA256 authenticated encryption (`crypto_helper.php`) for client contact details (email, phone, address). Bcrypt password hashing for all credentials. |
 | **Database & SQL Injection Defense** | 🟢 9.5 / 10 | **Production Ready** | 100% of database queries in active production files utilize parameterized prepared statements (`prepare()` + `bind_param()`) or Supabase query builder abstraction. |
 | **User Experience & Modal Architecture** | 🟢 9.5 / 10 | **Production Ready** | 100% elimination of browser-native `confirm()` and `alert()` popups; replaced with cohesive, styled custom UI modals across event workflows, client deletion, and security operations. |
 | **Cross-Site Scripting (XSS)** | 🟢 9 / 10 | **Production Ready** | All dynamic output rendered to the browser is sanitized using `htmlspecialchars()` with `ENT_QUOTES, 'UTF-8'`. |
@@ -58,7 +58,7 @@ All legacy prototypes, outdated campus-facility schemas, test data, and scratch 
 | **Fallback Database** | MySQL / MariaDB (InnoDB, `utf8mb4`) | Local development and offline failover via `mysqli` abstraction |
 | **Frontend UI** | HTML5, Vanilla CSS3, Vanilla JS ES6 | Responsive client portal, booking wizard, admin panels, glassmorphism UI |
 | **Schedule Display** | FullCalendar v6.1.11 (CDN) | Interactive monthly/weekly master schedule in admin view |
-| **Cryptography** | OpenSSL (AES-256-GCM) | Client PII field-level encryption/decryption in `crypto_helper.php` |
+| **Cryptography** | OpenSSL (AES-256-CBC with HMAC-SHA256 authenticated encryption) | Client PII field-level encryption/decryption in `crypto_helper.php` |
 | **AI Engine** | Google Gemini 2.5 Flash REST API | Natural language concierge, date availability checks, conversational booking |
 | **UI Icons & Fonts** | Font Awesome 6.5.1, Google Fonts | Consistent typography and administrative UI iconography |
 
@@ -91,7 +91,7 @@ flowchart TD
 
     subgraph SecurityCore ["3. Security, Encryption & Business Logic Layer"]
         CSRFSession["CSRF Token & Session Defense (db.php)"]
-        CryptoEngine["AES-256-GCM Field Encryption (crypto_helper.php)"]
+        CryptoEngine["AES-256-CBC with HMAC-SHA256 authenticated encryption Field Encryption (crypto_helper.php)"]
         NotifyEngine["Notification Engine (notification_helper.php)"]
         DBRouter["Dual Database Connection Router (db.php)"]
     end
@@ -163,7 +163,7 @@ sequenceDiagram
     %% Step 1: Client Booking Submission
     Client->>Web: Submits 4-Step Booking Inquiry (or via AI Chatbot)
     Web->>Web: Generates Unique Reference (EV-YYYY-XXXX) + Validates CSRF
-    Web->>Crypto: Encrypts Client PII (Email, Phone, Address via AES-256-GCM)
+    Web->>Crypto: Encrypts Client PII (Email, Phone, Address via AES-256-CBC with HMAC-SHA256 authenticated encryption)
     Crypto->>Router: Passes Parameterized Insert Query
     Router->>DB: Stores Record in bookings table (Status: 'pending')
     DB-->>Web: Confirmation Acknowledged
@@ -188,7 +188,7 @@ sequenceDiagram
 
 1. **Client Booking Submission Pipeline:**
    - Public visitors submit event specifications via `index.php` (or `booking.php`).
-   - `booking_submit.php` validates input, prevents collision by querying existing tracking codes, and invokes `crypto_helper.php` to encrypt customer email, phone number, and physical address using authenticated AES-256-GCM before writing to the database.
+   - `booking_submit.php` validates input, prevents collision by querying existing tracking codes, and invokes `crypto_helper.php` to encrypt customer email, phone number, and physical address using authenticated AES-256-CBC with HMAC-SHA256 authenticated encryption before writing to the database.
    - The booking is persisted with `status = 'pending'`, triggering an automatic update to the administrator's real-time pending notification badge.
 
 2. **AI Chatbot Concierge Pipeline:**
@@ -210,9 +210,9 @@ sequenceDiagram
 
 ## 3. Security, Cryptography & Privacy Audit
 
-### 3.1. Field-Level Client PII Encryption (AES-256-GCM)
+### 3.1. Field-Level Client PII Encryption (AES-256-CBC with HMAC-SHA256 authenticated encryption)
 - **Module:** `crypto_helper.php` included by `db.php`.
-- **Implementation:** Sensitive client identification fields (`client_email`, `client_phone`, `client_address`) are encrypted at rest using AES-256-GCM with authenticated tags and random 12-byte initialization vectors (`IV`).
+- **Implementation:** Sensitive client identification fields (`client_email`, `client_phone`, `client_address`) are encrypted at rest using AES-256-CBC with HMAC-SHA256 authenticated encryption with authenticated tags and random 12-byte initialization vectors (`IV`).
 - **Security Assessment:** Protects customer data even in the event of unauthorized database export or physical database compromise.
 
 ### 3.2. Authentication, Session Hardening & Device Tracking
@@ -429,7 +429,7 @@ To prevent unexpected API costs and stay strictly within Google's free-tier usag
 | [`config.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/config.php) | Configuration loader | 🟢 Excellent | Dynamically loads secrets from `.env.php`; exposes Gemini and system configuration without hardcoding. |
 | [`.env.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/.env.php) | Environment secrets (git-ignored) | 🟢 Excellent | Securely holds database credentials, Gmail SMTP app credentials, and Gemini API key outside version control. |
 | [`.env.example.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/.env.example.php) | Environment template | 🟢 Excellent | Safe repository sample showing required environment variables. |
-| [`crypto_helper.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/crypto_helper.php) | Cryptographic security utilities | 🟢 Excellent | Implements authenticated AES-256-GCM encryption/decryption for client PII data. |
+| [`crypto_helper.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/crypto_helper.php) | Cryptographic security utilities | 🟢 Excellent | Implements authenticated AES-256-CBC with HMAC-SHA256 authenticated encryption/decryption for client PII data. |
 | [`supabase_driver.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/supabase_driver.php) | Supabase REST database driver | 🟢 Excellent | Emulates standard database statement and result objects over Supabase REST API. |
 | [`notification_helper.php`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/notification_helper.php) | Notification dispatch engine | 🟢 Excellent | Object-oriented notification engine; template token replacement; multi-channel dispatch log; dispatches 6-digit password reset verification OTP emails via Gmail SMTP (`sendPasswordResetCodeEmail`). |
 | [`style.css`](file:///c:/xampp/htdocs/Tyoy_Creation_QES_updated/qes/style.css) | Master stylesheet | 🟢 Excellent | Design tokens, responsive grids, admin and public component styling, custom modal system styling, cohesive brand aesthetic. |
@@ -462,7 +462,7 @@ All vulnerabilities identified during previous evaluations have been addressed a
 | 8 | Missing Anti-CSRF Protection | 🟠 High | ✅ Resolved | Cryptographic CSRF token helper in `db.php` validated across all state-changing forms. |
 | 9 | Duplicated Navigation Markup across 7 Admin Files | 🟡 Medium | ✅ Resolved | Unified in `admin_sidebar.php`, included across all administrative views. |
 | 10 | Unbounded API Quota Consumption Risk | 🟡 Medium | ✅ Resolved | Triple-tier quota engine implemented (1,400 daily hard cap, 12 req/min burst, 30 msgs/session). |
-| 11 | Unprotected Customer Contact Details | 🟡 Medium | ✅ Resolved | Application-level AES-256-GCM encryption (`crypto_helper.php`) deployed for client PII. |
+| 11 | Unprotected Customer Contact Details | 🟡 Medium | ✅ Resolved | Application-level AES-256-CBC with HMAC-SHA256 authenticated encryption (`crypto_helper.php`) deployed for client PII. |
 | 12 | Stale Rejected Booking Accumulation | 🟡 Medium | ✅ Resolved | 7-day automated purge policy implemented in `a_events.php`. |
 | 13 | Disruptive Native Browser `confirm()` / `alert()` Popups | 🟡 Medium | ✅ Resolved | 100% eliminated browser-native popups across all administrative views (`a_events.php`, `a_clients.php`, `a_packages.php`, `a_settings.php`, `admin_sidebar.php`); replaced with custom branded modal dialogs featuring backdrop blur and animated icons. |
 | 14 | Missing Administrative Password Recovery Flow | 🟡 Medium | ✅ Resolved | Implemented 3-step self-service "Forgot Password?" system in `loginadmin.php` and `auth_action.php` powered by 6-digit OTP email verification via Gmail SMTP (`NotificationHelper::sendPasswordResetCodeEmail`), 15-minute code expiration, and instant password mismatch verification. |
@@ -474,7 +474,7 @@ All vulnerabilities identified during previous evaluations have been addressed a
 
 The **Tyoy Creation Quick Event System (QES)** is thoroughly aligned, robust, and secure. All legacy prototypes and outdated facility scheduling references have been removed, and the documentation fully reflects the live business architecture:
 
-1. **Security Posture:** The application meets modern secure web development standards with parameterized SQL queries, output sanitization, CSRF token validation, session regeneration, and field-level AES-256-GCM encryption.
+1. **Security Posture:** The application meets modern secure web development standards with parameterized SQL queries, output sanitization, CSRF token validation, session regeneration, and field-level AES-256-CBC with HMAC-SHA256 authenticated encryption.
 2. **Operational Readiness:** Dual-database persistence ensures high availability (Cloud Supabase PostgreSQL primary with local MySQL fallback).
 3. **User Experience:** Seamless client-facing booking wizard, intelligent AI concierge, cohesive custom modal confirmation system across all administrative operations, and an intuitive administrative back-office with FullCalendar master scheduling and automated client notifications.
 

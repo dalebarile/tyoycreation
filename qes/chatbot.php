@@ -9,6 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/crypto_helper.php';
+require_once __DIR__ . '/src/ChatbotBusinessKnowledge.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -49,7 +50,7 @@ function incrementGlobalDailyApiCount($conn) {
 // CONCIERGE INTENT & SCOPE HELPERS (TAGALOG / ENGLISH)
 // ============================================================================
 function qes_detect_tagalog(string $msg): bool {
-    return (bool)preg_match('/\b(kumain|kain|kamusta|kumusta|musta|ano|anong|sino|bakit|paano|saan|san|meron|mayroon|wala|ulam|ka\s*na|kana|mo\s*ba|po|opo|ba|naman|tayo|lahat|ninyo|inyo|kita|ako|ikaw|siya|sila|magkano|presyo|kasal|binyag|kaarawan|luto|uulan|ganda|pangit|bata|tao|jowa|syota|babae|lalaki|taga|pa-?book|mag-?book)\b/i', $msg);
+    return (bool)preg_match('/\b(kumain|kain|kamusta|kumusta|musta|ano|anong|sino|bakit|paano|saan|san|meron|mayroon|wala|ulam|ka\s*na|kana|mo\s*ba|po|opo|ba|naman|tayo|lahat|ninyo|inyo|kita|ako|ikaw|siya|sila|ko|mo|ang|mga|namin|atin|i-?track|magkano|presyo|kasal|binyag|kaarawan|luto|uulan|ganda|pangit|bata|tao|jowa|syota|babae|lalaki|taga|pa-?book|mag-?book)\b/i', $msg);
 }
 
 function qes_is_pure_greeting(string $msg): bool {
@@ -97,10 +98,9 @@ function qes_is_unnecessary_question(string $msg): bool {
         '/\b(kumusta|kamusta|musta)\s*(ka|po)?\b/i',
         '/\b(may\s+(?:jowa|boyfriend|girlfriend|bf|gf|syota|asawa))\b/i',
         '/\b(single\s+ka|crush\s+kita|mahal\s+kita|love\s+you|will\s+you\s+marry\s+me|do\s+you\s+love\s+me)\b/i',
-        '/\b(sino\s+ka|who\s+are\s+you|what\s+is\s+your\s+name|anong\s+pangalan\s+mo|ilan\s+taon\s+ka|how\s+old\s+are\s+you|taga\s*saan\s+ka|where\s+do\s+you\s+live)\b/i',
+        '/\b(ilan\s+taon\s+ka|how\s+old\s+are\s+you|taga\s*saan\s+ka|where\s+do\s+you\s+live)\b/i',
         '/\b(babae\s+ka|lalaki\s+ka|what\s+is\s+your\s+gender|are\s+you\s+(?:human|a\s+robot|real))\b/i',
         '/\b(joke|magbiro|tell\s+me\s+a\s+joke|sing|kanta|dance|sayaw|tula|poem|kwento|story)\b/i',
-        '/\b(weather|uulan|panahon|forecast|temperature)\b/i',
         '/\b(recipe|cooking|luto|recipe\s+ng)\b/i',
         '/\b(crypto|bitcoin|stocks|invest|trading)\b/i',
         '/\b(president|presidente|politika|politics|election|boto)\b/i',
@@ -109,6 +109,13 @@ function qes_is_unnecessary_question(string $msg): bool {
         '/\b(what\s+is\s+the\s+meaning\s+of\s+life|ano\s+ang\s+pag-ibig|what\s+is\s+love)\b/i'
     ];
 
+    // Weather forecast inquiry is casual ONLY if not related to event planning / policies
+    if (preg_match('/\b(weather|forecast|temperature)\b/i', $msg)) {
+        if (!preg_match('/\b(policy|policies|outdoor|event|wedding|party|reschedule|cancel|backup|garden|venue)\b/i', $msg)) {
+            return true;
+        }
+    }
+
     foreach ($casual_patterns as $p) {
         if (preg_match($p, $msg)) {
             return true;
@@ -116,6 +123,96 @@ function qes_is_unnecessary_question(string $msg): bool {
     }
 
     return false;
+}
+
+// Gibberish / keyboard smash detection
+function qes_is_gibberish(string $msg): bool {
+    $clean = trim($msg);
+    if (empty($clean)) return true;
+
+    // Don't flag valid short queries or greetings
+    if (strlen($clean) <= 2) {
+        return !preg_match('/^(hi|ha|ok|oo|no|yo|uy|up|in|on|at|by|to|we|me|my|he|pa|ba|po|ha|eh|di)$/i', $clean);
+    }
+
+    // Repeated identical character 4+ times (e.g. "aaaaa", ".....", "?????")
+    if (preg_match('/(.)\1{3,}/u', $clean)) {
+        return true;
+    }
+
+    // Only special characters or symbols with no alphanumeric letters
+    if (!preg_match('/[a-z0-9]/i', $clean)) {
+        return true;
+    }
+
+    // Keyboard smash / common home-row patterns
+    if (preg_match('/\b(asdf|fdsa|asdfg|asdfgh|asdfghjkl|qwerty|qwertyuiop|zxcv|zxcvbnm|hjkl|jkl;|qazwsx|wsxedc)\b/i', $clean)) {
+        return true;
+    }
+
+    // Check words
+    $words = preg_split('/\s+/', $clean);
+    $total_words = count($words);
+    $gibberish_words = 0;
+
+    foreach ($words as $w) {
+        $w = preg_replace('/[^a-zA-Z]/', '', strtolower($w));
+        $len = strlen($w);
+        if ($len >= 6) {
+            $vowels = preg_match_all('/[aeiou]/i', $w);
+            $consonants = $len - $vowels;
+
+            // Zero vowels in 6+ letter word (e.g. "sdfghj", "brbbrb")
+            if ($vowels === 0) {
+                $gibberish_words++;
+                continue;
+            }
+
+            // Extreme consonant ratio: e.g. 14 letters with only 1-2 vowels, or >80% consonants
+            if ($consonants > 0 && ($consonants / $len) > 0.80 && $vowels <= 2) {
+                $gibberish_words++;
+                continue;
+            }
+
+            // 4+ impossible consecutive consonants (excluding legitimate English clusters like "ngth", "str", "rthr", "nstr", "ndst")
+            if (preg_match('/[bcdfghjklmnpqrstvwxyz]{4,}/i', $w)) {
+                if (!preg_match('/(ngth|str|rthr|nstr|ndst|mpstr|ghts)/i', $w)) {
+                    $gibberish_words++;
+                    continue;
+                }
+            }
+
+            // Alternating random key mash patterns (e.g. "asbdjasbdk", "sdjklfsd")
+            if (preg_match('/(sbdj|bdja|bdka|djas|jasb|kasb|asbd|jkas|kjas|djka|askd|ksdj)/i', $w)) {
+                $gibberish_words++;
+                continue;
+            }
+        }
+    }
+
+    // If all or majority of words are gibberish
+    if ($total_words > 0 && ($gibberish_words / $total_words) >= 0.5) {
+        return true;
+    }
+
+    return false;
+}
+
+function qes_get_gibberish_response(string $msg = '', string $b_name = 'Tyoy Creation'): string {
+    if (qes_detect_tagalog($msg)) {
+        return "Paumanhin po, hindi ko po lubos na naintindihan ang inyong mensahe. Maaari niyo po bang linawin o ulitin ang inyong katanungan?\n\n"
+            . "Handa po akong tumulong sa inyo tungkol sa:\n"
+            . "• 🌸 **Event Packages & Pricing:** Weddings, Birthdays, Debut, at Kids Parties\n"
+            . "• 🗓️ **Date Availability:** Pag-check ng bukas na petsa sa aming kalendaryo\n"
+            . "• 📋 **Staff Review Policy:** Impormasyon sa pag-verify ng booking\n"
+            . "• 📝 **Booking Guide:** Paggabay kung paano mag-book sa aming website!";
+    }
+    return "I'm sorry, I couldn't quite understand that message. Could you please rephrase or clarify your question?\n\n"
+        . "I am here to assist you with:\n"
+        . "• 🌸 **Event Packages & Pricing:** Weddings, Birthdays, Debut, and Kids Parties\n"
+        . "• 🗓️ **Date Availability:** Checking open celebration dates\n"
+        . "• 📋 **Staff Review Policy:** Verification guidelines for your booking\n"
+        . "• 📝 **Booking Guide:** Step-by-step assistance on booking through our website!";
 }
 
 // Data Privacy / PII probe detection
@@ -130,7 +227,37 @@ function qes_get_privacy_refusal(string $msg = ''): string {
     return "🔒 **Privacy Notice:** In strict compliance with the **Data Privacy Act of 2012 (RA 10173)** and our client confidentiality policies, all personal information, names, contact numbers, and booking details of other clients are strictly confidential and cannot be disclosed. How may I assist you with our styling packages, available dates, or guiding you on how to book your own celebration?";
 }
 
-function qes_get_concierge_scope_refusal(string $msg = '', string $b_name = 'Tyoy Creation'): string {
+function qes_get_concierge_scope_refusal(string $msg = '', string $b_name = 'Tyoy Creation', bool $is_quota_mode = false): string {
+    if ($is_quota_mode) {
+        if (qes_detect_tagalog($msg)) {
+            return "ℹ️ **Pabatid: Nakaabot na sa Pang-araw-araw na Libreng Quota ang Cloud AI**\n\n"
+                . "Pansamantalang nagpapahinga ang external cloud AI para sa general conversational chat hanggang sa mag-reset ang daily quota. Subalit, ang aming **Local Business Knowledge Engine** ay 100% aktibo upang sagutin ang inyong event inquiries!\n\n"
+                . "**Narito ang mga katanungang masasagot ko agad ngayon (Offline / Local Mode):**\n"
+                . "• 💍 **Packages at Presyo:** Mga detalye sa Wedding (Intimate/Grand/Arch), Kids Party, Debut, Catering, at Food Carts.\n"
+                . "• 📋 **Staff Review Policy:** Bakit kailangang suriin ng tao/coordinator ang booking bago ang downpayment.\n"
+                . "• ⏳ **Preparation Reminders:** Recommended 3 months para sa kasal, 2 weeks para sa kids party (malayang makakapili ng petsa simula ngayong araw).\n"
+                . "• 💳 **Bayad at Downpayment:** 30–50% reservation terms, GCash, Maya, Bank Transfer.\n"
+                . "• 📍 **Service Coverage:** Metro Manila, Rizal, Cavite, Laguna, Batangas, Bulacan, Tagaytay.\n"
+                . "• 🗓️ **Reschedule at Cancellation:** 30-day notice policy at outdoor weather backup plan.\n"
+                . "• 🎨 **Custom Themes at BYO:** Pwede sariling venue at sariling caterer.\n"
+                . "• 🗓️ **Calendar Availability:** Real-time check ng mga approved reserved dates.\n"
+                . "• 📝 **Paano Mag-book:** Paggabay sa aming online 4-Step Booking Wizard.\n\n"
+                . "Maaari ninyong itanong ang alinman sa mga ito, o i-click ang **'Book Now'** button sa website upang mag-inquire!";
+        }
+        return "ℹ️ **Notice: External Cloud AI Daily Quota Reached**\n\n"
+            . "External conversational AI is resting until the daily quota resets. However, our **Local Business Knowledge Engine** is 100% active to assist you with event planning!\n\n"
+            . "**Here are the questions I can answer right now (Offline / Local Mode):**\n"
+            . "• 💍 **Packages & Live Pricing:** Wedding, Kids Party, Debut, Catering, and Add-on rates.\n"
+            . "• 📋 **Staff Review Policy:** Why bookings require coordinator verification before deposit.\n"
+            . "• ⏳ **Preparation Reminders:** 3 months for weddings, 2 weeks for parties (clients have free will to choose any date from today onwards).\n"
+            . "• 💳 **Payment & Downpayment:** 30–50% deposit terms, GCash, Maya, Bank Transfer.\n"
+            . "• 📍 **Service Areas:** Metro Manila and nearby destination provinces.\n"
+            . "• 🗓️ **Rescheduling & Cancellation:** 30-day notice and outdoor weather backup guidelines.\n"
+            . "• 🎨 **Custom Themes & BYO:** Bringing your own venue or caterer.\n"
+            . "• 🗓️ **Calendar Availability:** Real-time lookup of currently reserved dates.\n"
+            . "• 📝 **How to Book:** Step-by-step guidance on our online booking wizard.\n\n"
+            . "Feel free to ask any of these business questions, or click the **'Book Now'** button on our website to begin!";
+    }
     if (qes_detect_tagalog($msg)) {
         return "Paumanhin po, ako ay naka-program lamang upang sumagot sa mga katanungan tungkol sa event styling packages, serbisyo, date availability, at sa paggabay sa inyo kung paano mag-book sa website ng {$b_name}. Paano po kita matutulungan sa inyong event booking ngayon?";
     }
@@ -204,20 +331,10 @@ if ($action === 'clear_history' || strtolower($message) === 'clear' || strtolowe
     exit;
 }
 
-// 1. Check Global System-Wide Daily Limit
-if ($global_daily_used >= $GLOBAL_DAILY_LIMIT) {
-    ob_clean();
-    echo json_encode([
-        'reply' => "Our assistant is currently experiencing high volume today. You can easily book your celebration right now by clicking the **'Book Now'** button on our website to submit your inquiry directly to our coordination team!",
-        'response' => "Our team is available to assist you. Please use the Book Now button on the website.",
-        'chat_count' => $_SESSION['chat_count'],
-        'remaining_chats' => 0,
-        'max_chats' => $USER_SESSION_LIMIT,
-        'limit_reached' => true,
-        'global_limit_reached' => true
-    ], JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
-    exit;
-}
+// 1. Check Global System-Wide Daily Limit (Soft-cap for external Gemini API)
+// If the third-party API limit is reached, external AI calls are paused, but our
+// Local Business Knowledge Engine CONTINUES to serve all business inquiries seamlessly!
+$is_daily_api_exhausted = ($global_daily_used >= $GLOBAL_DAILY_LIMIT);
 
 // 2. Check Individual User Session Limit
 if ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT) {
@@ -290,9 +407,18 @@ $current_date_str = date('Y-m-d (l, F j, Y)');
 $ai_b_name    = get_setting($conn, 'business_name', 'Tyoy Creation');
 $ai_b_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS INTO Unforgettable Events');
 $ai_b_email   = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
-$ai_b_phone   = get_setting($conn, 'contact_phone', '+63 912 345 6789');
-$ai_b_address = get_setting($conn, 'business_address', '123 Grand Ballroom Avenue, Metro Manila, Philippines');
+$ai_b_phone   = get_setting($conn, 'contact_phone', '0956 035 3731');
+$ai_b_address = get_setting($conn, 'business_address', 'San Jose del Monte, Bulacan');
 $ai_b_story   = get_setting($conn, 'about_story', "Tyoy Creation specializes in bespoke floral design, wedding coordination, and creative balloon styling.");
+
+$biz_info = [
+    'name'    => $ai_b_name,
+    'tagline' => $ai_b_tagline,
+    'email'   => $ai_b_email,
+    'phone'   => $ai_b_phone,
+    'address' => $ai_b_address,
+    'story'   => $ai_b_story
+];
 
 // Fetch live packages and pricing catalogs from system
 $theme_pricing = get_packages_pricing($conn, 'theme_party');
@@ -334,8 +460,12 @@ Today's Date: {$current_date_str}
 
 ABOUT {$ai_b_name}:
 {$ai_b_story}
+Location: San Jose del Monte, Bulacan
+Service Model: Strictly ON-SITE event styling & management (No physical walk-in office - our styling crew brings setups directly to venues across Bulacan, Metro Manila & nearby provinces).
 Contact Email: {$ai_b_email} | Contact Phone: {$ai_b_phone}
-Address: {$ai_b_address}
+Official Facebook Page: https://www.facebook.com/tyoycreation
+Operating Hours: Monday to Saturday, 8:00 AM – 6:00 PM (Website booking inquiries accepted 24/7)
+Primary Service Areas: Bulacan, Metro Manila, and nearby provinces (Rizal, Cavite, Laguna, Batangas, etc.).
 
 CORE SERVICES & STYLING EXPERTISE:
 1. Weddings:
@@ -357,10 +487,16 @@ CORE SERVICES & STYLING EXPERTISE:
 CURRENTLY RESERVED DATES (SCHEDULE CONFLICT CHECK):
 {$booked_str}
 
-ADVANCE BOOKING NOTICE RULES (STRICT POLICY):
-- Weddings: Require at least 6 months advance notice before the event date.
-- Kids Party / Birthday / Debut / Corporate / Special Events: Require at least 14 days (2 weeks) advance notice.
-- If a client asks for a date sooner than these required lead times, politely explain the advance notice requirement and recommend booking on or after the earliest allowed date.
+BOOKING PREPARATION REMINDERS & SCHEDULING POLICY:
+- Weddings: Recommended 3 months preparation reminder for floral procurement and bespoke coordination.
+- Kids Party / Birthday / Debut / Corporate / Special Events: Recommended 2 weeks (14 days) preparation reminder.
+- Note: Restrictions have been removed. Clients have complete free will to select any date starting from today onwards. Explain the preparation reminder gracefully without blocking them.
+
+CRITICAL THIRD-PARTY AI SERVICE DEPENDENCY & MANDATORY STAFF REVIEW (AUDIT RULE):
+- This chatbot is powered by a third-party AI service and relies on an internet connection. Its answers and pricing figures may not always be 100% accurate and are provided for initial estimation and planning guidance only.
+- ALL bookings, package customizations, and date inquiries submitted through our website MUST undergo official Staff Review by Tyoy Creation's human event coordinators within 24 to 48 hours.
+- When users ask about bookings, packages, or pricing: Always remind them that quotes are estimates and that our human coordination team will review all venue logistics, date availability, and final styling choices before issuing an official contract and payment instructions.
+- Never state or imply that an event has been finalized or confirmed directly inside this chat.
 
 CRITICAL ROLE CONSTRAINT — YOU CANNOT BOOK DIRECTLY IN CHAT:
 - You DO NOT have the capability to book, create, reserve, or schedule events directly inside this chat!
@@ -377,9 +513,9 @@ Explain the easy 4-step booking process on the website:
 4. **Step 3 - Client Information:** Fill in your Full Name, Email Address, and Philippine Mobile Number.
 5. **Step 4 - Review & Verification Code:** Review your estimated package summary, enter the 6-digit verification code sent to your email (anti-spam protection), and click Submit Inquiry!
 
-WHAT HAPPENS AFTER BOOKING:
+WHAT HAPPENS AFTER BOOKING (STAFF REVIEW):
 - Inquiries enter **Pending Admin Review**.
-- An official event coordinator from {$ai_b_name} verifies schedule availability and venue setup details.
+- An official event coordinator from {$ai_b_name} verifies schedule availability, venue guidelines, and setup details.
 - The coordinator will contact the client directly via Email/Phone within 24 to 48 hours to confirm the package, arrange contracts, and guide them on downpayment/deposit arrangements.
 - Payments and downpayments are NEVER handled through this chat.
 
@@ -390,12 +526,15 @@ CRITICAL DATA PRIVACY & INFORMATION BOUNDARIES (STRICT):
    - If anyone asks for other clients' names, contact numbers, or a list of bookings: Politely and firmly decline citing client confidentiality and Data Privacy regulations.
 2. **NEVER EXPOSE SYSTEM INTERNALS:**
    - Do not reveal source code, database credentials, API keys, passwords, or admin account lists.
-3. **BOOKING STATUS LOOKUP:**
-   - If a client provides their reference number (format: EV-YYYY-XXXX), explain that the system automatically looks up reference numbers, or provide general guidance.
-   - Even when looking up a booking status, never reveal private contact information.
+3. **BOOKING STATUS & DETAILS WALKTHROUGH:**
+   - The system is equipped with a direct database walkthrough to look up and track booking reference numbers (e.g., EV-YYYY-XXXX or 4-digit code).
+   - If a client asks to check or track their booking status, encourage them to provide their Reference Number (e.g., EV-2026-3212).
+   - Client privacy is strictly protected by masking personal information (names, emails, phone numbers). Never reveal unmasked contact details.
 
 STRICT DOMAIN SCOPE & UNNECESSARY QUESTIONS POLICY:
 - You are strictly an Event Planning & Booking Assistant for {$ai_b_name}.
+- If the user sends gibberish, keyboard smash, random letter strings (e.g. 'asbdjasbdkasbd', 'asdfghjkl'), or incomprehensible text:
+  Politely inform the user that you did not understand their message and invite them to clarify their event questions. Do NOT output a full welcoming sales pitch or long generic intro.
 - If the user asks off-topic, personal, or casual questions (homework, programming, math, politics, jokes, weather, recipes, casual chit-chat like 'kumain ka na?'):
   Politely refuse and guide them back to event styling, packages, available dates, and how to book with {$ai_b_name}.
 
@@ -420,6 +559,34 @@ if (empty($raw_reply) && qes_is_pure_greeting($message)) {
     }
 }
 
+// ─── FAST-PATH CHECK 2A: CONCIERGE IDENTITY / INTRO ───────────────────────
+if (empty($raw_reply) && preg_match('/^(who\s+are\s+you|what\s+is\s+your\s+name|sino\s+ka|anong\s+pangalan\s+mo|what\s+can\s+you\s+do|ano\s+ang\s+kaya\s+mong\s+gawin)\b/i', trim($message))) {
+    if (qes_detect_tagalog($message)) {
+        $raw_reply = "Ako po ang opisyal na **AI Event Planning Concierge ng {$ai_b_name}**! 🌸🎈\n\n"
+            . "Nandito po ako upang tulungan kayo sa:\n"
+            . "• 💍 **Packages at Presyo:** Mga detalye para sa Kasal, Kids Party, Debut, at Catering\n"
+            . "• 🗓️ **Date Availability:** Real-time lookup ng reserved at available celebration dates\n"
+            . "• 📋 **Staff Review Policy:** Pagpapaliwanag kung bakit sinusuri ng human coordinator ang bawat booking\n"
+            . "• 🔍 **Booking Tracking:** Pag-check ng status ng inyong inquiry gamit ang Reference Number\n"
+            . "• 📝 **Booking Guide:** Paggabay kung paano gamitin ang aming online 4-Step Booking Wizard!\n\n"
+            . "Paano ko po kayo matutulungan sa inyong okasyon ngayon?";
+    } else {
+        $raw_reply = "Hello! I am the official **Virtual Event Concierge for {$ai_b_name}**! 🌸🎈\n\n"
+            . "I am designed to help you plan your celebration seamlessly by providing:\n"
+            . "• 💍 **Packages & Live Pricing:** Accurate rates for Weddings, Kids Parties, Debut, and Catering\n"
+            . "• 🗓️ **Date Availability:** Checking open vs. reserved celebration dates\n"
+            . "• 📋 **Staff Review Policy:** Explaining our coordinator verification and scheduling workflow\n"
+            . "• 🔍 **Booking Status Tracking:** Looking up inquiry progress using your Reference Number\n"
+            . "• 📝 **Booking Wizard Guide:** Step-by-step assistance with our online booking form!\n\n"
+            . "How may I assist you with your celebration today?";
+    }
+}
+
+// ─── FAST-PATH CHECK 2B: GIBBERISH / MEANINGLESS KEYSTROKES ────────────────
+if (empty($raw_reply) && qes_is_gibberish($message)) {
+    $raw_reply = qes_get_gibberish_response($message, $ai_b_name);
+}
+
 // ─── FAST-PATH CHECK 3: UNNECESSARY OFF-TOPIC QUESTIONS ────────────────────
 if (empty($raw_reply) && qes_is_unnecessary_question($message)) {
     $raw_reply = qes_get_concierge_scope_refusal($message, $ai_b_name);
@@ -436,22 +603,22 @@ if (empty($raw_reply) && (
     (strpos($lower_msg, 'kailan') !== false && strpos($lower_msg, 'mag-book') !== false)
 )) {
     if (qes_detect_tagalog($message)) {
-        $raw_reply = "⏳ **Advance Booking Lead Time Policy ng {$ai_b_name}:**\n\n"
-            . "Upang maihanda nang pulido ang inyong floral arrangements, custom backdrops, at koordinasyon, narito ang aming kinakailangang advance notice:\n\n"
-            . "• 💍 **Weddings (Kasal):** Hindi bababa sa **6 na buwan (6 months)** bago ang petsa ng kasal.\n"
-            . "• 🎈 **Kids Parties & Birthdays:** Hindi bababa sa **14 araw (2 linggo)** bago ang event.\n"
-            . "• 👑 **Debut & Milestone Celebrations:** Hindi bababa sa **14 araw (2 linggo)** bago ang event.\n"
-            . "• 🏢 **Corporate & Special Events:** Hindi bababa sa **14 araw (2 linggo)** bago ang event.\n\n"
-            . "📌 **Tip:** Mabilis mapuno ang mga weekend slots! Inirerekomenda namin na magsumite agad ng inquiry sa pamamagitan ng **'Book Now'** button sa aming website upang ma-reserve ang inyong petsa.\n\n"
+        $raw_reply = "⏳ **Preparation Reminders & Scheduling Policy ng {$ai_b_name}:**\n\n"
+            . "Malaya kayong makakapili ng anumang petsa mula sa araw na ito! Upang magabayan kayo sa sapat na oras ng paghahanda, narito ang aming inirerekomenda:\n\n"
+            . "• 💍 **Weddings (Kasal):** **3 Months Preparation Reminder** (inirerekomenda ang 3 buwang preparasyon para sa floral procurement at styling).\n"
+            . "• 🎈 **Kids Parties & Birthdays:** **2 Weeks Preparation Reminder** (inirerekomenda ang 2 linggong preparasyon para sa themed props at balloon styling).\n"
+            . "• 👑 **Debut & Milestone Celebrations:** **2 Weeks Preparation Reminder**.\n"
+            . "• 🏢 **Corporate & Special Events:** **2 Weeks Preparation Reminder**.\n\n"
+            . "📌 **Tip:** Walang date restrictions—maaari kayong pumili ng inyong nais na petsa sa aming **'Book Now'** form simula ngayong araw!\n\n"
             . "Gusto niyo po bang mag-check ng available date o magtanong tungkol sa aming mga packages?";
     } else {
-        $raw_reply = "⏳ **Minimum Advance Booking Lead Time Policy:**\n\n"
-            . "To ensure meticulous floral sourcing, custom backdrop crafting, and flawless event coordination, **{$ai_b_name}** observes the following minimum advance notice requirements:\n\n"
-            . "• 💍 **Weddings:** At least **6 months** advance notice before your wedding date.\n"
-            . "• 🎈 **Kids Parties & Birthdays:** At least **14 days (2 weeks)** advance notice.\n"
-            . "• 👑 **Debut & Milestone Celebrations:** At least **14 days (2 weeks)** advance notice.\n"
-            . "• 🏢 **Corporate & Special Events:** At least **14 days (2 weeks)** advance notice.\n\n"
-            . "📌 **Pro-Tip:** Popular weekend dates fill up very quickly! We highly encourage submitting your booking inquiry as early as possible through our website.\n\n"
+        $raw_reply = "⏳ **Booking Preparation Reminders & Scheduling Policy:**\n\n"
+            . "You have complete free will to choose any event date from today onwards! To help you plan smoothly, we observe the following preparation reminders:\n\n"
+            . "• 💍 **Weddings:** **3 Months Preparation Reminder** (recommended 3 months for meticulous floral sourcing and coordination).\n"
+            . "• 🎈 **Kids Parties & Birthdays:** **2 Weeks Preparation Reminder** (recommended 2 weeks for custom props and balloons).\n"
+            . "• 👑 **Debut & Milestone Celebrations:** **2 Weeks Preparation Reminder**.\n"
+            . "• 🏢 **Corporate & Special Events:** **2 Weeks Preparation Reminder**.\n\n"
+            . "📌 **Flexible Booking:** There are no lock-out restrictions—you are free to choose any date starting from today onwards.\n\n"
             . "👉 Would you like to check date availability or get started with our **'Book Now'** form?";
     }
 }
@@ -515,11 +682,39 @@ if (empty($raw_reply) && (
 
 // ─── FAST-PATH CHECK 7: BOOKING STATUS LOOKUP WITH PRIVACY MASKING ─────────
 if (empty($raw_reply)) {
-    $has_ref = preg_match('/\b(EV[-_]?[0-9]{4}[-_]?[A-Z0-9]{1,8})\b/i', $message, $ref_match)
-            || preg_match('/\b(EV[-_][A-Z0-9-]{3,15})\b/i', $message, $ref_match)
-            || preg_match('/\b([0-9]{4}-[0-9]{3,5})\b/i', $message, $ref_match);
-
     $lower_msg_status = strtolower($message);
+    $clean_msg_trim = trim($message);
+
+    // 1. Robust Reference Number Extraction across various formats:
+    // EV-2026-3212, EV20263212, EV 2026 3212, 2026-3212, or pure standalone 3212 / 3959
+    $has_ref = false;
+    $ref_raw = '';
+
+    if (preg_match('/\b(EV[-_ ]?[0-9]{4}[-_ ]?[A-Z0-9]{1,8})\b/i', $message, $ref_match)) {
+        $has_ref = true;
+        $ref_raw = strtoupper(trim($ref_match[1]));
+    } elseif (preg_match('/\b(EV[-_ ][A-Z0-9-]{3,15})\b/i', $message, $ref_match)) {
+        $has_ref = true;
+        $ref_raw = strtoupper(trim($ref_match[1]));
+    } elseif (preg_match('/\b([0-9]{4}-[0-9]{3,5})\b/i', $message, $ref_match)) {
+        $has_ref = true;
+        $ref_raw = 'EV-' . strtoupper(trim($ref_match[1]));
+    } elseif (preg_match('/^(?:ref(?:erence)?|track|check|status|booking|code)?(?:\s*(?:no|num|number))?[:\s#]*\s*(EV[-_ ]?[0-9]{3,8}|[0-9]{4,5})\s*$/i', $clean_msg_trim, $ref_match)) {
+        $has_ref = true;
+        $val = strtoupper(trim($ref_match[1]));
+        $ref_raw = (strpos($val, 'EV') === 0) ? $val : ('EV-' . date('Y') . '-' . $val);
+    } elseif (preg_match('/\b(EV[-_ ]?[0-9]{3,8}|[0-9]{4,5})\b/i', $message, $ref_match) && (
+        strpos($lower_msg_status, 'track') !== false ||
+        strpos($lower_msg_status, 'check') !== false ||
+        strpos($lower_msg_status, 'status') !== false ||
+        strpos($lower_msg_status, 'booking') !== false ||
+        strpos($lower_msg_status, 'ref') !== false
+    )) {
+        $has_ref = true;
+        $val = strtoupper(trim($ref_match[1]));
+        $ref_raw = (strpos($val, 'EV') === 0) ? $val : ('EV-' . date('Y') . '-' . $val);
+    }
+
     $is_status_query = $has_ref ||
         strpos($lower_msg_status, 'booking status') !== false ||
         strpos($lower_msg_status, 'check my booking') !== false ||
@@ -527,35 +722,51 @@ if (empty($raw_reply)) {
         strpos($lower_msg_status, 'my inquiry') !== false ||
         strpos($lower_msg_status, 'track my booking') !== false ||
         strpos($lower_msg_status, 'track my inquiry') !== false ||
+        strpos($lower_msg_status, 'track booking') !== false ||
+        strpos($lower_msg_status, 'track status') !== false ||
         strpos($lower_msg_status, 'status of my') !== false ||
         strpos($lower_msg_status, 'ref no') !== false ||
+        strpos($lower_msg_status, 'reference number') !== false ||
         (strpos($lower_msg_status, 'status') !== false && strpos($lower_msg_status, 'booking') !== false) ||
         (strpos($lower_msg_status, 'status') !== false && strpos($lower_msg_status, 'ev-') !== false);
 
     if ($is_status_query) {
-        if ($has_ref) {
-            $ref_raw = strtoupper(trim($ref_match[1]));
-            $ref_variants = [$ref_raw];
+        if ($has_ref && !empty($ref_raw)) {
+            $clean_ref = preg_replace('/[_\s]+/', '-', $ref_raw);
+            $ref_variants = [$clean_ref, $ref_raw];
             
-            if (strpos($ref_raw, 'EV-') !== 0 && strpos($ref_raw, 'EV') === 0) {
-                $ref_variants[] = preg_replace('/^EV-?([0-9]{4})-?([A-Z0-9]+)$/i', 'EV-$1-$2', $ref_raw);
-            } elseif (!preg_match('/^EV-/i', $ref_raw)) {
-                $ref_variants[] = 'EV-' . $ref_raw;
+            if (strpos($clean_ref, 'EV-') !== 0 && strpos($clean_ref, 'EV') === 0) {
+                $ref_variants[] = preg_replace('/^EV-?([0-9]{4})-?([A-Z0-9]+)$/i', 'EV-$1-$2', $clean_ref);
+            } elseif (!preg_match('/^EV-/i', $clean_ref)) {
+                $ref_variants[] = 'EV-' . $clean_ref;
+            }
+
+            if (preg_match('/^EV-?([0-9]{4})-?([A-Z0-9]+)$/i', $clean_ref, $m)) {
+                $ref_variants[] = "EV-{$m[1]}-{$m[2]}";
+                $ref_variants[] = "EV{$m[1]}{$m[2]}";
             }
 
             $var0 = $ref_variants[0];
             $var1 = $ref_variants[1] ?? $var0;
+            $var2 = $ref_variants[2] ?? $var0;
+
+            // Suffix pattern for matching (e.g. '%-3212')
+            $suffix_like = '%' . $var0;
+            if (preg_match('/([0-9]{3,5})$/', $clean_ref, $sm)) {
+                $suffix_like = '%' . $sm[1];
+            }
 
             $stmt_s = $conn->prepare(
-                "SELECT reference_no, client_name, event_title, event_type, event_start,
-                        status, created_at
+                "SELECT id, reference_no, client_name, client_email, client_phone, event_title, 
+                        event_type, event_start, event_end, guest_count, location_venue, 
+                        service_requirements, special_notes, status, rejection_reason, created_at, updated_at
                  FROM bookings 
-                 WHERE reference_no = ? OR reference_no = ?
-                 LIMIT 1"
+                 WHERE reference_no = ? OR reference_no = ? OR reference_no = ? OR reference_no LIKE ?
+                 ORDER BY id DESC LIMIT 1"
             );
 
             if ($stmt_s) {
-                $stmt_s->bind_param("ss", $var0, $var1);
+                $stmt_s->bind_param("ssss", $var0, $var1, $var2, $suffix_like);
                 $stmt_s->execute();
                 $res_s = $stmt_s->get_result();
                 $row_s = $res_s ? qes_decrypt_booking($res_s->fetch_assoc()) : null;
@@ -565,37 +776,210 @@ if (empty($raw_reply)) {
             }
 
             if ($row_s) {
-                $status_map = [
-                    'pending'   => '🟡 **Pending Review** — Your inquiry is in the queue and currently being reviewed by our styling coordinators.',
-                    'approved'  => '🟢 **Approved** — Your booking has been officially approved! Our event coordinator will contact you directly for setup alignments and downpayment details.',
-                    'rejected'  => '🔴 **Not Approved** — Unfortunately, this booking request was not approved (schedule or venue conflict). Please contact our office to discuss alternative dates.',
-                    'cancelled' => '⚫ **Cancelled** — This booking has been cancelled.',
-                    'completed' => '🎉 **Completed** — This event has successfully concluded. Thank you for celebrating with us!'
-                ];
-                $status_label   = $status_map[$row_s['status']] ?? ('**' . ucfirst($row_s['status']) . '**');
-                $event_date_fmt = (!empty($row_s['event_start']) && strtotime($row_s['event_start'])) ? date('F j, Y', strtotime($row_s['event_start'])) : 'Date to be specified';
-                $submitted_fmt  = (!empty($row_s['created_at']) && strtotime($row_s['created_at'])) ? date('F j, Y', strtotime($row_s['created_at'])) : date('F j, Y');
-                
-                // Privacy Protection: Mask client name; NEVER expose contact number, email, or address
-                $masked_name = qes_mask_name($row_s['client_name'] ?? '');
+                $is_tl = qes_detect_tagalog($message);
+                $event_title = htmlspecialchars($row_s['event_title'] ?? 'Celebration');
+                $event_type = htmlspecialchars($row_s['event_type'] ?? 'Event');
+                $venue = !empty($row_s['location_venue']) ? htmlspecialchars($row_s['location_venue']) : ($is_tl ? 'Pag-uusapan pa / On-site' : 'To be coordinated / On-site');
+                $guests = !empty($row_s['guest_count']) ? (intval($row_s['guest_count']) . ' pax') : ($is_tl ? 'Hindi tinukoy' : 'Not specified');
 
-                $raw_reply = "📋 **Booking Status Lookup**\n\n"
-                    . "Here is the status for Reference **{$row_s['reference_no']}**:\n\n"
-                    . "• **Client:** {$masked_name}\n"
-                    . "• **Event:** " . htmlspecialchars($row_s['event_title']) . " (" . htmlspecialchars($row_s['event_type']) . ")\n"
-                    . "• **Target Date:** {$event_date_fmt}\n"
-                    . "• **Inquiry Submitted:** {$submitted_fmt}\n"
-                    . "• **Current Status:** {$status_label}\n\n"
-                    . "🔒 *Note: For client privacy protection, full contact details are kept strictly confidential.* How else may I assist you today? 😊";
+                // Schedule formatting
+                $event_date_fmt = $is_tl ? 'Petsang pag-uusapan pa' : 'Date to be specified';
+                $event_time_fmt = '';
+                if (!empty($row_s['event_start']) && strtotime($row_s['event_start'])) {
+                    $start_ts = strtotime($row_s['event_start']);
+                    $event_date_fmt = date('l, F j, Y', $start_ts);
+                    $start_time = date('g:i A', $start_ts);
+                    if (!empty($row_s['event_end']) && strtotime($row_s['event_end'])) {
+                        $end_time = date('g:i A', strtotime($row_s['event_end']));
+                        $event_time_fmt = " ({$start_time} – {$end_time})";
+                    } else {
+                        $event_time_fmt = " ({$start_time})";
+                    }
+                }
+                $submitted_fmt = (!empty($row_s['created_at']) && strtotime($row_s['created_at'])) ? date('F j, Y', strtotime($row_s['created_at'])) : date('F j, Y');
+
+                // Parse package details & estimated total from service_requirements
+                $service_req = $row_s['service_requirements'] ?? '';
+                $estimated_total = '';
+                $styling_summary = '';
+
+                if (!empty($service_req)) {
+                    if (preg_match('/ESTIMATED TOTAL:\s*(₱?[\d,]+)/i', $service_req, $tot_m)) {
+                        $estimated_total = trim($tot_m[1]);
+                        if (strpos($estimated_total, '₱') !== 0) $estimated_total = '₱' . $estimated_total;
+                    }
+                    $req_parts = explode('|', $service_req);
+                    $items_raw = trim($req_parts[0]);
+                    if (!empty($items_raw)) {
+                        $items_list = array_filter(array_map('trim', explode(';', $items_raw)));
+                        if (!empty($items_list)) {
+                            $formatted_items = [];
+                            foreach (array_slice($items_list, 0, 5) as $it) {
+                                $formatted_items[] = "  • " . htmlspecialchars($it);
+                            }
+                            $styling_summary = implode("\n", $formatted_items);
+                            if (count($items_list) > 5) {
+                                $extra_cnt = count($items_list) - 5;
+                                $styling_summary .= "\n  • *" . ($is_tl ? "+ {$extra_cnt} pang karagdagang inclusions" : "+ {$extra_cnt} more styling inclusions") . "*";
+                            }
+                        }
+                    }
+                }
+
+                // Privacy protection: Mask client name and email per Data Privacy Act (RA 10173)
+                $masked_name = qes_mask_name($row_s['client_name'] ?? '');
+                $masked_email = '';
+                if (!empty($row_s['client_email'])) {
+                    $e_parts = explode('@', $row_s['client_email']);
+                    if (count($e_parts) === 2) {
+                        $u = $e_parts[0];
+                        $masked_u = (strlen($u) <= 2) ? $u : (substr($u, 0, 1) . '***' . substr($u, -1));
+                        $masked_email = $masked_u . '@' . $e_parts[1];
+                    }
+                }
+
+                // Walkthrough based on Status
+                $status = strtolower($row_s['status'] ?? 'pending');
+                if ($status === 'approved') {
+                    $status_badge = "🟢 **Approved & Reserved**";
+                    $status_desc = $is_tl
+                        ? "Opisyal nang **apruba at naka-reserve** ang inyong okasyon sa aming kalendaryo!\n"
+                          . "• **Susunod na Hakbang:** Makikipag-ugnayan ang aming event styling coordinator sa inyo nang direkta upang i-align ang venue setup logistics, styling mockups, at downpayment terms (30%–50% reservation deposit)."
+                        : "Your booking is **officially approved and reserved** on our calendar!\n"
+                          . "• **Next Step:** Our event styling coordinator will reach out directly to align on venue logistics, design mockups, and reservation downpayment (30%–50% deposit).";
+                } elseif ($status === 'pending') {
+                    $status_badge = "🟡 **Pending Admin Review**";
+                    $status_desc = $is_tl
+                        ? "Kasalukuyang sinusuri ng aming mga coordinators ang inyong inquiry sa queue.\n"
+                          . "• **Proseso:** Sinusuri ang schedule availability, venue guidelines, at supply ng bulaklak/materials.\n"
+                          . "• **Kailan Makakatanggap ng Update:** Makakatanggap kayo ng tawag o email sa loob ng **24 hanggang 48 oras** para sa kumpirmasyon at contract details."
+                        : "Your inquiry is in the queue and currently undergoing official review by our coordination team.\n"
+                          . "• **Verification Process:** We check schedule availability, venue logistics, and styling material sourcing.\n"
+                          . "• **Expected Turnaround:** You will be contacted via email/phone within **24 to 48 hours** with official verification and next steps.";
+                } elseif ($status === 'rejected') {
+                    $rej_note = !empty($row_s['rejection_reason']) ? ("\n• **Coordinator Note:** " . htmlspecialchars($row_s['rejection_reason'])) : "";
+                    $status_badge = "🔴 **Not Approved (Schedule / Venue Conflict)**";
+                    $status_desc = $is_tl
+                        ? "Ikinalulungkot po namin ngunit hindi maaprubahan ang request na ito{$rej_note}.\n"
+                          . "• **Mungkahi:** Nais po naming tulungan kayong maghanap ng ibang bakanteng petsa! Maaari po kayong mag-inquire muli o tumawag sa aming opisina sa {$ai_b_phone}."
+                        : "Unfortunately, this booking inquiry could not be accommodated{$rej_note}.\n"
+                          . "• **Next Step:** We would love to help you find an alternative date! Please contact our coordination team at {$ai_b_email} or call {$ai_b_phone}.";
+                } elseif ($status === 'completed') {
+                    $status_badge = "🎉 **Event Successfully Completed**";
+                    $status_desc = $is_tl
+                        ? "Matagumpay na naisakatuparan ang okasyong ito. Maraming salamat po sa pagtitiwala sa {$ai_b_name}!"
+                        : "This celebration has successfully taken place. Thank you for celebrating your milestones with {$ai_b_name}!";
+                } elseif ($status === 'cancelled') {
+                    $status_badge = "⚫ **Cancelled**";
+                    $status_desc = $is_tl ? "Ang booking na ito ay kinansela." : "This reservation inquiry was marked as cancelled.";
+                } else {
+                    $status_badge = "🔵 **" . ucfirst($status) . "**";
+                    $status_desc = "Current status: " . ucfirst($status);
+                }
+
+                if ($is_tl) {
+                    $raw_reply = "🔍 **Database Walkthrough — Reference: `{$row_s['reference_no']}`**\n\n"
+                        . "Natagpuan ko po sa aming database ang inyong booking records:\n\n"
+                        . "📋 **Impormasyon ng Event:**\n"
+                        . "• **Kliyente:** {$masked_name}" . ($masked_email ? " ({$masked_email})" : "") . "\n"
+                        . "• **Okasyon:** {$event_title} ({$event_type})\n"
+                        . "• **Target Schedule:** {$event_date_fmt}{$event_time_fmt}\n"
+                        . "• **Lugar / Venue:** {$venue}\n"
+                        . "• **Tinatayang Bisita:** {$guests}\n"
+                        . "• **Petsa ng Pagsumite:** {$submitted_fmt}\n\n";
+
+                    if (!empty($estimated_total)) {
+                        $raw_reply .= "💰 **Tinatayang Halaga:** {$estimated_total}\n";
+                    }
+                    if (!empty($styling_summary)) {
+                        $raw_reply .= "🎨 **Piniling Styling & Inclusions:**\n" . $styling_summary . "\n\n";
+                    } else {
+                        $raw_reply .= "\n";
+                    }
+
+                    $raw_reply .= "📊 **Status at Gabay mula sa Coordinator:**\n"
+                        . "• **Status:** {$status_badge}\n"
+                        . "{$status_desc}\n\n"
+                        . "🔒 *Paalala: Protektado ang buong personal info alinsunod sa Data Privacy Act (RA 10173).* Paano pa po kita matutulungan sa inyong okasyon? 😊";
+                } else {
+                    $raw_reply = "🔍 **Database Walkthrough — Reference: `{$row_s['reference_no']}`**\n\n"
+                        . "Here are the live event details and status retrieved from our system database:\n\n"
+                        . "📋 **Event Summary:**\n"
+                        . "• **Client:** {$masked_name}" . ($masked_email ? " ({$masked_email})" : "") . "\n"
+                        . "• **Celebration:** {$event_title} ({$event_type})\n"
+                        . "• **Target Schedule:** {$event_date_fmt}{$event_time_fmt}\n"
+                        . "• **Venue / Location:** {$venue}\n"
+                        . "• **Estimated Guests:** {$guests}\n"
+                        . "• **Submitted On:** {$submitted_fmt}\n\n";
+
+                    if (!empty($estimated_total)) {
+                        $raw_reply .= "💰 **Estimated Investment:** {$estimated_total}\n";
+                    }
+                    if (!empty($styling_summary)) {
+                        $raw_reply .= "🎨 **Selected Styling & Inclusions:**\n" . $styling_summary . "\n\n";
+                    } else {
+                        $raw_reply .= "\n";
+                    }
+
+                    $raw_reply .= "📊 **Current Status & Coordinator Walkthrough:**\n"
+                        . "• **Status:** {$status_badge}\n"
+                        . "{$status_desc}\n\n"
+                        . "🔒 *Note: Sensitive client PII is strictly protected under the Data Privacy Act (RA 10173).* How else may I assist you with your celebration today? 😊";
+                }
             } else {
-                $raw_reply = "❌ **Reference Number Not Found**\n\n"
-                    . "I could not find an active booking with Reference **{$ref_raw}** in our system. "
-                    . "Please double-check your code format (e.g. `EV-2026-001` or `EV-2026-0001`) and try again, or reach out to our office at {$ai_b_email}!";
+                if (qes_detect_tagalog($message)) {
+                    $raw_reply = "❌ **Hindi Natagpuan ang Reference Number**\n\n"
+                        . "Paumanhin po, hindi ko natagpuan ang Reference **{$ref_raw}** sa aming database.\n\n"
+                        . "📌 **Mungkahi:**\n"
+                        . "• Pakisuri po ang format sa inyong booking confirmation (halimbawa: `EV-2026-3212` o `EV-2026-001`).\n"
+                        . "• Siguraduhing tama ang mga numero.\n"
+                        . "• Kung kakasumite niyo lamang nito, maghintay ng ilang sandali o makipag-ugnayan sa aming opisina sa {$ai_b_email} o tumawag sa {$ai_b_phone}!";
+                } else {
+                    $raw_reply = "❌ **Reference Number Not Found**\n\n"
+                        . "I could not find an active booking with Reference **{$ref_raw}** in our database.\n\n"
+                        . "📌 **Tips:**\n"
+                        . "• Please verify the reference code format in your booking confirmation (e.g., `EV-2026-3212` or `EV-2026-001`).\n"
+                        . "• Double-check that there are no typographical errors in the digits.\n"
+                        . "• If you just submitted your booking a moment ago, please allow a minute or contact our coordination team at {$ai_b_email} or call {$ai_b_phone}!";
+                }
             }
         } else {
-            $raw_reply = "To check your booking status, please provide your **Reference Number** (it looks like this: `EV-2026-001` or `EV-2026-0001`).\n\n"
-                . "You can find this code in your booking confirmation. Just reply with your reference code and I will look it up for you right away! 😊";
+            if (qes_detect_tagalog($message)) {
+                $raw_reply = "🔍 **I-track ang Inyong Booking Status at Detalye (Live Database Walkthrough)**\n\n"
+                    . "Maaari ko pong hanapin sa aming database ang real-time status, piniling styling packages, petsa ng okasyon, at update mula sa aming coordinator!\n\n"
+                    . "👉 **Pakisulat o i-paste ang inyong Booking Reference Number** (halimbawa: `EV-2026-3212` o `EV-2026-001`).\n\n"
+                    . "💡 **Saan makikita ang inyong Reference Number:**\n"
+                    . "• Sa confirmation screen pagkatapos ninyong isumite ang booking sa website.\n"
+                    . "• Sa inyong confirmation email o text inquiry summary.\n\n"
+                    . "I-reply lamang po ang inyong reference number dito sa chat at ilalabas ko agad ang kumpletong detalye ng inyong booking! 😊";
+            } else {
+                $raw_reply = "🔍 **Track Your Booking Status & Details (Live Database Walkthrough)**\n\n"
+                    . "I can connect directly to our database to trace your reference number, check your coordinator review status, and display your celebration details!\n\n"
+                    . "👉 **Please enter your Booking Reference Number** (it looks like `EV-2026-XXXX`, e.g., `EV-2026-3212` or `EV-2026-001`).\n\n"
+                    . "💡 **Where to find your Reference Number:**\n"
+                    . "• On your screen immediately after submitting your booking inquiry.\n"
+                    . "• In your confirmation email summary.\n\n"
+                    . "Simply type or paste your reference number in this chat and I will pull up your event walkthrough right away! 😊";
+            }
         }
+    }
+}
+
+// ─── FAST-PATH CHECK 8: HIGH-CONFIDENCE SYSTEM BUSINESS KNOWLEDGE ENGINE ───
+// Directly answers all business questions (Staff review policy, packages & pricing,
+// lead times, downpayment & payment channels, office location & service areas,
+// rescheduling/cancellations, and custom themes/BYO) accurately with ZERO external dependency!
+if (empty($raw_reply)) {
+    $biz_reply = ChatbotBusinessKnowledge::resolveBusinessIntent(
+        $message,
+        $conn,
+        $biz_info,
+        $wedding_pricing,
+        $theme_pricing,
+        $booked_dates
+    );
+    if (!empty($biz_reply)) {
+        $raw_reply = $biz_reply;
     }
 }
 
@@ -614,8 +998,8 @@ foreach ($_SESSION['chat_history'] as $item) {
 
 $prompt_with_context = $system_prompt . "\n\nConversation So Far:\n" . $history_text . "\nAssistant:";
 
-// 4. Query Google Gemini API with Multi-Model Failover
-if (empty($raw_reply) && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
+// 4. Query Google Gemini API with Multi-Model Failover (Soft-gated by daily quota)
+if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
     $api_key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : GEMINI_KEY;
 
     $payload = [
@@ -638,23 +1022,44 @@ if (empty($raw_reply) && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
     $models_to_try = array_unique([$preferred_model, 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest']);
 
     foreach ($models_to_try as $model_name) {
-        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_name}:generateContent?key=" . $api_key;
+        // API key is sent via header (x-goog-api-key), NOT the URL, so it never
+        // appears in Referer/access logs or error traces.
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_name}:generateContent";
         $ch = curl_init($url);
 
         $curl_options = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => $payload_json,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'x-goog-api-key: ' . $api_key,
+            ],
             CURLOPT_TIMEOUT        => 8,
             CURLOPT_CONNECTTIMEOUT => 4,
             CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4, // Prevent IPv6 timeout
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
+            // SECURITY: Always verify the server's TLS certificate and hostname.
+            // Never disable these — doing so allows man-in-the-middle interception
+            // of the API key and conversation data.
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ];
-        $local_ca = 'C:/xampp/apache/bin/curl-ca-bundle.crt';
-        if (empty(ini_get('curl.cainfo')) && file_exists($local_ca)) {
-            $curl_options[CURLOPT_CAINFO] = $local_ca;
+        // Resolve a CA bundle so verification has a trust store to work against.
+        // Prefer PHP's configured bundle; otherwise fall back to common local paths.
+        if (!empty(ini_get('curl.cainfo')) && file_exists(ini_get('curl.cainfo'))) {
+            $curl_options[CURLOPT_CAINFO] = ini_get('curl.cainfo');
+        } else {
+            foreach ([
+                'C:/xampp/apache/bin/curl-ca-bundle.crt',
+                'C:/xampp/php/extras/ssl/cacert.pem',
+                '/etc/ssl/certs/ca-certificates.crt',
+                '/etc/pki/tls/certs/ca-bundle.crt',
+            ] as $ca_candidate) {
+                if (file_exists($ca_candidate)) {
+                    $curl_options[CURLOPT_CAINFO] = $ca_candidate;
+                    break;
+                }
+            }
         }
         curl_setopt_array($ch, $curl_options);
 
@@ -685,7 +1090,7 @@ if (empty($raw_reply) && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
                 break; // Succeeded!
             }
         } elseif ($http_code === 429) {
-            $raw_reply = "⏳ The AI assistant is momentarily busy under high request volume. You can still easily explore our services and book your celebration right now by clicking the **'Book Now'** button on our website to submit your inquiry directly to our team!";
+            // Google quota/rate limit exhausted: break out so Local Business Knowledge Engine answers!
             break;
         }
         // If 503 or 404, loop tries next model in $models_to_try
@@ -694,22 +1099,35 @@ if (empty($raw_reply) && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
 
 // 5. Comprehensive Fallback Engine (Guarantees intelligent answers even if Google API is offline)
 if (empty($raw_reply)) {
-    if (strpos($lower_msg, 'lead time') !== false || strpos($lower_msg, 'advance') !== false || strpos($lower_msg, 'notice') !== false || strpos($lower_msg, 'kailan') !== false) {
-        $raw_reply = "⏳ **Minimum Advance Booking Lead Time Policy:**\n\n"
-            . "To ensure meticulous floral sourcing, custom backdrop crafting, and seamless event coordination, **{$ai_b_name}** observes the following minimum advance notice requirements:\n\n"
-            . "• 💍 **Weddings:** At least **6 months** advance notice before your event date.\n"
-            . "• 🎈 **Kids Parties & Birthdays:** At least **14 days (2 weeks)** advance notice.\n"
-            . "• 👑 **Debut & Milestone Events:** At least **14 days (2 weeks)** advance notice.\n"
-            . "• 🏢 **Corporate & Special Events:** At least **14 days (2 weeks)** advance notice.\n\n"
-            . "📌 **Pro-Tip:** Popular weekend dates fill up very quickly! We highly encourage submitting your booking inquiry as early as possible through our website.\n\n"
+    $fallback_biz = ChatbotBusinessKnowledge::resolveBusinessIntent(
+        $message,
+        $conn,
+        $biz_info,
+        $wedding_pricing,
+        $theme_pricing,
+        $booked_dates,
+        true // is_offline_mode active
+    );
+    if (!empty($fallback_biz)) {
+        $raw_reply = $fallback_biz;
+    }
+}
+if (empty($raw_reply)) {
+    if (strpos($lower_msg, 'lead time') !== false || strpos($lower_msg, 'advance') !== false || strpos($lower_msg, 'notice') !== false || strpos($lower_msg, 'reminder') !== false || strpos($lower_msg, 'preparation') !== false || strpos($lower_msg, 'kailan') !== false) {
+        $raw_reply = "⏳ **Booking Preparation Reminders & Policy:**\n\n"
+            . "Clients have free will to select any event date from today onwards! Here are our recommended preparation reminders:\n\n"
+            . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
+            . "• 🎈 **Kids Parties & Birthdays:** 2 Weeks Preparation Reminder\n"
+            . "• 👑 **Debut & Milestone Events:** 2 Weeks Preparation Reminder\n"
+            . "• 🏢 **Corporate & Special Events:** 2 Weeks Preparation Reminder\n\n"
             . "👉 Would you like to check date availability or submit your inquiry through our **'Book Now'** form?";
     } elseif (strpos($lower_msg, 'availab') !== false || strpos($lower_msg, 'booked date') !== false || strpos($lower_msg, 'upcoming') !== false || (strpos($lower_msg, 'booked') !== false && strpos($lower_msg, 'date') !== false)) {
         $raw_reply = "🗓️ **Upcoming Reserved Dates & Availability:**\n\n"
             . "Here are our currently reserved event dates:\n"
             . (!empty($booked_dates) ? "• " . implode("\n• ", $booked_dates) . "\n\n" : "No approved events booked yet in upcoming months! All dates are currently open.\n\n")
-            . "Please note our advance booking notice requirements:\n"
-            . "• **Weddings:** At least 6 months advance notice\n"
-            . "• **Kids Party / Other Events:** At least 2 weeks (14 days) advance notice\n\n"
+            . "Recommended preparation reminders (free date selection from today onwards):\n"
+            . "• **Weddings:** 3 Months Preparation Reminder\n"
+            . "• **Kids Party / Other Events:** 2 Weeks Preparation Reminder\n\n"
             . "Ready to reserve your celebration? Click the **'Book Now'** button on our website to begin!";
     } elseif (strpos($lower_msg, 'package') !== false || strpos($lower_msg, 'offer') !== false || strpos($lower_msg, 'service') !== false || strpos($lower_msg, 'presyo') !== false || strpos($lower_msg, 'price') !== false) {
         $raw_reply = "🌸🎈 **Our Event Packages & Styling Services:**\n\n"
@@ -743,15 +1161,24 @@ if (empty($raw_reply)) {
             . "How can I help you today? Here are things I can assist you with:\n"
             . "• 🎁 **Packages & Styling:** Ask about our Wedding and Kids Party packages.\n"
             . "• 🗓️ **Date Availability:** Check if your target celebration date is open.\n"
-            . "• ⏳ **Lead Time Policy:** Inquire about our advance booking requirements (6 months for weddings, 14 days for parties).\n"
+            . "• ⏳ **Preparation Reminders:** Inquire about our recommended preparation reminders (3 months for weddings, 2 weeks for parties; open date selection from today onwards).\n"
             . "• 📝 **How to Book:** Learn how to book using our online 4-step wizard!\n\n"
             . "Tell me your event date or celebration type to get started!";
     } else {
-        $raw_reply = qes_get_concierge_scope_refusal($message, $ai_b_name);
+        $raw_reply = qes_get_concierge_scope_refusal($message, $ai_b_name, $is_daily_api_exhausted);
     }
 }
 
-// 6. Final Clean & Save to Session
+// 6. Prepend Quota Exhausted / Offline Notice if first time in session
+if ($is_daily_api_exhausted && empty($_SESSION['notified_quota_exhausted'])) {
+    $_SESSION['notified_quota_exhausted'] = true;
+    $quota_notice = qes_detect_tagalog($message)
+        ? "⚡ *[Pabatid: Naka-Local Business Mode dahil naabot na ang free daily API limit. Patuloy naming sasagutin ang lahat ng packages, presyo, at booking inquiries mula sa aming verified database.]*\n\n"
+        : "⚡ *[Notice: Operating in Local Business Mode — External AI daily quota reached. Answering all packages, pricing, policies, and booking questions directly from our database!]*\n\n";
+    $raw_reply = $quota_notice . $raw_reply;
+}
+
+// 7. Final Clean & Save to Session
 $clean_reply = preg_replace('/```(?:json)?\s*\{\s*"action"\s*:\s*".*?"\s*\}\s*```/s', '', $raw_reply);
 $clean_reply = trim($clean_reply);
 
@@ -760,14 +1187,17 @@ $_SESSION['chat_history'][] = ['role' => 'assistant', 'content' => $clean_reply]
 $updated_daily_count = getGlobalDailyApiCount($conn);
 
 $output = [
-    'reply'           => $clean_reply,
-    'response'        => $clean_reply,
-    'booking_created' => false,
-    'chat_count'      => $_SESSION['chat_count'],
-    'remaining_chats' => max(0, $USER_SESSION_LIMIT - $_SESSION['chat_count']),
-    'max_chats'       => $USER_SESSION_LIMIT,
-    'limit_reached'   => ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT || $updated_daily_count >= $GLOBAL_DAILY_LIMIT),
-    'daily_remaining' => max(0, $GLOBAL_DAILY_LIMIT - $updated_daily_count)
+    'reply'                  => $clean_reply,
+    'response'               => $clean_reply,
+    'booking_created'        => false,
+    'chat_count'             => $_SESSION['chat_count'],
+    'remaining_chats'        => max(0, $USER_SESSION_LIMIT - $_SESSION['chat_count']),
+    'max_chats'              => $USER_SESSION_LIMIT,
+    'limit_reached'          => ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT),
+    'daily_remaining'        => max(0, $GLOBAL_DAILY_LIMIT - $updated_daily_count),
+    'is_offline_mode'        => $is_daily_api_exhausted,
+    'is_api_quota_exhausted' => ($updated_daily_count >= $GLOBAL_DAILY_LIMIT),
+    'engine_mode'            => $is_daily_api_exhausted ? 'Local Business Knowledge Base (Offline/Quota Mode)' : 'Online Cloud AI (Google Gemini)'
 ];
 
 ob_clean();

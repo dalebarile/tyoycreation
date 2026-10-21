@@ -36,9 +36,15 @@ class NotificationHelper {
     // ============================================================
     private static function trySMTPSend(string $to, string $name, string $subject, string $body): array {
         if (empty(EMAIL_USERNAME) || empty(EMAIL_PASSWORD)) {
-            return [false, 'SMTP credentials not configured in .env.php'];
+            $err = 'SMTP credentials not configured in .env.php';
+            error_log("[QES-OTP-DIAG] SMTP config error: " . $err);
+            return [false, $err];
         }
+
+        $corr_id = substr(bin2hex(random_bytes(6)), 0, 8);
+        $safe_to = self::maskEmailForDiag($to);
         $mail = new PHPMailer(true);
+
         try {
             $mail->isSMTP();
             $mail->Host       = EMAIL_HOST;
@@ -49,11 +55,18 @@ class NotificationHelper {
             $mail->Port       = EMAIL_PORT;
             $mail->CharSet    = 'UTF-8';
             $mail->Encoding   = 'base64';
-            $mail->Timeout    = 8;
-            $mail->Timelimit  = 10;
+            $mail->Timeout    = 15;
+            $mail->Timelimit  = 20;
+
             $mail->setFrom(EMAIL_USERNAME, EMAIL_FROM_NAME);
+            $mail->addReplyTo(EMAIL_USERNAME, EMAIL_FROM_NAME);
             $mail->addAddress($to, $name);
             $mail->Subject    = $subject;
+
+            // Deliverability & Anti-Spam Headers:
+            // Explicitly classify transactional verification notification to prevent Gmail spam misclassification
+            $mail->addCustomHeader('Auto-Submitted', 'auto-generated');
+            $mail->addCustomHeader('X-Auto-Response-Suppress', 'All');
 
             $is_html = (strpos($body, '<html') !== false || strpos($body, '<div') !== false || strpos($body, '<p>') !== false);
             if ($is_html) {
@@ -66,16 +79,29 @@ class NotificationHelper {
             }
 
             $mail->send();
-            error_log("[QES Notify] Email SENT to {$to} | Subject: {$subject}");
+            error_log("[QES-OTP-DIAG] [Req:{$corr_id}] Email SENT | To: {$safe_to} | Subject: {$subject} | Status: SMTP 250 Accepted");
             return [true, ''];
-        } catch (PHPMailerException $e) {
-            // Sanitize: remove any credential-like tokens from PHPMailer error
-            $raw_error = $mail->ErrorInfo;
-            $safe_error = preg_replace('/Username.*|Password.*|AUTH.*/i', '[credential redacted]', $raw_error);
+        } catch (\Throwable $e) {
+            // Sanitize: strip out any credential-like tokens or passwords from PHPMailer / socket error
+            $raw_error = !empty($mail->ErrorInfo) ? $mail->ErrorInfo : $e->getMessage();
+            $safe_error = preg_replace('/(Username|Password|AUTH|Bearer).*/i', '[credential redacted]', $raw_error);
             $safe_error = substr(trim($safe_error), 0, 480); // cap at column length
-            error_log("[QES Notify] Email FAILED to {$to}: {$safe_error}");
+            error_log("[QES-OTP-DIAG] [Req:{$corr_id}] Email FAILED | To: {$safe_to} | Error: {$safe_error}");
             return [false, $safe_error];
         }
+    }
+
+    /**
+     * Sanitizes email addresses for diagnostic logging without leaking PII.
+     */
+    private static function maskEmailForDiag(string $email): string {
+        $parts = explode('@', trim($email));
+        if (count($parts) !== 2) return '***@invalid';
+        $user = $parts[0];
+        $domain = $parts[1];
+        $len = strlen($user);
+        $masked_user = ($len <= 2) ? $user[0] . '*' : substr($user, 0, 1) . str_repeat('*', $len - 2) . substr($user, -1);
+        return $masked_user . '@' . $domain;
     }
 
     // ============================================================
@@ -340,7 +366,8 @@ class NotificationHelper {
         $template_type,
         $subject,
         $message,
-        $status = 'pending'
+        $status = 'pending',
+        $last_error = null
     ) {
         // If caller already knows outcome (status='sent'|'failed'), use direct INSERT
         // This path is used by chatbot and admin-created accounts.
@@ -358,16 +385,16 @@ class NotificationHelper {
             "INSERT INTO notifications
                 (booking_id, recipient_name, recipient_contact, channel, template_type,
                  subject, message, status, attempt_count, max_attempts,
-                 sent_at, last_attempt_at)
+                 sent_at, last_attempt_at, last_error)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?,
                      CASE WHEN ? = 'sent' THEN NOW() ELSE NULL END,
-                     NOW())"
+                     NOW(), ?)"
         );
         if ($stmt) {
-            $stmt->bind_param("isssssssis",
+            $stmt->bind_param("isssssssiss",
                 $booking_id, $enc_name, $enc_contact,
                 $channel, $template_type, $subject, $message,
-                $status, $max_attempts, $status
+                $status, $max_attempts, $status, $last_error
             );
             $stmt->execute();
             $stmt->close();
@@ -476,9 +503,18 @@ class NotificationHelper {
     // BOOKING VERIFICATION CODE EMAIL
     // Sent when a user submits a booking (2-step verification)
     // ============================================================
-    public static function sendBookingVerificationCodeEmail($conn, string $to_email, string $recipient_name, string $code, array $summary = []): bool {
-        $business_name = function_exists('get_setting') ? get_setting($conn, 'business_name', 'Tyoy Creation') : 'Tyoy Creation';
-        $subject = "Your 6-Digit Booking Verification Code: {$code} - {$business_name}";
+    public static function sendBookingVerificationCodeEmail(
+        $conn,
+        string $to_email,
+        string $recipient_name,
+        string $code,
+        array $summary = [],
+        string &$error_out = ''
+    ): bool {
+        $to_email       = strtolower(trim($to_email));
+        $recipient_name = trim($recipient_name);
+        $business_name  = function_exists('get_setting') ? get_setting($conn, 'business_name', 'Tyoy Creation') : 'Tyoy Creation';
+        $subject        = "{$code} is your {$business_name} verification code";
 
         $event_title  = htmlspecialchars($summary['event_title'] ?? 'Special Event');
         $event_type   = htmlspecialchars($summary['event_type'] ?? 'General Event');
@@ -514,31 +550,59 @@ class NotificationHelper {
               . '<div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 6px; font-size: 12px; color: #92400e; line-height: 1.5; margin-bottom: 20px;">'
               . '<strong>Note:</strong> Your reservation is not officially placed until you enter this verification code on our site. If you did not make this reservation, please disregard this email.'
               . '</div>'
-              . '<p style="font-size: 13px; color: #6b7280; line-height: 1.5; margin: 0;">'
+              . '<p style="font-size: 13px; color: #6b7280; line-height: 1.5; margin: 0 0 10px 0;">'
               . 'Best regards,<br><strong>' . htmlspecialchars($business_name) . ' Team</strong>'
               . '</p>'
+              . '<div style="font-size: 11px; color: #9ca3af; margin-top: 14px; line-height: 1.4;">Tip: If this email arrived in your Spam or Junk folder, click <em>&ldquo;Report not spam&rdquo;</em> to ensure you receive future booking confirmations in your primary inbox.</div>'
               . '</div>'
               . '<div style="background: #f9fafb; padding: 14px 20px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb;">'
               . htmlspecialchars($business_name) . ' &bull; Two-Step Booking Verification'
               . '</div>'
               . '</div>';
 
-        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+        $safe_error = '';
+        if (!empty($GLOBALS['TEST_MOCK_EMAIL_FAILURE'])) {
+            $sent = false;
+            $safe_error = is_string($GLOBALS['TEST_MOCK_EMAIL_FAILURE'])
+                ? $GLOBALS['TEST_MOCK_EMAIL_FAILURE']
+                : 'SMTP Error: Connection timed out to smtp.gmail.com:587 (Simulated)';
+        } elseif (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
             $sent = true;
         } else {
-            [$sent] = self::trySMTPSend($to_email, $recipient_name, $subject, $body);
+            [$sent, $safe_error] = self::trySMTPSend($to_email, $recipient_name, $subject, $body);
         }
 
-        $safe_log_subject = "Your 6-Digit Booking Verification Code: [REDACTED] - {$business_name}";
+        $error_out = $safe_error;
+
+        $safe_log_subject = "[REDACTED] is your {$business_name} verification code";
         $safe_log_body    = str_replace($code, '••••••', $body);
 
         self::logNotification(
             $conn, null, $recipient_name, $to_email,
             'email', 'inquiry', $safe_log_subject, $safe_log_body,
-            $sent ? 'sent' : 'failed'
+            $sent ? 'sent' : 'failed',
+            $sent ? null : $safe_error
         );
 
         return $sent;
+    }
+
+    /**
+     * Detailed variant of sendBookingVerificationCodeEmail returning structured success & error.
+     */
+    public static function sendBookingVerificationCodeEmailDetailed(
+        $conn,
+        string $to_email,
+        string $recipient_name,
+        string $code,
+        array $summary = []
+    ): array {
+        $error = '';
+        $sent = self::sendBookingVerificationCodeEmail($conn, $to_email, $recipient_name, $code, $summary, $error);
+        return [
+            'success' => $sent,
+            'error'   => $error
+        ];
     }
 
     // ============================================================

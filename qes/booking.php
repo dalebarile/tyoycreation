@@ -10,13 +10,15 @@ $contact_email = get_setting($conn, 'contact_email', 'contact@tyoycreation.com')
 $pricing_theme = get_packages_pricing($conn, 'theme_party');
 $pricing_wedding = get_packages_pricing($conn, 'wedding');
 
-// Calculate minimum booking dates per event type via db.php
+// Calculate minimum booking dates per event type via db.php (today onwards; user has free will to choose date)
+$today_date = date('Y-m-d');
+$today_formatted = date('F j, Y');
 $wedding_calc = calculate_earliest_event_date('Weddings');
 $kids_calc = calculate_earliest_event_date('Kids Party');
-$min_wedding_date = $wedding_calc['min_date']->format('Y-m-d');
-$min_wedding_formatted = $wedding_calc['min_date']->format('F j, Y');
-$min_kids_date = $kids_calc['min_date']->format('Y-m-d');
-$min_kids_formatted = $kids_calc['min_date']->format('F j, Y');
+$min_wedding_date = $today_date;
+$min_wedding_formatted = $today_formatted;
+$min_kids_date = $today_date;
+$min_kids_formatted = $today_formatted;
 
 // Query param preselection if user clicked from modal or landing page
 $requested_type = trim($_GET['event_type'] ?? $_GET['type'] ?? $_GET['event'] ?? '');
@@ -26,29 +28,33 @@ $is_type_locked_from_url = !empty($requested_type) || !empty($requested_package)
 if (stripos($requested_type, 'wedding') !== false || stripos($requested_package, 'wedding') !== false) {
     $initial_type = 'Weddings';
     $initial_family = 'wedding';
-    $initial_min_date = $min_wedding_date;
-    $initial_min_formatted = $min_wedding_formatted;
-    $initial_notice_label = '6 months';
+    $initial_min_date = $today_date;
+    $initial_min_formatted = $today_formatted;
+    $initial_notice_label = '3 Months Preparation Reminder';
 } else {
     $initial_type = 'Kids Party';
     $initial_family = 'theme_party';
-    $initial_min_date = $min_kids_date;
-    $initial_min_formatted = $min_kids_formatted;
-    $initial_notice_label = '14 days';
+    $initial_min_date = $today_date;
+    $initial_min_formatted = $today_formatted;
+    $initial_notice_label = '2 Weeks Preparation Reminder';
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Book an Event - <?= htmlspecialchars($business_name) ?></title>
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <?php if (qes_is_turnstile_enabled($conn)): ?>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
     <?php endif; ?>
+    <!-- React 18 and Babel Standalone for interactive booking engine -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         :root {
             /* Primary Botanical Emerald */
@@ -105,9 +111,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
         .brand-logo-img {
             height: 44px;
-            width: auto;
+            width: 125px;
+            aspect-ratio: 834 / 294;
             border-radius: 6px;
             display: block;
+            object-fit: contain;
             transition: transform 0.2s ease;
         }
 
@@ -151,6 +159,94 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         .btn-admin-nav:hover {
             background: rgba(255, 255, 255, 0.25);
             color: #ffffff;
+        }
+
+        /* Mobile Nav Toggle & Backdrop for Booking */
+        .mobile-nav-toggle {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.08);
+            color: #ffffff;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .mobile-nav-toggle:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .mobile-nav-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(13, 32, 24, 0.65);
+            backdrop-filter: blur(2px);
+            z-index: 998;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .mobile-nav-backdrop.active {
+            display: block;
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-nav-toggle {
+                display: inline-flex;
+            }
+            .nav-links-right {
+                display: none;
+                position: fixed;
+                top: 68px;
+                left: 0;
+                right: 0;
+                background: #18392b;
+                border-bottom: 2px solid #2d6a4f;
+                padding: 18px 24px 26px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+                z-index: 999;
+                animation: slideDownBookingNav 0.22s ease-out;
+            }
+            .nav-links-right.nav-open {
+                display: flex;
+            }
+            .nav-link-btn {
+                font-size: 15.5px;
+                padding: 10px 4px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .btn-admin-nav {
+                margin-top: 8px;
+                text-align: center;
+                justify-content: center;
+                padding: 12px;
+                font-size: 14.5px !important;
+            }
+            .hero-main-title {
+                font-size: clamp(26px, 6vw, 36px) !important;
+            }
+            .form-card {
+                padding: 20px 16px !important;
+                border-radius: 12px !important;
+            }
+            .form-control, input, select, textarea {
+                font-size: 16px !important;
+            }
+        }
+
+        @keyframes slideDownBookingNav {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         /* Booking Header Banner - Professional Color Theory Harmony */
@@ -227,10 +323,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         /* Container Layout */
         .booking-container {
             max-width: 1200px;
+            width: 100%;
             margin: -24px auto 60px auto;
             padding: 0 20px;
             position: relative;
-            z-index: 10;
+            transform: none !important;
+            will-change: auto !important;
+            box-sizing: border-box;
         }
 
         .booking-grid {
@@ -238,16 +337,28 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             grid-template-columns: 1fr 380px;
             gap: 28px;
             align-items: stretch;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        .booking-left-column {
+            min-width: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .booking-right-column {
             height: 100%;
             position: relative;
+            min-width: 0;
+            box-sizing: border-box;
         }
 
         @media (max-width: 960px) {
             .booking-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: 100%;
             }
             .booking-right-column {
                 height: auto;
@@ -262,6 +373,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
             padding: 32px;
             margin-bottom: 24px;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .step-header {
@@ -271,6 +385,12 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             margin-bottom: 20px;
             padding-bottom: 14px;
             border-bottom: 2px solid #f3f4f6;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+        .step-header > div:last-child {
+            min-width: 0;
+            flex: 1;
         }
 
         .step-num {
@@ -487,7 +607,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
         .options-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
             gap: 10px;
         }
 
@@ -582,9 +702,16 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         @media (max-width: 960px) {
             .mobile-sticky-total-bar {
                 display: flex;
+                padding-bottom: max(12px, env(safe-area-inset-bottom));
             }
             .booking-container {
-                padding-bottom: 90px;
+                padding-bottom: 100px;
+            }
+            .chatbot-widget-container {
+                bottom: calc(72px + max(12px, env(safe-area-inset-bottom))) !important;
+            }
+            .cookie-consent-bar {
+                bottom: calc(76px + max(10px, env(safe-area-inset-bottom))) !important;
             }
         }
 
@@ -952,18 +1079,24 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         /* Success Confirmation Modal */
         .success-overlay {
             display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100dvh;
             background: rgba(15, 23, 15, 0.82);
             backdrop-filter: blur(8px);
-            z-index: 9999;
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 9999999 !important;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .success-overlay.active {
@@ -1187,18 +1320,24 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         /* Two-Step Verification Modal */
         .verify-modal-overlay {
             display: flex;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(15, 23, 15, 0.84);
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100dvh;
+            background: rgba(10, 20, 14, 0.88);
             backdrop-filter: blur(8px);
-            z-index: 10000;
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 9999999 !important;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             animation: fadeInOverlay 0.2s ease;
         }
 
@@ -1209,67 +1348,122 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
         .verify-modal-card {
             background: #ffffff;
-            border-radius: 24px;
+            border-radius: 18px;
             width: 100%;
-            max-width: 480px;
-            padding: 36px 30px;
+            max-width: 410px;
+            max-height: calc(100dvh - 32px);
+            max-height: calc(100vh - 32px);
+            margin: auto;
+            padding: 18px 20px 16px;
             text-align: center;
-            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.55);
             animation: zoomSuccess 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative;
+            box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .verify-modal-close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #f1f5f9;
+            color: #64748b;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 20;
+        }
+
+        .verify-modal-close-btn:hover {
+            background: #fee2e2;
+            color: #dc2626;
+            border-color: #fca5a5;
+            transform: scale(1.08);
+        }
+
+        .verify-typo-alert {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-left: 4px solid #ea580c;
+            border-radius: 8px;
+            padding: 7px 10px;
+            margin: 0 0 8px 0;
+            text-align: left;
+            font-size: 11.5px;
+            color: #9a3412;
+            line-height: 1.4;
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .verify-modal-card::-webkit-scrollbar {
+            width: 5px;
+        }
+        .verify-modal-card::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
         }
 
         .verify-modal-icon {
-            width: 72px;
-            height: 72px;
+            width: 38px;
+            height: 38px;
             border-radius: 50%;
             background: linear-gradient(135deg, #ecfdf5, #d1fae5);
             color: #059669;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 30px;
-            margin: 0 auto 16px auto;
+            font-size: 17px;
+            margin: 0 auto 6px auto;
             border: 2px solid #a7f3d0;
-            box-shadow: 0 8px 16px -4px rgba(5, 150, 105, 0.2);
+            box-shadow: 0 4px 10px -2px rgba(5, 150, 105, 0.2);
         }
 
         .verify-otp-input {
             width: 100%;
-            max-width: 300px;
-            height: 58px;
-            font-size: 30px;
+            max-width: 240px;
+            height: 42px;
+            font-size: 22px;
             font-weight: 800;
-            letter-spacing: 12px;
+            letter-spacing: 7px;
             text-align: center;
-            padding-left: 12px;
+            padding-left: 7px;
             color: #1e293b;
             background: #f8fafc;
             border: 2px solid #cbd5e1;
-            border-radius: 14px;
+            border-radius: 10px;
             outline: none;
             transition: all 0.2s ease;
             font-family: 'Courier New', Courier, monospace;
-            margin: 18px auto;
+            margin: 6px auto 8px auto;
             display: block;
         }
 
         .verify-otp-input:focus {
             border-color: #059669;
             background: #ffffff;
-            box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.15);
+            box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
         }
 
         .verify-timer-box {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            font-size: 13px;
+            gap: 4px;
+            font-size: 11.5px;
             color: #64748b;
             background: #f1f5f9;
-            padding: 6px 14px;
-            border-radius: 20px;
-            margin-bottom: 18px;
+            padding: 3px 8px;
+            border-radius: 14px;
             font-weight: 600;
         }
 
@@ -1278,33 +1472,48 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             background: #fee2e2;
         }
 
+        .verify-spam-callout {
+            background: #fefce8;
+            border: 1px solid #fef08a;
+            border-radius: 8px;
+            padding: 6px 9px;
+            margin: 8px 0 6px 0;
+            text-align: left;
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            font-size: 11px;
+            color: #854d0e;
+            line-height: 1.35;
+        }
+
         .verify-error-banner {
             background: #fef2f2;
             border: 1px solid #fecaca;
             color: #991b1b;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 13px;
-            margin-bottom: 16px;
+            padding: 7px 11px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-bottom: 8px;
             text-align: left;
             display: flex;
             align-items: flex-start;
-            gap: 8px;
-            line-height: 1.4;
+            gap: 6px;
+            line-height: 1.35;
         }
 
         .verify-success-banner {
             background: #ecfdf5;
             border: 1px solid #a7f3d0;
             color: #065f46;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 13px;
-            margin-bottom: 16px;
+            padding: 7px 11px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-bottom: 8px;
             text-align: left;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
         }
 
         .btn-verify-submit {
@@ -1312,9 +1521,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             color: #ffffff;
             border: none;
             width: 100%;
-            padding: 14px 20px;
-            border-radius: 12px;
-            font-size: 15px;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 14px;
             font-weight: 700;
             cursor: pointer;
             display: flex;
@@ -1336,12 +1545,12 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         }
 
         .verify-modal-footer {
-            margin-top: 18px;
+            margin-top: 8px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 13px;
-            gap: 12px;
+            font-size: 11.5px;
+            gap: 6px;
             flex-wrap: wrap;
         }
 
@@ -1351,7 +1560,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             color: #059669;
             font-weight: 600;
             cursor: pointer;
-            padding: 4px 8px;
+            padding: 3px 6px;
             text-decoration: underline;
             transition: color 0.15s;
         }
@@ -1372,7 +1581,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             color: #64748b;
             font-weight: 600;
             cursor: pointer;
-            padding: 4px 8px;
+            padding: 3px 6px;
             transition: color 0.15s;
         }
 
@@ -1383,72 +1592,92 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         /* Email Warning & Misconception Prevention Modal */
         .email-warning-overlay {
             display: flex;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100dvh;
             background: rgba(15, 23, 15, 0.86);
             backdrop-filter: blur(8px);
-            z-index: 10000;
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 9999999 !important;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             animation: fadeInOverlay 0.2s ease;
         }
 
         .email-warning-card {
             background: #ffffff;
-            border-radius: 24px;
+            border-radius: 20px;
             width: 100%;
-            max-width: 520px;
-            padding: 34px 28px;
+            max-width: 500px;
+            max-height: calc(100dvh - 32px);
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            margin: auto; /* Guarantees safe centering without clipping off the top */
+            padding: 24px 22px 20px;
             text-align: center;
             box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5);
             animation: zoomSuccess 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative;
+            box-sizing: border-box;
+        }
+
+        .email-warning-card::-webkit-scrollbar {
+            width: 5px;
+        }
+        .email-warning-card::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
         }
 
         .email-warning-header-icon {
-            width: 72px;
-            height: 72px;
+            width: 52px;
+            height: 52px;
             border-radius: 50%;
             background: linear-gradient(135deg, #fef3c7, #fde68a);
             color: #d97706;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 32px;
-            margin: 0 auto 16px auto;
+            font-size: 24px;
+            margin: 0 auto 10px auto;
             border: 2px solid #fcd34d;
-            box-shadow: 0 8px 18px -4px rgba(217, 119, 6, 0.25);
+            box-shadow: 0 6px 14px -3px rgba(217, 119, 6, 0.22);
         }
 
         .email-warning-title {
-            font-size: 22px;
+            font-size: 19px;
             font-weight: 800;
             color: #0f172a;
-            margin: 0 0 8px 0;
+            margin: 0 0 5px 0;
+            line-height: 1.3;
         }
 
         .email-warning-lead {
-            font-size: 14px;
+            font-size: 13px;
             color: #64748b;
-            margin: 0 0 18px 0;
-            line-height: 1.5;
+            margin: 0 0 12px 0;
+            line-height: 1.45;
         }
 
         .email-display-highlight-box {
             background: #f8fafc;
             border: 2px solid #cbd5e1;
-            border-radius: 14px;
-            padding: 14px 18px;
+            border-radius: 12px;
+            padding: 10px 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 12px;
-            margin-bottom: 18px;
+            gap: 10px;
+            margin-bottom: 12px;
             transition: all 0.2s;
         }
 
@@ -1458,10 +1687,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         }
 
         .email-display-text {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             color: #0f172a;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
             word-break: break-all;
         }
 
@@ -1469,9 +1698,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             background: #fff7ed;
             border: 1px solid #ffedd5;
             border-left: 4px solid #ea580c;
-            border-radius: 12px;
-            padding: 12px 14px;
-            margin-bottom: 18px;
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
             text-align: left;
         }
 
@@ -1479,9 +1708,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             background: #ffedd5;
             border: 1px solid #fdba74;
             color: #9a3412;
-            padding: 8px 12px;
+            padding: 7px 11px;
             border-radius: 8px;
-            font-size: 12.5px;
+            font-size: 12px;
             font-weight: 700;
             cursor: pointer;
             display: inline-flex;
@@ -1498,27 +1727,27 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         .email-warning-checklist {
             background: #f8fafc;
             border-radius: 12px;
-            padding: 14px 16px;
+            padding: 11px 13px;
             text-align: left;
-            margin-bottom: 22px;
+            margin-bottom: 12px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
 
         .warning-checklist-item {
             display: flex;
             align-items: flex-start;
-            gap: 10px;
-            font-size: 12.5px;
+            gap: 9px;
+            font-size: 12px;
             color: #475569;
-            line-height: 1.45;
+            line-height: 1.4;
         }
 
         .email-warning-modal-actions {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
 
         .btn-confirm-email-send {
@@ -1526,9 +1755,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             color: #ffffff;
             border: none;
             width: 100%;
-            padding: 14px 20px;
-            border-radius: 12px;
-            font-size: 15px;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 14px;
             font-weight: 700;
             cursor: pointer;
             display: flex;
@@ -1549,9 +1778,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             color: #475569;
             border: 1px solid #cbd5e1;
             width: 100%;
-            padding: 12px 18px;
-            border-radius: 12px;
-            font-size: 14px;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             display: flex;
@@ -1704,6 +1933,130 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             margin-top: 6px;
         }
 
+        /* Exit & Discard Booking Warning Modal */
+        .exit-warning-overlay {
+            display: flex;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100dvh;
+            background: rgba(10, 20, 14, 0.88);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 9999999 !important;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            animation: fadeInOverlay 0.2s ease;
+        }
+
+        .exit-warning-card {
+            background: #ffffff;
+            border-radius: 18px;
+            width: 100%;
+            max-width: 440px;
+            max-height: calc(100dvh - 32px);
+            max-height: calc(100vh - 32px);
+            margin: auto;
+            padding: 22px 22px 18px;
+            text-align: center;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.55);
+            animation: zoomSuccess 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .exit-warning-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #fff7ed, #ffedd5);
+            color: #ea580c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin: 0 auto 10px auto;
+            border: 2px solid #fed7aa;
+            box-shadow: 0 4px 12px -2px rgba(234, 88, 12, 0.25);
+        }
+
+        .btn-stay-booking {
+            background: #18392b;
+            color: #ffffff;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 13.5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            flex: 1;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(24, 57, 43, 0.2);
+        }
+
+        .btn-stay-booking:hover {
+            background: #122c21;
+            transform: translateY(-1px);
+        }
+
+        .btn-discard-exit {
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 13.5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            flex: 1;
+            transition: all 0.2s ease;
+        }
+
+        .btn-discard-exit:hover {
+            background: #dc2626;
+            color: #ffffff;
+            border-color: #dc2626;
+            transform: translateY(-1px);
+        }
+
+        .btn-cancel-booking-flow {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+
+        .btn-cancel-booking-flow:hover {
+            color: #dc2626;
+            background: #fef2f2;
+        }
+
         /* Chatbot widget placement */
         .chatbot-widget-container {
             position: fixed;
@@ -1773,6 +2126,22 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             justify-content: center;
             font-size: 16px;
             color: #ffffff;
+        }
+        .chatbot-disclaimer-bar {
+            background: #f0f5f0;
+            border-bottom: 1px solid #dce8dc;
+            padding: 7px 12px;
+            font-size: 11px;
+            color: #2e4a2d;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            line-height: 1.35;
+        }
+        .chatbot-disclaimer-bar i {
+            color: #3b5f39;
+            font-size: 12px;
+            flex-shrink: 0;
         }
         .chatbot-messages {
             flex: 1;
@@ -2430,7 +2799,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         }
         .address-select-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
             gap: 12px;
             margin-bottom: 12px;
         }
@@ -2464,19 +2833,24 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     <nav class="booking-nav" style="background: #233a2d; border-bottom: 1px solid rgba(255,255,255,0.1);">
         <div class="booking-nav-inner" style="max-width: 1240px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;">
             <a href="index.php" style="display: flex; align-items: center; text-decoration: none;">
-                <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" class="brand-logo-img">
+                <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" class="brand-logo-img" width="125" height="44">
             </a>
 
-            <div class="nav-links-right" style="display: flex; align-items: center; gap: 18px;">
-                <a href="index.php#home" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;">Home</a>
-                <a href="index.php#about" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;">About</a>
-                <a href="index.php#services" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;">Services</a>
-                <a href="index.php#portfolio" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;">Portfolio</a>
-                <a href="index.php#contact" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;">Contact</a>
+            <button type="button" class="mobile-nav-toggle" id="bookingNavToggle" aria-label="Toggle navigation menu" onclick="toggleBookingMobileNav()">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+
+            <div class="nav-links-right" id="bookingNavLinks">
+                <a href="index.php#home" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Home</a>
+                <a href="index.php#about" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">About</a>
+                <a href="index.php#services" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Services</a>
+                <a href="index.php#portfolio" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Portfolio</a>
+                <a href="index.php#contact" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Contact</a>
                 <a href="booking.php" class="btn-admin-nav" style="background: #ffffff; color: #233a2d; font-weight: 700; border-radius: 9999px; padding: 7px 18px; border: none; font-size: 13px; text-decoration: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">Book Now</a>
             </div>
         </div>
     </nav>
+    <div class="mobile-nav-backdrop" id="bookingNavBackdrop" onclick="toggleBookingMobileNav(false)"></div>
 
     <!-- Banner (Panel 5: Book an Event - Refined Color Harmony) -->
     <header class="booking-hero">
@@ -2503,7 +2877,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             <a href="index.php" style="display: flex; align-items: center; text-decoration: none;">
                 <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" style="height: 38px; width: auto; border-radius: 6px; display: block;">
             </a>
-            <div style="display: flex; gap: 22px; font-size: 13.5px; opacity: 0.85;">
+            <div style="display: flex; gap: 16px 22px; font-size: 13.5px; opacity: 0.85; flex-wrap: wrap;">
                 <a href="index.php#home" style="color: #ffffff; text-decoration: none;">Home</a>
                 <a href="index.php#about" style="color: #ffffff; text-decoration: none;">About</a>
                 <a href="index.php#services" style="color: #ffffff; text-decoration: none;">Services</a>
@@ -2511,9 +2885,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 <a href="index.php#contact" style="color: #ffffff; text-decoration: none;">Contact</a>
             </div>
             <div style="display: flex; gap: 14px; font-size: 16px;">
-                <a href="#" style="color: #ffffff; opacity: 0.85;"><i class="fa-brands fa-facebook"></i></a>
-                <a href="#" style="color: #ffffff; opacity: 0.85;"><i class="fa-brands fa-instagram"></i></a>
-                <a href="#" style="color: #ffffff; opacity: 0.85;"><i class="fa-brands fa-tiktok"></i></a>
+                <a href="https://www.facebook.com/tyoycreation" target="_blank" rel="noopener" title="Tyoy Creation Event Management &amp; Styling Service" aria-label="Tyoy Creation Facebook Page" style="color: #ffffff; opacity: 0.85; text-decoration: none;"><i class="fa-brands fa-facebook"></i></a>
+                <a href="https://tiktok.com" target="_blank" rel="noopener" title="Tyoy Creation TikTok" aria-label="Tyoy Creation TikTok" style="color: #ffffff; opacity: 0.85; text-decoration: none;"><i class="fa-brands fa-tiktok"></i></a>
             </div>
         </div>
         <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; opacity: 0.65;">
@@ -2524,18 +2897,34 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     <!-- AI Chatbot Floating Concierge Widget -->
     <div class="chatbot-widget-container">
         <button type="button" class="chatbot-launcher-btn" onclick="toggleChatWindow()" aria-label="Open AI Event Concierge">
-            <i class="fa-solid fa-comments"></i>
+            <svg class="chatbot-robot-svg" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="12" y1="2" x2="12" y2="5"></line>
+                <circle cx="12" cy="2" r="1.2" fill="currentColor"></circle>
+                <rect x="3" y="5" width="18" height="14" rx="4"></rect>
+                <circle cx="8.5" cy="11.5" r="1.5" fill="currentColor"></circle>
+                <circle cx="15.5" cy="11.5" r="1.5" fill="currentColor"></circle>
+                <path d="M9 15c.8.6 1.8 1 3 1s2.2-.4 3-1"></path>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+            </svg>
         </button>
 
         <div class="chatbot-window" id="chatbotWindow">
             <div class="chatbot-header">
                 <div class="chatbot-header-info">
                     <div class="chatbot-avatar">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="12" y1="2" x2="12" y2="5"></line>
+                            <circle cx="12" cy="2" r="1.2" fill="currentColor"></circle>
+                            <rect x="3" y="5" width="18" height="14" rx="4"></rect>
+                            <circle cx="8.5" cy="11.5" r="1.5" fill="currentColor"></circle>
+                            <circle cx="15.5" cy="11.5" r="1.5" fill="currentColor"></circle>
+                            <path d="M9 15c.8.6 1.8 1 3 1s2.2-.4 3-1"></path>
+                        </svg>
                     </div>
                     <div>
                         <div style="font-weight: 700; font-size: 14px;">Event Concierge AI</div>
-                        <div style="font-size: 11px; opacity: 0.85;">Here to answer general FAQs &amp; packages</div>
+                        <div style="font-size: 11px; opacity: 0.85;">Here to answer business FAQs &amp; packages</div>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -2548,13 +2937,24 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 </div>
             </div>
 
+            <div class="chatbot-disclaimer-bar">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>AI provides instant estimates. All bookings &amp; packages require <strong>official staff review</strong>.</span>
+            </div>
+
             <div class="chatbot-messages" id="chatbotMessages">
                 <div class="chat-bubble bot">
-                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong>. I can answer questions regarding our services, Birthday and Wedding packages, pricing, and booking requirements!
+                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong> Concierge. I can answer questions regarding our services, packages, pricing, service areas, lead times, and booking policies!
+                    <div style="margin-top: 6px; font-size: 11.5px; opacity: 0.88; color: #4b5563;">
+                        <em>💡 Note: Estimates are guided by AI; official reservations are verified by human staff coordinators.</em>
+                    </div>
                     <div class="quick-chips-wrapper">
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Track my booking status with Reference Number')"><i class="fa-solid fa-magnifying-glass"></i><span>Track booking status (Ref #)</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages and pricing do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Why do bookings need staff review?')"><i class="fa-solid fa-clipboard-check"></i><span>Why do bookings need staff review?</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
                     </div>
                 </div>
             </div>
@@ -2595,6 +2995,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             businessName: <?= json_encode($business_name) ?>,
             pricingTheme: <?= json_encode($pricing_theme) ?>,
             pricingWedding: <?= json_encode($pricing_wedding) ?>,
+            todayDate: <?= json_encode($today_date) ?>,
+            todayFormatted: <?= json_encode($today_formatted) ?>,
             minWeddingDate: <?= json_encode($min_wedding_date) ?>,
             minWeddingFormatted: <?= json_encode($min_wedding_formatted) ?>,
             minKidsDate: <?= json_encode($min_kids_date) ?>,
@@ -2604,13 +3006,17 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             initialPackage: <?= json_encode($requested_package) ?>,
             isTypeLocked: <?= json_encode($is_type_locked_from_url) ?>,
             turnstileEnabled: <?= json_encode(qes_is_turnstile_enabled($conn)) ?>,
-            turnstileSiteKey: <?= json_encode(qes_get_turnstile_site_key($conn)) ?>
+            turnstileSiteKey: <?= json_encode(qes_get_turnstile_site_key($conn)) ?>,
+            userLoggedIn: <?= json_encode(!empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user')) ?>,
+            userFullName: <?= json_encode($_SESSION['full_name'] ?? '') ?>,
+            userEmail: <?= json_encode($_SESSION['email'] ?? '') ?>,
+            userPhone: <?= json_encode($_SESSION['phone'] ?? '') ?>
         };
     </script>
 
     <!-- React 18 Embedded Component (Option 2) -->
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useRef } = React;
 
         function BookingApp() {
             const config = window.BOOKING_CONFIG || {};
@@ -2619,19 +3025,21 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [family, setFamily] = useState(config.initialFamily || 'theme_party');
             const [eventType, setEventType] = useState(config.initialType || 'Kids Party');
 
-            // Dynamic lead rules based on active family
+            // Dynamic preparation reminder rules based on active family (free will to choose date from today onwards)
             const isWedding = (family === 'wedding');
-            const minDateStr = isWedding ? (config.minWeddingDate || '') : (config.minKidsDate || '');
-            const minDateFormatted = isWedding ? (config.minWeddingFormatted || '') : (config.minKidsFormatted || '');
-            const noticeLabel = isWedding ? '6 months' : '14 days';
+            const todayStr = config.todayDate || new Date().toISOString().split('T')[0];
+            const todayFormatted = config.todayFormatted || '';
+            const minDateStr = todayStr;
+            const minDateFormatted = todayFormatted;
+            const reminderLabel = isWedding ? '3 Months Preparation Reminder' : '2 Weeks Preparation Reminder';
 
             // Active catalog based on family (theme_party or wedding)
             const currentCatalog = useMemo(() => isWedding ? (config.pricingWedding || {}) : (config.pricingTheme || {}), [isWedding, config]);
 
-            // Form inputs state
-            const [clientName, setClientName] = useState('');
-            const [clientEmail, setClientEmail] = useState('');
-            const [clientPhone, setClientPhone] = useState('');
+            // Form inputs state (Pre-filled if logged in as client)
+            const [clientName, setClientName] = useState(config.userFullName || '');
+            const [clientEmail, setClientEmail] = useState(config.userEmail || '');
+            const [clientPhone, setClientPhone] = useState(config.userPhone || '');
             const [clientAddress, setClientAddress] = useState('');
 
             // Address API State (Philippine Standard Geographic Code: Regions, Cities/Municipalities, Barangays)
@@ -2647,7 +3055,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             const [eventTitle, setEventTitle] = useState('');
             const [guestCount, setGuestCount] = useState('100');
-            const [eventDate, setEventDate] = useState(minDateStr);
+            const [eventDate, setEventDate] = useState(todayStr);
             const [eventTime, setEventTime] = useState('14:00');
             const [locationVenue, setLocationVenue] = useState('');
             const [specialNotes, setSpecialNotes] = useState('');
@@ -2792,6 +3200,30 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [confirmedBooking, setConfirmedBooking] = useState(null);
             const [showExitConfirm, setShowExitConfirm] = useState(false);
 
+            // Data Privacy Consent & Policy Modal State (RA 10173)
+            // Gate: modal shows if not previously agreed; form is locked until user agrees
+            const hasPreAgreed = (() => {
+                try {
+                    if (config.userLoggedIn) return true;
+                    return sessionStorage.getItem('tyoy_privacy_agreed') === '1';
+                } catch (e) {
+                    return false;
+                }
+            })();
+            const [privacyConsent, setPrivacyConsent] = useState(hasPreAgreed);
+            const [privacyAccepted, setPrivacyAccepted] = useState(hasPreAgreed);
+            const [showPrivacyModal, setShowPrivacyModal] = useState(!hasPreAgreed);
+
+            // Exit & Reset Reminder Modal State
+            const [exitWarningModal, setExitWarningModal] = useState({
+                isOpen: false,
+                targetUrl: 'index.php'
+            });
+
+            // Turnstile Widget ID Refs
+            const mainTurnstileWidgetId = useRef(null);
+            const modalTurnstileWidgetId = useRef(null);
+
             // Email Warning & Misconception Prevention Modal State
             const [emailWarningModal, setEmailWarningModal] = useState({
                 isOpen: false,
@@ -2817,6 +3249,49 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 isUpdatingEmail: false,
                 emailUpdateError: ''
             });
+
+            // Check if user has active unsaved booking data/input
+            const hasEnteredData = useMemo(() => {
+                if (confirmedBooking) return false;
+                return Boolean(
+                    clientName.trim() ||
+                    clientEmail.trim() ||
+                    clientPhone.trim() ||
+                    clientAddress.trim() ||
+                    streetDetail.trim() ||
+                    locationVenue.trim() ||
+                    eventTitle.trim() ||
+                    specialNotes.trim() ||
+                    Object.keys(selectedItems).length > 0 ||
+                    verifyModal.isOpen ||
+                    emailWarningModal.isOpen
+                );
+            }, [
+                confirmedBooking,
+                clientName,
+                clientEmail,
+                clientPhone,
+                clientAddress,
+                streetDetail,
+                locationVenue,
+                eventTitle,
+                specialNotes,
+                selectedItems,
+                verifyModal.isOpen,
+                emailWarningModal.isOpen
+            ]);
+
+            // Exit trigger helper
+            const triggerExitWarning = (targetUrl = 'index.php') => {
+                if (hasEnteredData) {
+                    setExitWarningModal({
+                        isOpen: true,
+                        targetUrl: targetUrl || 'index.php'
+                    });
+                } else {
+                    window.location.href = targetUrl || 'index.php';
+                }
+            };
 
             // Smart Typo & Domain Misscheck Helper
             const detectEmailIssues = (email) => {
@@ -2891,21 +3366,144 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 return () => clearInterval(timer);
             }, [verifyModal.isOpen]);
 
-            // Render Cloudflare Turnstile inside OTP confirmation modal when opened
+            // Global link navigation interceptor & browser unload warning
             useEffect(() => {
-                if (verifyModal.isOpen && window.turnstile && config.turnstileEnabled && config.turnstileSiteKey) {
-                    const timer = setTimeout(() => {
-                        const el = document.querySelector('#verifyModalTurnstile .cf-turnstile');
-                        if (el && !el.hasChildNodes()) {
-                            try {
-                                window.turnstile.render(el, {
-                                    sitekey: config.turnstileSiteKey,
-                                    theme: 'light'
-                                });
-                            } catch (e) {}
+                const handleGlobalLinkClick = (e) => {
+                    const link = e.target.closest('a');
+                    if (!link) return;
+                    const href = link.getAttribute('href');
+                    if (!href) return;
+
+                    // Ignore hash anchors or void
+                    if (href.startsWith('#') || href.startsWith('javascript:')) return;
+
+                    const isExternalOrHome = (
+                        href === 'index.php' ||
+                        href.startsWith('index.php#') ||
+                        href === '/' ||
+                        (href.startsWith('http') && !href.includes('booking.php'))
+                    );
+
+                    if (isExternalOrHome && hasEnteredData && !confirmedBooking) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setExitWarningModal({
+                            isOpen: true,
+                            targetUrl: link.href || href
+                        });
+                    }
+                };
+
+                document.addEventListener('click', handleGlobalLinkClick, true);
+
+                const handleBeforeUnload = (e) => {
+                    if (hasEnteredData && !confirmedBooking) {
+                        e.preventDefault();
+                        e.returnValue = '';
+                        return '';
+                    }
+                };
+
+                window.addEventListener('beforeunload', handleBeforeUnload);
+
+                return () => {
+                    document.removeEventListener('click', handleGlobalLinkClick, true);
+                    window.removeEventListener('beforeunload', handleBeforeUnload);
+                };
+            }, [hasEnteredData, confirmedBooking]);
+
+            // Lock body scroll when any modal is open
+            useEffect(() => {
+                const isAnyModalOpen = verifyModal.isOpen || emailWarningModal.isOpen || exitWarningModal.isOpen || !!confirmedBooking;
+                if (isAnyModalOpen) {
+                    const originalOverflow = document.body.style.overflow;
+                    document.body.style.overflow = 'hidden';
+                    return () => {
+                        document.body.style.overflow = originalOverflow;
+                    };
+                }
+            }, [verifyModal.isOpen, emailWarningModal.isOpen, exitWarningModal.isOpen, !!confirmedBooking]);
+
+            // Cloudflare Turnstile Manager
+            const renderTurnstileWidget = (containerSelector, widgetRef) => {
+                if (!config.turnstileEnabled || !config.turnstileSiteKey) return;
+
+                const tryRender = () => {
+                    if (typeof window.turnstile === 'undefined' || !window.turnstile.render) {
+                        return false;
+                    }
+                    const container = document.querySelector(containerSelector);
+                    if (!container) return false;
+
+                    // If already rendered, reset
+                    if (widgetRef.current !== null) {
+                        try {
+                            window.turnstile.reset(widgetRef.current);
+                            return true;
+                        } catch (e) {
+                            widgetRef.current = null;
                         }
-                    }, 120);
-                    return () => clearTimeout(timer);
+                    }
+
+                    container.innerHTML = '';
+                    try {
+                        widgetRef.current = window.turnstile.render(container, {
+                            sitekey: config.turnstileSiteKey,
+                            theme: 'light',
+                            'refresh-expired': 'auto',
+                            'error-callback': (err) => {
+                                console.warn('[QES Turnstile] Widget error:', err);
+                                if ((err === '110200' || err === 110200) && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+                                    try {
+                                        if (window.turnstile.remove) window.turnstile.remove(widgetRef.current);
+                                        container.innerHTML = '';
+                                        widgetRef.current = window.turnstile.render(container, {
+                                            sitekey: '1x00000000000000000000AA',
+                                            theme: 'light',
+                                            'refresh-expired': 'auto'
+                                        });
+                                    } catch (ex) {}
+                                }
+                            }
+                        });
+                        return true;
+                    } catch (e) {
+                        return false;
+                    }
+                };
+
+                if (!tryRender()) {
+                    let attempts = 0;
+                    const interval = setInterval(() => {
+                        attempts++;
+                        if (tryRender() || attempts > 25) {
+                            clearInterval(interval);
+                        }
+                    }, 200);
+                }
+            };
+
+            const resetTurnstileWidget = (widgetRef) => {
+                if (widgetRef && widgetRef.current !== null && window.turnstile && window.turnstile.reset) {
+                    try {
+                        window.turnstile.reset(widgetRef.current);
+                    } catch (e) {}
+                }
+            };
+
+            // Initialize main form Turnstile
+            useEffect(() => {
+                if (config.turnstileEnabled && config.turnstileSiteKey) {
+                    renderTurnstileWidget('#mainBookingTurnstile', mainTurnstileWidgetId);
+                }
+            }, [config.turnstileEnabled, config.turnstileSiteKey]);
+
+            // Initialize modal Turnstile when OTP verification opens
+            useEffect(() => {
+                if (verifyModal.isOpen && config.turnstileEnabled && config.turnstileSiteKey) {
+                    renderTurnstileWidget('#verifyModalTurnstile', modalTurnstileWidgetId);
+                } else if (!verifyModal.isOpen) {
+                    resetTurnstileWidget(modalTurnstileWidgetId);
                 }
             }, [verifyModal.isOpen, config.turnstileEnabled, config.turnstileSiteKey]);
 
@@ -2990,9 +3588,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 const newFam = newType.toLowerCase().includes('wedding') ? 'wedding' : 'theme_party';
                 setEventType(newType);
                 setFamily(newFam);
-                const newMin = (newFam === 'wedding') ? (config.minWeddingDate || '') : (config.minKidsDate || '');
-                if (!eventDate || eventDate < newMin) {
-                    setEventDate(newMin);
+                if (!eventDate || eventDate < minDateStr) {
+                    setEventDate(minDateStr);
                 }
                 // Reset selections when switching family to prevent cross-catalog mismatches
                 setSelectedItems({});
@@ -3387,7 +3984,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     errs.locationVenue = 'Please enter the Event Venue or Location.';
                 }
                 if (!eventDate || eventDate < minDateStr) {
-                    errs.eventDate = `Selected date must be at least ${noticeLabel} from today (${minDateFormatted} onwards).`;
+                    errs.eventDate = 'Event date cannot be in the past. Please select today or a future date.';
                 }
                 const num = parseInt(guestCount, 10);
                 if (guestCount === '' || isNaN(num) || num < 1) {
@@ -3397,6 +3994,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 } else if (!selectedPackageLimit && num > maxCatalogCateringPax) {
                     errs.guestCount = `Cannot proceed: Expected guest count (${num}) exceeds our maximum catering service capacity (${maxCatalogCateringPax} pax). Please adjust your guest count or select an available package.`;
                 }
+                // Data Privacy Consent is now enforced via upfront gate modal (RA 10173)
+                // privacyConsent is guaranteed true once the user passes the gate
                 setErrors(errs);
                 return Object.keys(errs).length === 0;
             };
@@ -3433,7 +4032,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         { key: 'eventTitle', id: 'event_title_input' },
                         { key: 'eventDate', id: 'event_date_input' },
                         { key: 'guestCount', id: 'guest_count_input' },
-                        { key: 'locationVenue', id: 'location_venue_input' }
+                        { key: 'locationVenue', id: 'location_venue_input' },
+                        // privacyConsent removed: enforced via upfront gate modal
                     ];
 
                     setTimeout(() => {
@@ -3449,18 +4049,23 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     return;
                 }
 
-                // 3. Prevent typo misconception: Open Email Confirmation & Typo Warning Modal
+                // 3. Prevent typo misconception: If email has a broken domain (e.g. gmai.com), block and alert!
                 const typo = detectEmailIssues(clientEmail);
-                setEmailWarningModal({
-                    isOpen: true,
-                    email: clientEmail.trim(),
-                    typoWarning: typo
-                });
-            };
+                if (typo) {
+                    setErrors(prev => ({
+                        ...prev,
+                        clientEmail: typo.message + (typo.suggested ? ` (Suggested: ${typo.suggested})` : '')
+                    }));
+                    setSubmitError(`Invalid email domain: ${typo.message}`);
+                    const emailEl = document.getElementById('client_email_input');
+                    if (emailEl) {
+                        emailEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        emailEl.focus();
+                    }
+                    return;
+                }
 
-            // Confirmed in Email Warning Modal: dispatch OTP code
-            const handleProceedWithEmail = () => {
-                setEmailWarningModal({ isOpen: false, email: '', typoWarning: null });
+                // Email is valid - dispatch verification code directly!
                 executeBookingSubmit();
             };
 
@@ -3492,12 +4097,28 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     formData.append('service_requirements', reqStr);
                     formData.append('estimated_total', totalEstimate);
                     formData.append('special_notes', specialNotes.trim());
+                    formData.append('privacy_consent', privacyConsent ? '1' : '0');
+                    formData.append('privacy_consent_at', new Date().toISOString());
 
                     // Capture Cloudflare Turnstile token if present on page
                     const mainTsEl = document.querySelector('#mainBookingTurnstile input[name="cf-turnstile-response"]') ||
                                      document.querySelector('input[name="cf-turnstile-response"]');
-                    if (mainTsEl && mainTsEl.value) {
-                        formData.append('cf-turnstile-response', mainTsEl.value);
+                    let turnstileToken = mainTsEl ? mainTsEl.value : '';
+                    if (!turnstileToken && window.turnstile && mainTurnstileWidgetId.current !== null) {
+                        try {
+                            turnstileToken = window.turnstile.getResponse(mainTurnstileWidgetId.current) || '';
+                        } catch (e) {}
+                    }
+
+                    if (turnstileToken) {
+                        formData.append('cf-turnstile-response', turnstileToken);
+                        formData.append('turnstile_token', turnstileToken);
+                    } else if (config.turnstileEnabled && config.turnstileSiteKey) {
+                        setSubmitError('Please complete the Cloudflare security verification before submitting your booking request.');
+                        setIsSubmitting(false);
+                        const tsEl = document.getElementById('mainBookingTurnstile');
+                        if (tsEl) tsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        return;
                     }
 
                     const res = await fetch('booking_submit.php', {
@@ -3509,6 +4130,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
                     if (data.success) {
                         if (data.requires_verification) {
+                            const isSent = (data.email_sent === true);
                             // Intercept direct commit: Show Two-Step Verification Modal
                             setVerifyModal({
                                 isOpen: true,
@@ -3516,15 +4138,15 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                 maskedEmail: data.masked_email || clientEmail.trim(),
                                 token: data.verification_token || '',
                                 otpCode: '',
-                                error: '',
+                                error: isSent ? '' : (data.email_error || data.message || 'Verification email could not be delivered to this address.'),
                                 isLoading: false,
-                                resendCooldown: 60,
-                                resendSuccess: '',
+                                resendCooldown: isSent ? 60 : 0, // No cooldown penalty if send failed
+                                resendSuccess: isSent ? (data.message || '') : '',
                                 isVerified: false,
-                                emailSent: (data.email_sent !== false),
+                                emailSent: isSent,
                                 expiresIn: data.expires_in || 300,
-                                isEditingEmail: false,
-                                newEmailInput: '',
+                                isEditingEmail: !isSent, // Prompt user to correct email immediately if delivery failed
+                                newEmailInput: isSent ? '' : (data.email || clientEmail.trim()),
                                 isUpdatingEmail: false,
                                 emailUpdateError: ''
                             });
@@ -3537,9 +4159,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             });
                         }
                     } else {
+                        resetTurnstileWidget(mainTurnstileWidgetId);
                         setSubmitError(data.message || 'Submission failed. Please check your inputs.');
                     }
                 } catch (err) {
+                    resetTurnstileWidget(mainTurnstileWidgetId);
                     setSubmitError('Connection or network error while saving your booking. Please try again.');
                 } finally {
                     setIsSubmitting(false);
@@ -3568,6 +4192,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                       document.querySelector('input[name="cf-turnstile-response"]');
                     if (modalTsEl && modalTsEl.value) {
                         formData.append('cf-turnstile-response', modalTsEl.value);
+                        formData.append('turnstile_token', modalTsEl.value);
                     }
 
                     const res = await fetch('booking_submit.php', {
@@ -3591,6 +4216,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             date: data.event_date || eventDate
                         });
                     } else {
+                        resetTurnstileWidget(modalTurnstileWidgetId);
                         setVerifyModal(prev => ({
                             ...prev,
                             isLoading: false,
@@ -3598,6 +4224,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         }));
                     }
                 } catch (err) {
+                    resetTurnstileWidget(modalTurnstileWidgetId);
                     setVerifyModal(prev => ({
                         ...prev,
                         isLoading: false,
@@ -3610,6 +4237,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const handleResendCode = async () => {
                 if (verifyModal.resendCooldown > 0 || verifyModal.isLoading) return;
 
+                resetTurnstileWidget(modalTurnstileWidgetId);
                 setVerifyModal(prev => ({ ...prev, isLoading: true, error: '', resendSuccess: '' }));
 
                 try {
@@ -3631,6 +4259,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             isLoading: false,
                             otpCode: '',
                             error: '',
+                            emailSent: true,
                             resendSuccess: data.message || `A new 6-digit code has been sent to ${data.masked_email || prev.maskedEmail}.`,
                             resendCooldown: 60,
                             expiresIn: data.expires_in || 300
@@ -3639,13 +4268,16 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         setVerifyModal(prev => ({
                             ...prev,
                             isLoading: false,
-                            error: data.message || 'Unable to resend verification code. Please wait.'
+                            emailSent: false,
+                            resendCooldown: 0, // allow immediate retry on failure
+                            error: data.message || 'Unable to resend verification code. Please check your email or connection.'
                         }));
                     }
                 } catch (err) {
                     setVerifyModal(prev => ({
                         ...prev,
                         isLoading: false,
+                        resendCooldown: 0,
                         error: 'Connection error while requesting new code. Please try again.'
                     }));
                 }
@@ -3689,6 +4321,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             maskedEmail: data.masked_email || newEmail,
                             otpCode: '',
                             error: '',
+                            emailSent: true,
                             resendSuccess: `Verification code successfully dispatched to: ${data.email || newEmail}`,
                             resendCooldown: 60,
                             expiresIn: data.expires_in || 300
@@ -3729,6 +4362,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 setSelectedItems({});
                 setErrors({});
                 setSubmitError('');
+                // privacyConsent stays true after gate acceptance (no need to re-consent per form reset)
                 if (!config.isTypeLocked) {
                     handleSwitchEventType('Kids Party');
                 } else {
@@ -3741,7 +4375,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             return (
                 <div className="booking-container">
-                    <form onSubmit={handleSubmit} noValidate>
+                    <form onSubmit={handleSubmit} noValidate style={!privacyAccepted ? { pointerEvents: 'none', filter: 'blur(3px)', userSelect: 'none', opacity: 0.65 } : {}}>
                         <div className="booking-grid">
                             
                             {/* Left Column: Form Steps */}
@@ -3957,7 +4591,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 </div>
                                                 <div className="event-type-info">
                                                     <div className="event-type-name">Kids Party &amp; Birthdays</div>
-                                                    <div className="event-type-meta">Themed Styling, Characters, Food Carts &bull; <strong style={{ color: '#15803d' }}>Min. 14 Days Notice</strong></div>
+                                                    <div className="event-type-meta">Themed Styling, Characters, Food Carts &bull; <strong style={{ color: '#15803d' }}>2 Weeks Preparation Reminder</strong></div>
                                                 </div>
                                                 <div className="event-type-check">
                                                     {!isWedding ? (
@@ -3978,7 +4612,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 </div>
                                                 <div className="event-type-info">
                                                     <div className="event-type-name">Weddings &amp; Milestones</div>
-                                                    <div className="event-type-meta">Ceremony Floral, Reception Styling, Coordination &bull; <strong style={{ color: '#b45309' }}>Min. 6 Months Notice</strong></div>
+                                                    <div className="event-type-meta">Ceremony Floral, Reception Styling, Coordination &bull; <strong style={{ color: '#b45309' }}>3 Months Preparation Reminder</strong></div>
                                                 </div>
                                                 <div className="event-type-check">
                                                     {isWedding ? (
@@ -4022,8 +4656,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 onChange={(e) => {
                                                     const val = e.target.value;
                                                     setEventDate(val);
-                                                    if (val < minDateStr) {
-                                                        setErrors(prev => ({ ...prev, eventDate: `Selected date must be at least ${noticeLabel} from today (${minDateFormatted} onwards).` }));
+                                                    if (val && val < minDateStr) {
+                                                        setErrors(prev => ({ ...prev, eventDate: 'Event date cannot be in the past. Please select today or a future date.' }));
                                                     } else {
                                                         setErrors(prev => ({ ...prev, eventDate: null }));
                                                     }
@@ -4033,7 +4667,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             <div className={`lead-time-notice ${isWedding ? 'wedding-notice' : 'kids-notice'}`}>
                                                 <i className={`fa-solid ${isWedding ? 'fa-rings-wedding' : 'fa-clock-rotate-left'}`}></i>
                                                 <span>
-                                                    <strong>{isWedding ? '6-month advance notice required' : '14-day advance notice required'}</strong> for {eventType}. Earliest available date is <strong>{minDateFormatted}</strong>.
+                                                    <strong>{isWedding ? '3-Month Preparation Reminder' : '2-Week Preparation Reminder'}</strong>: {isWedding ? 'We recommend at least 3 months preparation time to ensure seamless execution for weddings. You are free to choose any date from today onwards.' : 'We recommend at least 2 weeks preparation time to ensure seamless execution for kids parties & birthdays. You are free to choose any date from today onwards.'}
                                                 </span>
                                             </div>
                                             {errors.eventDate && (
@@ -4401,19 +5035,53 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                             {errors.eventDate && <li>{errors.eventDate}</li>}
                                                             {errors.guestCount && <li>{errors.guestCount}</li>}
                                                             {errors.locationVenue && <li>{errors.locationVenue}</li>}
+
                                                         </ul>
                                                     )}
                                                 </div>
                                             </div>
                                         )}
 
+                                        {/* Data Privacy Consent Badge — consent accepted via upfront gate modal (RA 10173) */}
+                                        <div style={{
+                                            background: '#ecfdf5',
+                                            border: '1px solid #a7f3d0',
+                                            borderRadius: '10px',
+                                            padding: '10px 14px',
+                                            marginBottom: '14px',
+                                            textAlign: 'left',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: '10px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <i className="fa-solid fa-circle-check" style={{ color: '#059669', fontSize: '16px' }}></i>
+                                                <span style={{ fontSize: '12px', fontWeight: 700, color: '#065f46' }}>
+                                                    Data Privacy Consent Accepted (RA 10173)
+                                                </span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPrivacyModal(true)}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    color: '#0284c7',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    padding: 0,
+                                                    textDecoration: 'underline'
+                                                }}
+                                            >
+                                                Review Policy
+                                            </button>
+                                        </div>
+
                                         {config.turnstileEnabled && config.turnstileSiteKey && (
-                                            <div id="mainBookingTurnstile" style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
-                                                <div 
-                                                    className="cf-turnstile" 
-                                                    data-sitekey={config.turnstileSiteKey} 
-                                                    data-theme="light"
-                                                ></div>
+                                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
+                                                <div id="mainBookingTurnstile"></div>
                                             </div>
                                         )}
 
@@ -4442,6 +5110,18 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             <i className="fa-solid fa-shield-halved" style={{ color: 'var(--primary)' }}></i>
                                             Submitting queues your reservation as <strong>PENDING</strong>. No immediate payment is required until our coordinator approves and contacts you.
                                         </p>
+
+                                        <div style={{ textAlign: 'center', marginTop: '10px' }}>
+                                            <button
+                                                type="button"
+                                                className="btn-cancel-booking-flow"
+                                                onClick={() => triggerExitWarning('index.php')}
+                                                title="Cancel booking and return to home"
+                                            >
+                                                <i className="fa-solid fa-arrow-left"></i>
+                                                <span>Cancel Booking &amp; Return to Home</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -4603,191 +5283,464 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         </div>
                     )}
 
-                    {/* 2. Two-Step Verification Modal */}
-                    {verifyModal.isOpen && (
-                        <div className="verify-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verifyModalTitle">
-                            <div className="verify-modal-card">
-                                <div className="verify-modal-icon">
-                                    <i className="fa-solid fa-envelope-circle-check"></i>
-                                </div>
-                                <h2 id="verifyModalTitle" style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0' }}>
-                                    Enter Verification Code
-                                </h2>
-
-                                <div className="verify-target-email-badge">
-                                    <i className="fa-solid fa-envelope" style={{ color: '#059669' }}></i>
-                                    <span>Code sent to: <strong style={{ color: '#0f172a' }}>{verifyModal.email || clientEmail}</strong></span>
-                                </div>
-
-                                <div className={`verify-timer-box ${verifyModal.expiresIn <= 60 ? 'warning' : ''}`}>
-                                    <i className="fa-regular fa-clock"></i>
-                                    {verifyModal.expiresIn > 0 ? (
-                                        <span>Code expires in <strong>{formatTimeRemaining(verifyModal.expiresIn)}</strong></span>
-                                    ) : (
-                                        <span style={{ color: '#dc2626' }}>Code expired. Please click Resend Code.</span>
-                                    )}
-                                </div>
-
-                                {verifyModal.error && (
-                                    <div className="verify-error-banner" role="alert">
-                                        <i className="fa-solid fa-circle-exclamation" style={{ marginTop: '2px' }}></i>
-                                        <div>{verifyModal.error}</div>
-                                    </div>
-                                )}
-
-                                {verifyModal.resendSuccess && (
-                                    <div className="verify-success-banner" role="status">
-                                        <i className="fa-solid fa-circle-check"></i>
-                                        <div>{verifyModal.resendSuccess}</div>
-                                    </div>
-                                )}
-
-                                {/* Missing Letter & Misconception Prevention Advisory */}
-                                {!verifyModal.isEditingEmail ? (
-                                    <div className="verify-missing-letter-guide">
-                                        <div className="missing-letter-header">
-                                            <i className="fa-solid fa-triangle-exclamation"></i>
-                                            <span>Didn't receive the email in your Inbox or Spam?</span>
+                    {/* Data Privacy Notice & Statutory Rights Gate Modal (RA 10173) */}
+                    {showPrivacyModal && (
+                        <div className="email-warning-overlay" style={{ zIndex: 9999999 }} role="dialog" aria-modal="true" aria-labelledby="privacyModalTitle">
+                            <div className="email-warning-card" style={{ maxWidth: '640px', width: '92%', textAlign: 'left', padding: '24px 28px', animation: 'scaleUp 0.25s ease-out' }}>
+                                {/* Header */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e5e7eb', paddingBottom: '14px', marginBottom: '16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #eaf2ec 0%, #d1fae5 100%)', color: '#18392b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
+                                            <i className="fa-solid fa-shield-halved"></i>
                                         </div>
-                                        <p className="missing-letter-text">
-                                            Double-check the address: <strong>{verifyModal.email || clientEmail}</strong>. If a letter was missing or misspelled, your code cannot arrive.
-                                        </p>
+                                        <div>
+                                            <h3 id="privacyModalTitle" style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#18392b' }}>
+                                                Data Privacy Notice &amp; Rights
+                                            </h3>
+                                            <span style={{ fontSize: '11px', color: '#6b7280' }}>Republic Act No. 10173 (Data Privacy Act of 2012)</span>
+                                        </div>
+                                    </div>
+                                    {/* Only show close X if already accepted (reviewing later) */}
+                                    {privacyAccepted && (
                                         <button
                                             type="button"
-                                            className="btn-open-email-edit"
-                                            onClick={() => setVerifyModal(prev => ({
-                                                ...prev,
-                                                isEditingEmail: true,
-                                                newEmailInput: prev.email || clientEmail,
-                                                emailUpdateError: ''
-                                            }))}
+                                            onClick={() => setShowPrivacyModal(false)}
+                                            style={{ background: 'none', border: 'none', fontSize: '20px', color: '#9ca3af', cursor: 'pointer', padding: '4px' }}
+                                            aria-label="Close modal"
                                         >
-                                            <i className="fa-solid fa-pen-to-square"></i> Wrong email or missing letter? Change Email & Resend Code
+                                            <i className="fa-solid fa-xmark"></i>
                                         </button>
-                                    </div>
-                                ) : (
-                                    <div className="verify-email-edit-box">
-                                        <div style={{ fontWeight: 700, fontSize: '13px', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <i className="fa-solid fa-pen" style={{ color: '#059669' }}></i>
-                                            <span>Correct your email address:</span>
-                                        </div>
-                                        <div className="email-edit-input-row">
-                                            <input
-                                                type="email"
-                                                className="email-edit-input"
-                                                placeholder="correct.email@gmail.com"
-                                                value={verifyModal.newEmailInput}
-                                                onChange={(e) => setVerifyModal(prev => ({ ...prev, newEmailInput: e.target.value, emailUpdateError: '' }))}
-                                                autoFocus
-                                            />
-                                            <button
-                                                type="button"
-                                                className="btn-save-email-edit"
-                                                disabled={verifyModal.isUpdatingEmail}
-                                                onClick={handleUpdateEmailAndResend}
-                                            >
-                                                {verifyModal.isUpdatingEmail ? (
-                                                    <i className="fa-solid fa-spinner fa-spin"></i>
-                                                ) : (
-                                                    <>
-                                                        <i className="fa-solid fa-paper-plane"></i>
-                                                        <span>Send Code</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="btn-cancel-email-edit"
-                                                onClick={() => setVerifyModal(prev => ({ ...prev, isEditingEmail: false, emailUpdateError: '' }))}
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                        {verifyModal.emailUpdateError && (
-                                            <div className="email-edit-error">
-                                                <i className="fa-solid fa-circle-exclamation"></i>
-                                                <span>{verifyModal.emailUpdateError}</span>
-                                            </div>
-                                        )}
+                                    )}
+                                </div>
+
+                                {/* Gate Notice Banner — only shown before acceptance */}
+                                {!privacyAccepted && (
+                                    <div style={{
+                                        background: '#fffbeb',
+                                        border: '1px solid #fef3c7',
+                                        borderLeft: '4px solid #f59e0b',
+                                        borderRadius: '8px',
+                                        padding: '10px 14px',
+                                        marginBottom: '16px',
+                                        fontSize: '12.5px',
+                                        color: '#92400e',
+                                        lineHeight: 1.5,
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '8px'
+                                    }}>
+                                        <i className="fa-solid fa-triangle-exclamation" style={{ color: '#d97706', marginTop: '2px', fontSize: '14px', flexShrink: 0 }}></i>
+                                        <span>
+                                            <strong>Please read and accept</strong> the Data Privacy Notice below before proceeding to the booking form. Your consent is required under RA 10173.
+                                        </span>
                                     </div>
                                 )}
 
-                                <form onSubmit={handleVerifyCodeSubmit}>
-                                    <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        autoComplete="one-time-code"
-                                        maxLength={6}
-                                        placeholder="------"
-                                        value={verifyModal.otpCode}
-                                        onChange={handleOtpChange}
-                                        className="verify-otp-input"
-                                        autoFocus
-                                        disabled={verifyModal.isLoading}
-                                        aria-label="6-digit verification code"
-                                    />
+                                {/* Policy Content */}
+                                <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#111827', margin: '14px 0 6px 0' }}>1. Personal Information Controller</h4>
+                                    <p style={{ margin: 0 }}>
+                                        <strong>Tyoy Creation Event Styling</strong> acts as the Personal Information Controller (PIC) responsible for safeguarding your personal data submitted through this booking portal.
+                                    </p>
 
-                                    <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', margin: '0 0 12px 0', lineHeight: 1.4 }}>
-                                        <i className="fa-solid fa-lock" style={{ color: '#059669', marginRight: '4px' }}></i>
-                                        By confirming, you agree to our Terms &amp; Conditions. Your data is stored securely and used solely for event coordination and quotation.
+                                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#111827', margin: '14px 0 6px 0' }}>2. Data We Collect &amp; Purpose of Processing</h4>
+                                    <p style={{ margin: '0 0 6px 0' }}>
+                                        We collect your full name, email address, contact number, venue location, and event specifications solely for declared legitimate purposes:
+                                    </p>
+                                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#4b5563' }}>
+                                        <li>Evaluating your event styling inquiry and checking calendar availability.</li>
+                                        <li>Preparing personalized floral, decor, and catering package estimates.</li>
+                                        <li>Sending 6-digit OTP verification codes to confirm your identity.</li>
+                                        <li>Direct communication and styling coordination for your celebration.</li>
+                                    </ul>
+
+                                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#111827', margin: '14px 0 6px 0' }}>3. Data Protection &amp; Security Standards</h4>
+                                    <p style={{ margin: 0 }}>
+                                        Your sensitive contact details are encrypted at rest using <strong>AES-256-CBC with HMAC-SHA256 authenticated encryption</strong> and protected in transit via SSL/TLS 1.3. We enforce a <strong>strict zero-monetization policy</strong>: Tyoy Creation will <u>never</u> sell, trade, or share your personal data with third-party marketers or data brokers.
+                                    </p>
+
+                                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#111827', margin: '14px 0 6px 0' }}>4. Retention &amp; Disposal Schedule</h4>
+                                    <p style={{ margin: 0 }}>
+                                        Rejected or declined inquiries are automatically purged after <strong>7 days</strong>. Active booking records are kept for the duration of event coordination plus 1 year. Basic financial records are retained for 5 years per BIR statutory accounting rules with client PII scrubbed.
+                                    </p>
+
+                                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#111827', margin: '14px 0 6px 0' }}>5. Your Statutory Rights as a Data Subject</h4>
+                                    <p style={{ margin: '0 0 6px 0' }}>Under Chapter VIII, Section 34 of RA 10173, you hold the following statutory rights:</p>
+                                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#4b5563' }}>
+                                        <li><strong>Right to Access &amp; Data Portability:</strong> You may request a downloadable JSON copy of all personal data held about you.</li>
+                                        <li><strong>Right to Erasure or Blocking:</strong> You may request the permanent removal or anonymization of your records from our systems.</li>
+                                        <li><strong>Right to Rectification:</strong> You may dispute and correct any inaccurate or outdated information.</li>
+                                    </ul>
+
+                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', marginTop: '16px', fontSize: '12.5px' }}>
+                                        <strong>Data Protection Officer (DPO) Contact:</strong><br />
+                                        Email: <a href="mailto:privacy@tyoycreation.com" style={{ color: '#0284c7' }}>privacy@tyoycreation.com</a> &bull; Mobile: +63 912 345 6789
                                     </div>
+                                </div>
 
-                                    {config.turnstileEnabled && config.turnstileSiteKey && (
-                                        <div id="verifyModalTurnstile" style={{ display: 'flex', justifyContent: 'center', margin: '8px 0 14px 0' }}>
-                                            <div 
-                                                className="cf-turnstile" 
-                                                data-sitekey={config.turnstileSiteKey} 
-                                                data-theme="light"
-                                            ></div>
-                                        </div>
+                                {/* Action Buttons */}
+                                <div style={{ display: 'flex', justifyContent: privacyAccepted ? 'flex-end' : 'space-between', alignItems: 'center', marginTop: '20px', paddingTop: '14px', borderTop: '1px solid #e5e7eb', gap: '12px' }}>
+                                    {!privacyAccepted && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                window.location.href = 'index.php';
+                                            }}
+                                            style={{
+                                                background: 'none',
+                                                border: '1px solid #d1d5db',
+                                                color: '#6b7280',
+                                                padding: '9px 18px',
+                                                fontSize: '13px',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                fontWeight: 600,
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <i className="fa-solid fa-arrow-left" style={{ marginRight: '6px' }}></i> Decline &amp; Go Back
+                                        </button>
                                     )}
-
-                                    <button
-                                        type="submit"
-                                        className="btn-verify-submit"
-                                        disabled={verifyModal.isLoading || verifyModal.otpCode.length !== 6 || verifyModal.expiresIn <= 0}
-                                    >
-                                        {verifyModal.isLoading ? (
-                                            <>
-                                                <i className="fa-solid fa-spinner fa-spin"></i>
-                                                <span>Verifying Code...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <i className="fa-solid fa-shield-check"></i>
-                                                <span>Verify & Confirm Booking</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </form>
-
-                                <div className="verify-modal-footer">
                                     <button
                                         type="button"
-                                        onClick={handleResendCode}
-                                        disabled={verifyModal.resendCooldown > 0 || verifyModal.isLoading}
-                                        className="btn-resend-otp"
+                                        onClick={() => {
+                                            try { sessionStorage.setItem('tyoy_privacy_agreed', '1'); } catch (e) {}
+                                            setShowPrivacyModal(false);
+                                            setPrivacyConsent(true);
+                                            setPrivacyAccepted(true);
+                                        }}
+                                        className="btn-primary"
+                                        style={{ padding: '9px 22px', fontSize: '13px', borderRadius: '8px', fontWeight: 700 }}
                                     >
-                                        {verifyModal.resendCooldown > 0 ? (
-                                            <span><i className="fa-solid fa-arrow-rotate-right"></i> Resend Code ({verifyModal.resendCooldown}s)</span>
-                                        ) : (
-                                            <span><i className="fa-solid fa-arrow-rotate-right"></i> Resend Code</span>
-                                        )}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => setVerifyModal(prev => ({ ...prev, isOpen: false, error: '' }))}
-                                        disabled={verifyModal.isLoading}
-                                        className="btn-cancel-verify"
-                                    >
-                                        Edit Booking Details
+                                        <i className="fa-solid fa-check" style={{ marginRight: '6px' }}></i>
+                                        {privacyAccepted ? 'Close' : 'I Agree & Continue'}
                                     </button>
                                 </div>
                             </div>
                         </div>
                     )}
+
+                    {/* 2. Two-Step Verification Modal */}
+                    {verifyModal.isOpen && (() => {
+                        const modalContent = (
+                            <div className="verify-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verifyModalTitle">
+                                <div className="verify-modal-card">
+                                    <button
+                                        type="button"
+                                        className="verify-modal-close-btn"
+                                        title="Close and edit booking details"
+                                        aria-label="Close verification modal"
+                                        onClick={() => setVerifyModal(prev => ({ ...prev, isOpen: false, error: '' }))}
+                                    >
+                                        <i className="fa-solid fa-xmark"></i>
+                                    </button>
+
+                                    <div className="verify-modal-icon">
+                                        <i className="fa-solid fa-envelope-circle-check"></i>
+                                    </div>
+                                    <h2 id="verifyModalTitle" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
+                                        Enter Verification Code
+                                    </h2>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                                        <div className="verify-target-email-badge" style={{ margin: 0, padding: '3px 8px', fontSize: '11.5px', background: verifyModal.emailSent ? '#ecfdf5' : '#fef2f2', borderColor: verifyModal.emailSent ? '#a7f3d0' : '#fecaca' }}>
+                                            <i className={`fa-solid ${verifyModal.emailSent ? 'fa-envelope' : 'fa-triangle-exclamation'}`} style={{ color: verifyModal.emailSent ? '#059669' : '#dc2626' }}></i>
+                                            <span>{verifyModal.emailSent ? 'Sent to: ' : 'Delivery issue: '}<strong style={{ color: '#0f172a' }}>{verifyModal.email || clientEmail}</strong></span>
+                                        </div>
+                                        <div className={`verify-timer-box ${verifyModal.expiresIn <= 60 ? 'warning' : ''}`}>
+                                            <i className="fa-regular fa-clock"></i>
+                                            {verifyModal.expiresIn > 0 ? (
+                                                <span>Expires in <strong>{formatTimeRemaining(verifyModal.expiresIn)}</strong></span>
+                                            ) : (
+                                                <span style={{ color: '#dc2626' }}>Code expired</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {verifyModal.emailSent === false && (
+                                        <div className="verify-error-banner" role="alert" style={{ marginBottom: '8px', padding: '7px 11px', fontSize: '12px', background: '#fff1f2', border: '1px solid #fecdd3', color: '#9f1239', textAlign: 'left' }}>
+                                            <i className="fa-solid fa-triangle-exclamation" style={{ marginTop: '2px', color: '#e11d48', fontSize: '13px', flexShrink: 0 }}></i>
+                                            <div>
+                                                <strong>Verification Code Undelivered:</strong> {verifyModal.error || 'The code could not be sent to your email.'} Please check the spelling or click <strong>&ldquo;Change Email&rdquo;</strong> to update your address.
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {(() => {
+                                        const typo = detectEmailIssues(verifyModal.email || clientEmail);
+                                        if (!typo) return null;
+                                        return (
+                                            <div className="verify-typo-alert" role="alert">
+                                                <i className="fa-solid fa-triangle-exclamation" style={{ color: '#ea580c', marginTop: '2px', fontSize: '13px', flexShrink: 0 }}></i>
+                                                <div>
+                                                    <strong>Typo Alert:</strong> Address <code>{verifyModal.email || clientEmail}</code>. {typo.message}{' '}
+                                                    {typo.suggested && (
+                                                        <button
+                                                            type="button"
+                                                            style={{ display: 'inline-block', marginTop: '4px', background: '#ffedd5', border: '1px solid #fdba74', color: '#9a3412', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                                                            onClick={() => {
+                                                                setVerifyModal(prev => ({
+                                                                    ...prev,
+                                                                    isEditingEmail: true,
+                                                                    newEmailInput: typo.suggested,
+                                                                    emailUpdateError: ''
+                                                                }));
+                                                            }}
+                                                        >
+                                                            <i className="fa-solid fa-pen-to-square"></i> Change to: {typo.suggested}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {verifyModal.error && verifyModal.emailSent !== false && (
+                                        <div className="verify-error-banner" role="alert" style={{ marginBottom: '8px', padding: '7px 11px', fontSize: '12px' }}>
+                                            <i className="fa-solid fa-circle-exclamation" style={{ marginTop: '2px' }}></i>
+                                            <div>{verifyModal.error}</div>
+                                        </div>
+                                    )}
+
+                                    {verifyModal.resendSuccess && (
+                                        <div className="verify-success-banner" role="status" style={{ marginBottom: '8px', padding: '7px 11px', fontSize: '12px' }}>
+                                            <i className="fa-solid fa-circle-check"></i>
+                                            <div>{verifyModal.resendSuccess}</div>
+                                        </div>
+                                    )}
+
+                                    {verifyModal.isEditingEmail && (
+                                        <div className="verify-email-edit-box" style={{ margin: '0 0 10px 0' }}>
+                                            <div style={{ fontWeight: 700, fontSize: '12px', color: '#1e293b', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <i className="fa-solid fa-pen" style={{ color: '#059669' }}></i>
+                                                <span>Correct your email address:</span>
+                                            </div>
+                                            <div className="email-edit-input-row">
+                                                <input
+                                                    type="email"
+                                                    className="email-edit-input"
+                                                    placeholder="correct.email@gmail.com"
+                                                    value={verifyModal.newEmailInput}
+                                                    onChange={(e) => setVerifyModal(prev => ({ ...prev, newEmailInput: e.target.value, emailUpdateError: '' }))}
+                                                    autoFocus
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="btn-save-email-edit"
+                                                    disabled={verifyModal.isUpdatingEmail}
+                                                    onClick={handleUpdateEmailAndResend}
+                                                >
+                                                    {verifyModal.isUpdatingEmail ? (
+                                                        <i className="fa-solid fa-spinner fa-spin"></i>
+                                                    ) : (
+                                                        <>
+                                                            <i className="fa-solid fa-paper-plane"></i>
+                                                            <span>Send Code</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn-cancel-email-edit"
+                                                    onClick={() => setVerifyModal(prev => ({ ...prev, isEditingEmail: false, emailUpdateError: '' }))}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                            {verifyModal.emailUpdateError && (
+                                                <div className="email-edit-error">
+                                                    <i className="fa-solid fa-circle-exclamation"></i>
+                                                    <span>{verifyModal.emailUpdateError}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <form onSubmit={handleVerifyCodeSubmit}>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="one-time-code"
+                                            maxLength={6}
+                                            placeholder="------"
+                                            value={verifyModal.otpCode}
+                                            onChange={handleOtpChange}
+                                            className="verify-otp-input"
+                                            autoFocus
+                                            disabled={verifyModal.isLoading}
+                                            aria-label="6-digit verification code"
+                                        />
+
+                                        <div style={{ fontSize: '10px', color: '#64748b', textAlign: 'center', margin: '0 0 6px 0', lineHeight: 1.3 }}>
+                                            <i className="fa-solid fa-lock" style={{ color: '#059669', marginRight: '4px' }}></i>
+                                            By confirming, you agree to our Terms. Your data is stored securely for booking coordination.
+                                        </div>
+
+                                        {config.turnstileEnabled && config.turnstileSiteKey && (
+                                            <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 6px 0', transform: 'scale(0.92)', transformOrigin: 'center' }}>
+                                                <div id="verifyModalTurnstile"></div>
+                                            </div>
+                                        )}
+
+                                        <button
+                                            type="submit"
+                                            className="btn-verify-submit"
+                                            disabled={verifyModal.isLoading || verifyModal.otpCode.length !== 6 || verifyModal.expiresIn <= 0}
+                                        >
+                                            {verifyModal.isLoading ? (
+                                                <>
+                                                    <i className="fa-solid fa-spinner fa-spin"></i>
+                                                    <span>Verifying Code...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <i className="fa-solid fa-shield-check"></i>
+                                                    <span>Verify & Confirm Booking</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </form>
+
+                                    <div className="verify-spam-callout">
+                                        <i className="fa-solid fa-inbox" style={{ color: '#d97706', marginTop: '2px', fontSize: '12px' }}></i>
+                                        <div>
+                                            <strong>Can't find the email?</strong> Please check your <strong>Spam / Junk</strong> folder. If found there, mark as <em>&ldquo;Not Spam&rdquo;</em> so you receive all booking updates.
+                                        </div>
+                                    </div>
+
+                                    <div className="verify-modal-footer">
+                                        <button
+                                            type="button"
+                                            onClick={handleResendCode}
+                                            disabled={verifyModal.resendCooldown > 0 || verifyModal.isLoading}
+                                            className="btn-resend-otp"
+                                        >
+                                            {verifyModal.resendCooldown > 0 ? (
+                                                <span><i className="fa-solid fa-arrow-rotate-right"></i> Resend ({verifyModal.resendCooldown}s)</span>
+                                            ) : (
+                                                <span><i className="fa-solid fa-arrow-rotate-right"></i> Resend Code</span>
+                                            )}
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className="btn-open-email-edit"
+                                            style={{ fontSize: '11px', padding: '3px 7px' }}
+                                            onClick={() => setVerifyModal(prev => ({
+                                                ...prev,
+                                                isEditingEmail: !prev.isEditingEmail,
+                                                newEmailInput: prev.email || clientEmail,
+                                                emailUpdateError: ''
+                                            }))}
+                                        >
+                                            <i className="fa-solid fa-pen-to-square"></i>
+                                            <span>Change Email</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setVerifyModal(prev => ({ ...prev, isOpen: false, error: '' }))}
+                                            disabled={verifyModal.isLoading}
+                                            className="btn-cancel-verify"
+                                            title="Close verification and edit form details"
+                                        >
+                                            Edit Details
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => triggerExitWarning('index.php')}
+                                            disabled={verifyModal.isLoading}
+                                            className="btn-cancel-verify"
+                                            title="Cancel booking and return to home"
+                                            style={{ color: '#dc2626' }}
+                                        >
+                                            Cancel &amp; Exit
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                        return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
+                            ? ReactDOM.createPortal(modalContent, document.body)
+                            : modalContent;
+                    })()}
+
+                    {/* 3. Exit & Discard Booking Warning Modal */}
+                    {exitWarningModal.isOpen && (() => {
+                        const exitModalContent = (
+                            <div className="exit-warning-overlay" role="dialog" aria-modal="true" aria-labelledby="exitWarningTitle">
+                                <div className="exit-warning-card">
+                                    <button
+                                        type="button"
+                                        className="verify-modal-close-btn"
+                                        title="Stay on booking page"
+                                        aria-label="Close exit warning"
+                                        onClick={() => setExitWarningModal(prev => ({ ...prev, isOpen: false }))}
+                                    >
+                                        <i className="fa-solid fa-xmark"></i>
+                                    </button>
+
+                                    <div className="exit-warning-icon">
+                                        <i className="fa-solid fa-triangle-exclamation"></i>
+                                    </div>
+
+                                    <h3 id="exitWarningTitle" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
+                                        Leave Booking &amp; Discard Details?
+                                    </h3>
+
+                                    <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.45, margin: '0 0 14px 0' }}>
+                                        You have active booking details and selected package items. If you proceed back to Home or exit now, <strong>all your entered data will be reset and deleted</strong>.
+                                    </p>
+
+                                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', borderRadius: '10px', padding: '10px 14px', textAlign: 'left', marginBottom: '16px', fontSize: '12px', color: '#92400e', lineHeight: 1.45 }}>
+                                        <div style={{ fontWeight: 700, marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '6px', color: '#78350f' }}>
+                                            <i className="fa-solid fa-trash-can" style={{ color: '#d97706' }}></i>
+                                            <span>Selections that will be cleared:</span>
+                                        </div>
+                                        <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                            {clientName && <li>Client Name: <strong>{clientName}</strong></li>}
+                                            {clientEmail && <li>Email Address: <strong>{clientEmail}</strong></li>}
+                                            {selectedItemsArray.length > 0 && <li>Packages: <strong>{selectedItemsArray.length} items (₱{totalEstimate.toLocaleString()})</strong></li>}
+                                            {locationVenue && <li>Venue Location: <strong>{locationVenue}</strong></li>}
+                                            {(!clientName && !clientEmail && selectedItemsArray.length === 0) && (
+                                                <li>Your partially filled booking fields and customizations.</li>
+                                            )}
+                                        </ul>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                                        <button
+                                            type="button"
+                                            className="btn-stay-booking"
+                                            onClick={() => setExitWarningModal(prev => ({ ...prev, isOpen: false }))}
+                                        >
+                                            <i className="fa-solid fa-arrow-left"></i>
+                                            <span>Stay &amp; Continue Booking</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className="btn-discard-exit"
+                                            onClick={() => {
+                                                const destination = exitWarningModal.targetUrl || 'index.php';
+                                                setExitWarningModal({ isOpen: false, targetUrl: 'index.php' });
+                                                window.location.href = destination;
+                                            }}
+                                        >
+                                            <i className="fa-solid fa-arrow-right-from-bracket"></i>
+                                            <span>Yes, Discard &amp; Leave</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+
+                        return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
+                            ? ReactDOM.createPortal(exitModalContent, document.body)
+                            : exitModalContent;
+                    })()}
 
                     {/* Success Confirmation Modal */}
                     {confirmedBooking && (
@@ -5049,11 +6002,17 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             container.innerHTML = `
                 <div class="chat-bubble bot">
-                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong>. I can answer questions regarding our services, Birthday and Wedding packages, pricing, and booking requirements!
+                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong> Concierge. I can answer questions regarding our services, packages, pricing, service areas, lead times, and booking policies!
+                    <div style="margin-top: 6px; font-size: 11.5px; opacity: 0.88; color: #4b5563;">
+                        <em>💡 Note: Estimates are guided by AI; official reservations are verified by human staff coordinators.</em>
+                    </div>
                     <div class="quick-chips-wrapper">
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Track my booking status with Reference Number')"><i class="fa-solid fa-magnifying-glass"></i><span>Track booking status (Ref #)</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages and pricing do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Why do bookings need staff review?')"><i class="fa-solid fa-clipboard-check"></i><span>Why do bookings need staff review?</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
-                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
                     </div>
                 </div>
             `;
@@ -5068,7 +6027,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         }
 
         async function resetChatConversation() {
-            if (!confirm('Are you sure you want to reset the conversation?')) return;
+            // Directly reset without browser modal
+            const resetBtn = document.querySelector('.chatbot-header button[onclick="resetChatConversation()"] i');
+            if (resetBtn) {
+                resetBtn.classList.add('fa-spin');
+                setTimeout(() => resetBtn.classList.remove('fa-spin'), 600);
+            }
+
             try {
                 await fetch('chatbot.php', {
                     method: 'POST',
@@ -5082,11 +6047,17 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             if (container) {
                 container.innerHTML = `
                     <div class="chat-bubble bot">
-                        Conversation has been reset. You have full message capacity available! How can I assist you today?
+                        Conversation has been reset. You have full message capacity available! How can I assist you with your celebration today?
+                        <div style="margin-top: 6px; font-size: 11.5px; opacity: 0.88; color: #4b5563;">
+                            <em>💡 Note: Estimates are guided by AI; official reservations are verified by human staff coordinators.</em>
+                        </div>
                         <div class="quick-chips-wrapper">
-                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('Track my booking status with Reference Number')"><i class="fa-solid fa-magnifying-glass"></i><span>Track booking status (Ref #)</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What packages and pricing do you offer?')"><i class="fa-solid fa-gift"></i><span>What packages do you offer?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('Why do bookings need staff review?')"><i class="fa-solid fa-clipboard-check"></i><span>Why do bookings need staff review?</span></button>
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
-                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What is the minimum lead time for reservations?')"><i class="fa-solid fa-clock"></i><span>What is the lead time requirement?</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
+                            <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
                         </div>
                     </div>
                 `;
@@ -5174,6 +6145,15 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 } else {
                     replyText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
                 }
+
+                // SAKA LANG LALABAS kapag nag-offline ang chatbot / API quota reached
+                if (data && data.is_offline_mode) {
+                    const discBar = document.querySelector('.chatbot-disclaimer-bar');
+                    if (discBar) {
+                        discBar.innerHTML = '<i class="fa-solid fa-cloud-slash" style="color: #f59e0b;"></i> <span><strong>Offline Mode Active:</strong> External API limit reached. Answering from verified local packages &amp; policies.</span>';
+                    }
+                }
+
                 botDiv.innerHTML = formatChatMessage(replyText);
                 saveMessageToStorage('bot', replyText);
             } catch (err) {
@@ -5183,6 +6163,32 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+
+        // Mobile Navigation Toggle for Booking
+        function toggleBookingMobileNav(force) {
+            const nav = document.getElementById('bookingNavLinks');
+            const toggle = document.getElementById('bookingNavToggle');
+            const backdrop = document.getElementById('bookingNavBackdrop');
+            if (!nav) return;
+            const shouldOpen = (typeof force === 'boolean') ? force : !nav.classList.contains('nav-open');
+            if (shouldOpen) {
+                nav.classList.add('nav-open');
+                if (backdrop) backdrop.classList.add('active');
+                if (toggle) toggle.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                document.body.style.overflow = 'hidden';
+            } else {
+                nav.classList.remove('nav-open');
+                if (backdrop) backdrop.classList.remove('active');
+                if (toggle) toggle.innerHTML = '<i class="fa-solid fa-bars"></i>';
+                document.body.style.overflow = '';
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) {
+                toggleBookingMobileNav(false);
+            }
+        });
 
         window.addEventListener('DOMContentLoaded', () => {
             renderSynchronizedChat();

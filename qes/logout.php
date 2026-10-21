@@ -24,6 +24,8 @@ if ($uid > 0 && isset($conn) && is_object($conn)) {
     }
 }
 
+$is_client = (isset($_SESSION['role']) && $_SESSION['role'] === 'user');
+
 $_SESSION = [];
 if (ini_get("session.use_cookies")) {
     $params = session_get_cookie_params();
@@ -33,10 +35,12 @@ if (ini_get("session.use_cookies")) {
     );
 }
 session_destroy();
-$redirect = $_GET['redirect'] ?? 'loginadmin.php';
+
+$default_redirect = $is_client ? 'index.php' : 'loginadmin.php';
+$redirect = $_GET['redirect'] ?? $default_redirect;
 // Security: only allow relative redirects (block absolute URLs / protocol-relative URLs)
 if (preg_match('#^https?://|^//#i', $redirect) || str_contains($redirect, '://')) {
-    $redirect = 'loginadmin.php';
+    $redirect = $default_redirect;
 }
 header("Location: " . $redirect);
 exit;

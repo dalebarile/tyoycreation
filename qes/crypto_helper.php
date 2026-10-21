@@ -93,6 +93,7 @@ if (!function_exists('qes_decrypt')) {
         $expectedHmac = hash_hmac('sha256', $iv . $cipher, $rawKey, true);
         if (!hash_equals($hmac, $expectedHmac)) {
             // Authentication check failed
+            error_log('QES Security Alert: Decryption HMAC validation failure or key mismatch for payload prefix ENC::v1::');
             return '';
         }
 

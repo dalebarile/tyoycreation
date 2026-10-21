@@ -77,10 +77,10 @@ class BookingServiceTest extends TestCase
         $this->assertStringContainsString('exceeds your selected Catering Service package limit', $result['message']);
     }
 
-    public function test_fails_when_date_violates_lead_time(): void
+    public function test_fails_when_date_is_in_the_past(): void
     {
-        // Weddings require 6 months advance notice
-        $tooEarlyWeddingDate = date('Y-m-d', strtotime('+30 days'));
+        // Dates in the past cannot be booked
+        $pastDate = date('Y-m-d', strtotime('-5 days'));
         $result = create_booking_inquiry($this->conn, [
             'client_name'          => 'Maria Santos',
             'client_email'         => 'maria@example.com',
@@ -88,7 +88,7 @@ class BookingServiceTest extends TestCase
             'client_address'       => 'Quezon City',
             'event_title'          => 'Maria & John Wedding',
             'event_type'           => 'Weddings',
-            'event_date'           => $tooEarlyWeddingDate,
+            'event_date'           => $pastDate,
             'event_time'           => '14:00',
             'guest_count'          => 100,
             'location_venue'       => 'Tagaytay Highlands',
@@ -96,7 +96,35 @@ class BookingServiceTest extends TestCase
         ]);
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('required 6 months advance notice', $result['message']);
+        $this->assertStringContainsString('cannot be in the past', $result['message']);
+    }
+
+    public function test_allows_dates_within_six_months(): void
+    {
+        $this->conn->insert_id = 998;
+        $this->conn->addQueryResult("SELECT id FROM bookings WHERE reference_no = ?", []);
+
+        // With restrictions removed, weddings can be scheduled within 6 months (e.g. +30 days)
+        $flexibleDate = date('Y-m-d', strtotime('+30 days'));
+        $result = create_booking_inquiry($this->conn, [
+            'client_name'          => 'Maria Santos',
+            'client_email'         => 'maria@example.com',
+            'client_phone'         => '09181234567',
+            'client_address'       => 'Quezon City',
+            'event_title'          => 'Maria & John Wedding',
+            'event_type'           => 'Weddings',
+            'event_date'           => $flexibleDate,
+            'event_time'           => '14:00',
+            'guest_count'          => 100,
+            'location_venue'       => 'Tagaytay Highlands',
+            'service_requirements' => 'Full Wedding Styling & Coordination',
+            'special_notes'        => 'Outdoor garden ceremony',
+            'source'               => 'online_inquiry',
+            'send_notice'          => 'none'
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(998, $result['booking_id']);
     }
 
     public function test_successful_booking_creation(): void

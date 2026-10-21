@@ -93,7 +93,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <base href="<?= htmlspecialchars($base_href) ?>">
     <title><?= htmlspecialchars($business_name) ?> - Admin Portal</title>
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
@@ -307,6 +307,23 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             font-size: 11px;
             color: var(--text-muted);
         }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 16px 12px;
+            }
+            .login-card {
+                padding: 28px 18px;
+                border-radius: 16px;
+            }
+            .login-heading {
+                font-size: 21px !important;
+            }
+            .login-title {
+                font-size: 12.5px !important;
+                margin-bottom: 18px !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -317,7 +334,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
     <div class="login-card">
         <div class="login-header" style="margin-bottom: 20px;">
             <div class="login-logo">
-                <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" style="height: 60px; width: auto; display: block; margin: 0 auto;">
+                <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="<?= htmlspecialchars($business_name) ?>" style="height: 60px; width: 170px; aspect-ratio: 834 / 294; object-fit: contain; display: block; margin: 0 auto;" width="170" height="60">
             </div>
         </div>
 

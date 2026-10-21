@@ -23,3 +23,12 @@ if (!defined('ENV_ENCRYPTION_KEY')) {
 
 require_once __DIR__ . '/../crypto_helper.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../test_cleanup_helper.php';
+
+// Automatically purge all test records from database and sessions upon test completion
+register_shutdown_function(static function (): void {
+    global $conn;
+    if (isset($conn) && $conn) {
+        TestCleanupHelper::purgeAllTestData($conn);
+    }
+});

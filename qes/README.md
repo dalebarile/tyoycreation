@@ -33,7 +33,7 @@ qes/
 │
 ├── db.php                    # Dual DB router (Cloud Supabase PostgreSQL primary + Local MySQL fallback)
 ├── config.php                # Environment secrets and Gemini AI configuration
-├── crypto_helper.php         # Application-level AES-256-GCM encryption for client PII
+├── crypto_helper.php         # Application-level AES-256-CBC with HMAC-SHA256 authenticated encryption for client PII
 ├── supabase_driver.php       # Supabase REST database driver
 ├── notification_helper.php   # Automated email notification dispatcher (Gmail SMTP / PHPMailer)
 ├── auth_action.php           # User profile & account security action handler (Forgot Password API)
@@ -89,7 +89,7 @@ qes/
 
 ### 5. Security & Data Privacy
 - **Dual-Database Persistence:** Primary Cloud Supabase PostgreSQL with local MySQL failover.
-- **Client Data Protection:** Application-level AES-256-GCM encryption (`crypto_helper.php`) for client contact details (email, phone, venue).
+- **Client Data Protection:** Application-level AES-256-CBC with HMAC-SHA256 authenticated encryption (`crypto_helper.php`) for client contact details (email, phone, address).
 - **Session & Device Security:** Active device fingerprinting, IP tracking, and instant remote session revocation.
 - **Prepared Statements:** 100% parameterized SQL queries preventing SQL injection across all active modules.
 

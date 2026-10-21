@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/data_privacy_helper.php';
 
 // Auth check
 require_login();
@@ -10,63 +11,70 @@ $search = trim($_GET['search'] ?? '');
 $alert_message = '';
 $alert_type = 'success';
 
-// Handle Client Permanent Deletion
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'delete_client') {
+// Handle Data-Subject Requests (DSR) & Retention Schedule Actions
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
         die('CSRF token validation failed.');
     }
 
-    $raw_ids = trim($_POST['booking_ids'] ?? '');
-    $id_list = array_values(array_filter(array_map('intval', explode(',', $raw_ids)), fn($x) => $x > 0));
+    $action = $_POST['action'] ?? '';
 
-    // Fallback: search by encrypted email or phone if booking_ids was missing
-    if (empty($id_list)) {
-        $email = trim($_POST['client_email'] ?? '');
-        $phone = trim($_POST['client_phone'] ?? '');
-        if (!empty($email) || !empty($phone)) {
-            $enc_e = qes_encrypt($email, true);
-            $enc_p = qes_encrypt($phone, true);
-            $find_stmt = $conn->prepare("SELECT id FROM bookings WHERE client_email = ? OR (client_phone = ? AND client_phone != '')");
-            if ($find_stmt) {
-                $find_stmt->bind_param("ss", $enc_e, $enc_p);
-                $find_stmt->execute();
-                $f_res = $find_stmt->get_result();
-                while ($f_row = $f_res->fetch_assoc()) {
-                    $id_list[] = (int)$f_row['id'];
-                }
-                $find_stmt->close();
-            }
+    // ACTION 1: Export Data-Subject Archive (Right to Data Portability - RA 10173 Sec. 36)
+    if ($action === 'export_dsr') {
+        $identifier = trim($_POST['identifier'] ?? '');
+        $export = DataPrivacyHelper::exportDataSubjectArchive($conn, $identifier);
+        if ($export['success']) {
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $export['filename'] . '"');
+            echo json_encode($export['data'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        } else {
+            $alert_message = $export['message'] ?? 'Could not export data subject archive.';
+            $alert_type = 'danger';
         }
     }
 
-    if (!empty($id_list)) {
-        $placeholders = implode(',', array_fill(0, count($id_list), '?'));
-        $types = str_repeat('i', count($id_list));
+    // ACTION 2: Run Automated Retention Schedule Purge
+    elseif ($action === 'run_retention_purge') {
+        $purge_res = DataPrivacyHelper::runRetentionSchedulePurge($conn);
+        $alert_message = $purge_res['message'];
+        $alert_type = 'success';
+    }
 
-        // 1. Delete associated notifications
-        $del_notif = $conn->prepare("DELETE FROM notifications WHERE booking_id IN ($placeholders)");
-        if ($del_notif) {
-            $del_notif->bind_param($types, ...$id_list);
-            $del_notif->execute();
-            $del_notif->close();
+    // ACTION 3: Handle Client Erasure (DSR Right to Erasure / Blocking - RA 10173 Sec. 34(e))
+    elseif ($action === 'delete_client') {
+        $raw_ids = trim($_POST['booking_ids'] ?? '');
+        $id_list = array_values(array_filter(array_map('intval', explode(',', $raw_ids)), fn($x) => $x > 0));
+        $erasure_mode = in_array($_POST['erasure_mode'] ?? '', ['purge', 'anonymize'], true) ? $_POST['erasure_mode'] : 'purge';
+
+        // Fallback: search by encrypted email or phone if booking_ids was missing
+        if (empty($id_list)) {
+            $email = trim($_POST['client_email'] ?? '');
+            $phone = trim($_POST['client_phone'] ?? '');
+            if (!empty($email) || !empty($phone)) {
+                $enc_e = qes_encrypt($email, true);
+                $enc_p = qes_encrypt($phone, true);
+                $find_stmt = $conn->prepare("SELECT id FROM bookings WHERE client_email = ? OR (client_phone = ? AND client_phone != '')");
+                if ($find_stmt) {
+                    $find_stmt->bind_param("ss", $enc_e, $enc_p);
+                    $find_stmt->execute();
+                    $f_res = $find_stmt->get_result();
+                    while ($f_row = $f_res->fetch_assoc()) {
+                        $id_list[] = (int)$f_row['id'];
+                    }
+                    $find_stmt->close();
+                }
+            }
         }
 
-        // 2. Delete the bookings
-        $del_b = $conn->prepare("DELETE FROM bookings WHERE id IN ($placeholders)");
-        if ($del_b) {
-            $del_b->bind_param($types, ...$id_list);
-            $del_b->execute();
-            $deleted_cnt = count($id_list);
-            $del_b->close();
-            $alert_message = "Client record and {$deleted_cnt} associated booking inquiries have been permanently deleted.";
-            $alert_type = 'success';
+        if (!empty($id_list)) {
+            $erasure_res = DataPrivacyHelper::executeErasureRequest($conn, $id_list, $erasure_mode, $admin_username);
+            $alert_message = $erasure_res['message'];
+            $alert_type = $erasure_res['success'] ? 'success' : 'danger';
         } else {
-            $alert_message = "Could not delete client records: " . $conn->error;
-            $alert_type = 'danger';
+            $alert_message = "No matching client booking records found for erasure.";
+            $alert_type = 'warning';
         }
-    } else {
-        $alert_message = "No matching client booking records found to delete.";
-        $alert_type = 'warning';
     }
 }
 
@@ -136,7 +144,7 @@ $page_url = function($p) use ($search) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Client Information - Tyoy Creation</title>
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
@@ -291,10 +299,19 @@ $page_url = function($p) use ($search) {
                             <i class="fa-solid fa-shield-halved"></i> 256-Bit Encrypted at Rest
                         </span>
                     </div>
-                    <form method="GET" action="a_clients.php" class="search-input-wrap">
-                        <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" name="search" placeholder="Search client by name, phone..." value="<?= htmlspecialchars($search) ?>">
-                    </form>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <form method="POST" action="a_clients.php" style="margin: 0; display: inline;" onsubmit="return confirm('Execute automated retention schedule purge now? This will permanently clean rejected inquiries older than 7 days, expired sessions, and aged chat logs.');">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="action" value="run_retention_purge">
+                            <button type="submit" class="btn-action-view" style="background: #18392b; color: #ffffff; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Execute Automated Retention Schedule Purge per RA 10173">
+                                <i class="fa-solid fa-clock-rotate-left"></i> Run Retention Purge
+                            </button>
+                        </form>
+                        <form method="GET" action="a_clients.php" class="search-input-wrap">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" name="search" placeholder="Search client by name, phone..." value="<?= htmlspecialchars($search) ?>">
+                        </form>
+                    </div>
                 </div>
 
                 <div class="table-responsive-container">
@@ -307,7 +324,7 @@ $page_url = function($p) use ($search) {
                                 <th>Location / Address</th>
                                 <th>Event History</th>
                                 <th style="text-align: center;">Total Bookings</th>
-                                <th style="text-align: center; min-width: 180px;">Actions</th>
+                                <th style="text-align: center; min-width: 220px;">DSR &amp; Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -331,12 +348,20 @@ $page_url = function($p) use ($search) {
                                             </span>
                                         </td>
                                         <td class="client-actions-cell">
-                                            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap;">
-                                                <a href="a_notifications.php?recipient=<?= urlencode($c['client_name']) ?>&contact=<?= urlencode($c['client_email']) ?>" class="btn-action-view" title="Message Client">
+                                            <div style="display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: nowrap;">
+                                                <form method="POST" action="a_clients.php" style="margin: 0; display: inline;">
+                                                    <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                                                    <input type="hidden" name="action" value="export_dsr">
+                                                    <input type="hidden" name="identifier" value="<?= htmlspecialchars(!empty($c['client_email']) ? $c['client_email'] : (!empty($c['client_phone']) ? $c['client_phone'] : $c['client_name'])) ?>">
+                                                    <button type="submit" class="btn-action-view" style="background: #0284c7; color: #ffffff; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Export personal data archive in structured JSON format (RA 10173 Section 36 - Data Portability)">
+                                                        <i class="fa-solid fa-file-export"></i> Export
+                                                    </button>
+                                                </form>
+                                                <a href="a_notifications.php?recipient=<?= urlencode($c['client_name']) ?>&contact=<?= urlencode($c['client_email']) ?>" class="btn-action-view" style="padding: 6px 10px; font-size: 11.5px;" title="Message Client">
                                                     <i class="fa-solid fa-paper-plane"></i> Message
                                                 </a>
-                                                <button type="button" class="btn-action-delete" onclick="openDeleteClientModal(<?= htmlspecialchars(json_encode($c['client_name'])) ?>, <?= htmlspecialchars(json_encode($c['client_phone'])) ?>, <?= htmlspecialchars(json_encode($c['client_email'])) ?>, <?= (int)$c['total_events'] ?>, <?= htmlspecialchars(json_encode($c['booking_ids'] ?? '')) ?>)" title="Delete Client and All Inquiries">
-                                                    <i class="fa-solid fa-trash-can"></i> Delete
+                                                <button type="button" class="btn-action-delete" style="padding: 6px 10px; font-size: 11.5px;" onclick="openDeleteClientModal(<?= htmlspecialchars(json_encode($c['client_name'])) ?>, <?= htmlspecialchars(json_encode($c['client_phone'])) ?>, <?= htmlspecialchars(json_encode($c['client_email'])) ?>, <?= (int)$c['total_events'] ?>, <?= htmlspecialchars(json_encode($c['booking_ids'] ?? '')) ?>)" title="Right to Erasure / Blocking (RA 10173 Section 34(e))">
+                                                    <i class="fa-solid fa-trash-can"></i> Erasure
                                                 </button>
                                             </div>
                                         </td>
@@ -414,8 +439,8 @@ $page_url = function($p) use ($search) {
 
                 <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: #fff5f5;">
                     <div style="display: flex; align-items: center; gap: 10px; color: #dc2626;">
-                        <i class="fa-solid fa-triangle-exclamation" style="font-size: 20px;"></i>
-                        <h3 style="font-size: 17px; margin: 0; font-weight: 700;">Confirm Client Deletion</h3>
+                        <i class="fa-solid fa-user-shield" style="font-size: 20px;"></i>
+                        <h3 style="font-size: 17px; margin: 0; font-weight: 700;">Data-Subject Right to Erasure</h3>
                     </div>
                     <button type="button" onclick="closeDeleteClientModal()" style="background: transparent; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer;" aria-label="Close">
                         <i class="fa-solid fa-xmark"></i>
@@ -423,23 +448,19 @@ $page_url = function($p) use ($search) {
                 </div>
 
                 <div style="padding: 24px;">
-                    <p style="font-size: 14px; color: #374151; margin-bottom: 16px; line-height: 1.5;">
-                        Are you sure you want to permanently delete this client record and all associated event inquiries from the system?
+                    <p style="font-size: 13.5px; color: #374151; margin-bottom: 14px; line-height: 1.5;">
+                        Process a verified data erasure request under <strong>Section 34(e) of the Data Privacy Act of 2012 (RA 10173)</strong>. Select an appropriate compliance mode below:
                     </p>
                     
                     <!-- Client Preview Card -->
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; font-size: 13px;">
-                        <div style="margin-bottom: 8px;">
-                            <span style="color: #64748b; font-weight: 600;">Client Name:</span>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 12.5px;">
+                        <div style="margin-bottom: 6px;">
+                            <span style="color: #64748b; font-weight: 600;">Client:</span>
                             <strong id="delModalClientName" style="color: #0f172a; margin-left: 6px;">-</strong>
                         </div>
-                        <div style="margin-bottom: 8px;">
-                            <span style="color: #64748b; font-weight: 600;">Phone Number:</span>
-                            <span id="delModalClientPhone" style="color: #334155; margin-left: 6px;">-</span>
-                        </div>
-                        <div style="margin-bottom: 8px;">
-                            <span style="color: #64748b; font-weight: 600;">Email Address:</span>
-                            <span id="delModalClientEmail" style="color: #334155; margin-left: 6px;">-</span>
+                        <div style="margin-bottom: 6px;">
+                            <span style="color: #64748b; font-weight: 600;">Phone / Email:</span>
+                            <span id="delModalClientPhone" style="color: #334155; margin-left: 6px;">-</span> &bull; <span id="delModalClientEmail" style="color: #334155;">-</span>
                         </div>
                         <div>
                             <span style="color: #64748b; font-weight: 600;">Associated Inquiries:</span>
@@ -447,16 +468,41 @@ $page_url = function($p) use ($search) {
                         </div>
                     </div>
 
+                    <!-- Erasure Mode Selection -->
+                    <div style="margin-bottom: 16px;">
+                        <div style="font-weight: 700; font-size: 13px; color: #1e293b; margin-bottom: 8px;">Select Compliance Mode:</div>
+                        
+                        <label style="display: flex; align-items: flex-start; gap: 10px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; cursor: pointer;">
+                            <input type="radio" name="erasure_mode" value="anonymize" checked style="margin-top: 3px; accent-color: #18392b;">
+                            <div>
+                                <strong style="color: #0f172a; font-size: 13px;">Audit-Safe Anonymization (Recommended for Past/Completed Events)</strong>
+                                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b; line-height: 1.4;">
+                                    Permanently scrubs and removes all personal identification (Name, Email, Phone, Address), while keeping non-PII financial totals and dates to comply with <strong>BIR 5-year accounting and tax audit rules</strong>.
+                                </p>
+                            </div>
+                        </label>
+
+                        <label style="display: flex; align-items: flex-start; gap: 10px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; cursor: pointer;">
+                            <input type="radio" name="erasure_mode" value="purge" style="margin-top: 3px; accent-color: #dc2626;">
+                            <div>
+                                <strong style="color: #991b1b; font-size: 13px;">Full Permanent Purge (Hard Delete)</strong>
+                                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b; line-height: 1.4;">
+                                    Permanently removes and deletes the entire booking records and notification history. Recommended for cancelled, unconfirmed, or duplicate inquiries.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+
                     <div style="background: #fff1f2; border-left: 4px solid #f43f5e; padding: 10px 14px; border-radius: 4px; font-size: 12px; color: #9f1239; display: flex; align-items: center; gap: 8px;">
                         <i class="fa-solid fa-circle-exclamation" style="font-size: 14px; flex-shrink: 0;"></i>
-                        <span><strong>Warning:</strong> This action will permanently purge the client's record and booking history. This cannot be undone.</span>
+                        <span>This action will be written to the system audit trail. Irreversible once confirmed.</span>
                     </div>
                 </div>
 
                 <div style="padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 10px; background: #fafafa;">
                     <button type="button" class="btn-secondary" onclick="closeDeleteClientModal()" style="padding: 9px 18px; font-size: 13px; font-weight: 600;">Cancel</button>
                     <button type="submit" class="btn-action-reject" style="padding: 9px 18px; font-size: 13px; font-weight: 700; background: #dc2626; color: #ffffff; border: none; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                        <i class="fa-solid fa-trash-can"></i> Yes, Delete Client
+                        <i class="fa-solid fa-check"></i> Execute Erasure Request
                     </button>
                 </div>
             </form>

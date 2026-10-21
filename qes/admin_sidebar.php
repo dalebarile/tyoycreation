@@ -33,12 +33,17 @@ $current_status = $_GET['status'] ?? '';
 <!-- FontAwesome CDN for clean icons -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-<aside class="admin-sidebar">
+<aside class="admin-sidebar" id="adminSidebar">
     <div class="sidebar-brand" style="gap: 10px; align-items: center; justify-content: space-between; display: flex; padding: 16px 20px;">
-        <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="Tyoy Creation" style="height: 38px; width: auto; max-width: 140px; border-radius: 6px; display: block; object-fit: contain;">
-        <span style="font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; background: <?= $is_main_admin ? '#d97706' : 'rgba(255,255,255,0.2)' ?>; color: #fff;">
-            <?= $is_main_admin ? 'Main Admin' : 'Admin' ?>
-        </span>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="Tyoy Creation" style="height: 38px; width: auto; max-width: 140px; border-radius: 6px; display: block; object-fit: contain;">
+            <span style="font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; background: <?= $is_main_admin ? '#d97706' : 'rgba(255,255,255,0.2)' ?>; color: #fff;">
+                <?= $is_main_admin ? 'Main Admin' : 'Admin' ?>
+            </span>
+        </div>
+        <button type="button" class="sidebar-mobile-close" onclick="toggleAdminSidebar(false)" aria-label="Close Navigation Menu">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
     </div>
 
     <nav class="sidebar-nav">
@@ -102,6 +107,7 @@ $current_status = $_GET['status'] ?? '';
         </button>
     </div>
 </aside>
+<div class="admin-sidebar-overlay" id="adminSidebarOverlay" onclick="toggleAdminSidebar(false)"></div>
 
 <!-- Global Admin Logout Confirmation Modal -->
 <div class="modal-backdrop" id="adminLogoutModal" style="z-index: 9999;">
@@ -180,5 +186,46 @@ if (typeof openLogoutModal === 'undefined') {
         if (e.key === 'Escape') closeLogoutModal();
     });
 }
+
+function toggleAdminSidebar(force) {
+    const sidebar = document.getElementById('adminSidebar');
+    const overlay = document.getElementById('adminSidebarOverlay');
+    if (!sidebar) return;
+    const shouldOpen = (typeof force === 'boolean') ? force : !sidebar.classList.contains('sidebar-open');
+    if (shouldOpen) {
+        sidebar.classList.add('sidebar-open');
+        if (overlay) overlay.classList.add('active');
+        document.body.classList.add('admin-sidebar-locked');
+    } else {
+        sidebar.classList.remove('sidebar-open');
+        if (overlay) overlay.classList.remove('active');
+        document.body.classList.remove('admin-sidebar-locked');
+    }
+}
+
+// Auto-wire hamburger toggle to admin headers
+document.addEventListener('DOMContentLoaded', function() {
+    const header = document.querySelector('.admin-header');
+    if (header && !document.getElementById('adminSidebarToggle')) {
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.id = 'adminSidebarToggle';
+        toggleBtn.className = 'admin-sidebar-toggle-btn';
+        toggleBtn.setAttribute('aria-label', 'Toggle Navigation Drawer');
+        toggleBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
+        toggleBtn.onclick = function(e) {
+            e.stopPropagation();
+            toggleAdminSidebar();
+        };
+        header.insertBefore(toggleBtn, header.firstChild);
+    }
+});
+
+// Close drawer on escape key
+window.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        toggleAdminSidebar(false);
+    }
+});
 </script>
 <script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>

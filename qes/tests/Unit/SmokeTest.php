@@ -57,4 +57,29 @@ class SmokeTest extends TestCase
         $result = $stmt->get_result();
         $this->assertSame(0, $result->num_rows);
     }
+
+    public function test_all_core_php_files_pass_syntax_lint(): void
+    {
+        $baseDir = dirname(__DIR__, 2);
+        $filesToLint = [
+            $baseDir . '/chatbot.php',
+            $baseDir . '/booking.php',
+            $baseDir . '/db.php',
+            $baseDir . '/index.php',
+            $baseDir . '/booking_verification_helper.php',
+            $baseDir . '/notification_helper.php',
+            $baseDir . '/src/ChatbotBusinessKnowledge.php',
+            $baseDir . '/a_manual_booking.php'
+        ];
+
+        $phpBinary = defined('PHP_BINARY') && !empty(PHP_BINARY) ? PHP_BINARY : 'php';
+        foreach ($filesToLint as $file) {
+            $this->assertFileExists($file, "Target file for syntax lint must exist: {$file}");
+            $output = [];
+            $exitCode = 0;
+            exec(escapeshellarg($phpBinary) . " -l " . escapeshellarg($file) . " 2>&1", $output, $exitCode);
+            $msg = implode("\n", $output);
+            $this->assertSame(0, $exitCode, "Syntax error detected in {$file}:\n{$msg}");
+        }
+    }
 }

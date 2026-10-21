@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Tyoy Creation - Manual Booking Entry</title>
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
@@ -343,18 +343,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             const isWedding = (eventType || '').toLowerCase().includes('wedding');
             const minDate = new Date(today);
-
-            if (isWedding) {
-                // Weddings require at least 6 months advance notice
-                const curMonth = minDate.getMonth();
-                minDate.setMonth(curMonth + 6);
-                if (minDate.getMonth() !== (curMonth + 6) % 12) {
-                    minDate.setDate(0);
-                }
-            } else {
-                // Birthday Parties: at least 2 weeks (14 days)
-                minDate.setDate(minDate.getDate() + 14);
-            }
             return { minDate, isWedding };
         }
 
@@ -374,14 +362,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             dateInput.min = minDateStr;
 
-            const options = { year: 'numeric', month: 'short', day: 'numeric' };
-            const formattedMin = minDate.toLocaleDateString('en-US', options);
-
             if (hint) {
                 if (isWedding) {
-                    hint.innerHTML = `<span style="color:#b45309;font-weight:600;"><i class="fa-solid fa-clock"></i> Weddings: min. 6 months advance notice.</span><br>Earliest available date: <strong>${formattedMin}</strong>`;
+                    hint.innerHTML = `<span style="color:#b45309;font-weight:600;"><i class="fa-solid fa-clock"></i> Weddings: 3 Months Preparation Reminder</span><br><span style="color:#6b7280;font-size:12px;">Recommended preparation time: 3 months. Date selection is open from today onwards.</span>`;
                 } else {
-                    hint.innerHTML = `<span style="color:#364735;font-weight:600;"><i class="fa-solid fa-calendar-check"></i> ${eventType}: min. 2 weeks advance notice.</span><br>Earliest available date: <strong>${formattedMin}</strong>`;
+                    hint.innerHTML = `<span style="color:#15803d;font-weight:600;"><i class="fa-solid fa-calendar-check"></i> ${eventType}: 2 Weeks Preparation Reminder</span><br><span style="color:#6b7280;font-size:12px;">Recommended preparation time: 2 weeks. Date selection is open from today onwards.</span>`;
                 }
             }
 

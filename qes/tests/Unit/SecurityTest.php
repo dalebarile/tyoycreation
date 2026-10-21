@@ -8,6 +8,15 @@ use Qes\Tests\Fakes\FakeConnection;
 
 class SecurityTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        global $conn;
+        if (isset($conn) && $conn) {
+            \TestCleanupHelper::purgeAllTestData($conn);
+        }
+        parent::tearDown();
+    }
+
     /**
      * @dataProvider redirectUrlProvider
      */

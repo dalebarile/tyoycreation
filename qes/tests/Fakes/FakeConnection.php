@@ -80,6 +80,17 @@ class FakeConnection
         return [];
     }
 
+    public function query(string $sql): FakeResult|false
+    {
+        $rows = $this->getQueryResult($sql);
+        if ($rows === false) {
+            $this->error = 'No fake result configured for: ' . $sql;
+            $this->errno = 9999;
+            return false;
+        }
+        return new FakeResult($rows);
+    }
+
     public function prepare(string $query): FakeStatement|false
     {
         $stmt = new FakeStatement($this, $query);

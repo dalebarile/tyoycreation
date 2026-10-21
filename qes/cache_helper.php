@@ -14,6 +14,11 @@ if (!class_exists('QesCache')) {
                 if (!is_dir($dir)) {
                     @mkdir($dir, 0755, true);
                 }
+                // Auto-create .htaccess to guarantee no direct HTTP access to cached objects
+                $htaccess = $dir . '/.htaccess';
+                if (!file_exists($htaccess) && is_writable($dir)) {
+                    @file_put_contents($htaccess, "# Restrict direct web access to cache directory\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Order deny,allow\n    Deny from all\n</IfModule>\n");
+                }
                 if (!is_writable($dir)) {
                     $dir = sys_get_temp_dir() . '/tyoy_qes_cache';
                     if (!is_dir($dir)) {
@@ -34,7 +39,7 @@ if (!class_exists('QesCache')) {
             if (is_file($file)) {
                 $content = @file_get_contents($file);
                 if ($content !== false) {
-                    $data = @unserialize($content);
+                    $data = @unserialize($content, ['allowed_classes' => false]);
                     if (is_array($data) && isset($data['exp'], $data['val'])) {
                         if ($data['exp'] === 0 || $data['exp'] >= time()) {
                             self::$memory[$key] = $data['val'];

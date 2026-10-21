@@ -49,7 +49,7 @@ class BookingVerificationHelper {
         }
 
         $client_name          = trim($params['client_name'] ?? '');
-        $client_email         = trim($params['client_email'] ?? '');
+        $client_email         = strtolower(trim($params['client_email'] ?? ''));
         $client_phone         = trim($params['client_phone'] ?? '');
         $client_address       = trim($params['client_address'] ?? '');
         $event_title          = trim($params['event_title'] ?? '');
@@ -68,9 +68,19 @@ class BookingVerificationHelper {
             return ['success' => false, 'message' => 'Please fill in all required fields (Name, Contact Number, Event Title, Date, and Venue).'];
         }
 
-        // 2. Strict Email Validation
+        // 2. Strict Email Validation & Domain Typo Protection
         if (empty($client_email) || !filter_var($client_email, FILTER_VALIDATE_EMAIL)) {
             return ['success' => false, 'message' => 'A valid Email Address is required to receive your booking verification code.'];
+        }
+
+        $email_domain = strtolower(substr(strrchr($client_email, "@"), 1));
+        $typo_suggestion = self::checkDomainTypo($client_email);
+        if ($typo_suggestion) {
+            $suggested_full = substr($client_email, 0, strrpos($client_email, '@') + 1) . $typo_suggestion;
+            return [
+                'success' => false,
+                'message' => "The email domain '@{$email_domain}' appears to be a typo for '@{$typo_suggestion}'. Did you mean '{$suggested_full}'? Please correct your email to receive your verification code."
+            ];
         }
 
         // 3. Strict Phone Validation (10 to 13 digits)
@@ -132,6 +142,8 @@ class BookingVerificationHelper {
             'location_venue'       => $location_venue,
             'service_requirements' => $service_requirements,
             'special_notes'        => $special_notes,
+            'privacy_consent'      => 1,
+            'privacy_consent_at'   => $params['privacy_consent_at'] ?? date('Y-m-d H:i:s'),
             'source'               => $source,
             'status'               => 'pending'
         ];
@@ -146,31 +158,53 @@ class BookingVerificationHelper {
             'service_requirements' => $service_requirements,
             'client_name'          => $client_name,
             'client_phone'         => $client_phone,
-            'client_email'         => $client_email
+            'client_email'         => $client_email,
+            'privacy_consent'      => 'Acknowledged under RA 10173 on ' . ($params['privacy_consent_at'] ?? date('Y-m-d H:i:s'))
         ];
 
         // 8. Save temporarily in session
         $_SESSION['pending_booking_verification'] = [
-            'token'          => $token,
-            'code'           => $code,
-            'email'          => $client_email,
-            'name'           => $client_name,
-            'payload'        => $booking_payload,
-            'summary'        => $summary,
-            'created_at'     => time(),
-            'expires_at'     => time() + self::CODE_EXPIRY_SECONDS,
-            'attempts'       => 0,
-            'last_resend_at' => time()
+            'token'            => $token,
+            'code'             => $code,
+            'email'            => $client_email,
+            'name'             => $client_name,
+            'payload'          => $booking_payload,
+            'summary'          => $summary,
+            'created_at'       => time(),
+            'expires_at'       => time() + self::CODE_EXPIRY_SECONDS,
+            'attempts'         => 0,
+            'last_resend_at'   => time(),
+            'last_send_failed' => false
         ];
 
         // 9. Dispatch Email with Verification Code & Booking Summary
+        $email_error = '';
         $email_sent = NotificationHelper::sendBookingVerificationCodeEmail(
             $conn,
             $client_email,
             $client_name,
             $code,
-            $summary
+            $summary,
+            $email_error
         );
+
+        if (!$email_sent) {
+            $_SESSION['pending_booking_verification']['last_send_failed'] = true;
+            return [
+                'success'               => true,
+                'requires_verification' => true,
+                'verification_token'    => $token,
+                'email'                 => $client_email,
+                'masked_email'          => $masked_email,
+                'expires_in'            => self::CODE_EXPIRY_SECONDS,
+                'email_sent'            => false,
+                'email_error'           => !empty($email_error) ? $email_error : 'Failed to deliver verification email to this address.',
+                'summary'               => $summary,
+                'message'               => "We saved your booking details, but could not deliver the verification code to {$client_email}. Please check your email address or click 'Change Email' below to retry."
+            ];
+        }
+
+        $_SESSION['pending_booking_verification']['last_send_failed'] = false;
 
         return [
             'success'               => true,
@@ -179,7 +213,7 @@ class BookingVerificationHelper {
             'email'                 => $client_email,
             'masked_email'          => $masked_email,
             'expires_in'            => self::CODE_EXPIRY_SECONDS,
-            'email_sent'            => $email_sent,
+            'email_sent'            => true,
             'summary'               => $summary,
             'message'               => "A 6-digit verification code has been dispatched to {$client_email}. Please enter it below to confirm your booking."
         ];
@@ -227,7 +261,7 @@ class BookingVerificationHelper {
         if (time() > ($pending['expires_at'] ?? 0)) {
             return [
                 'success' => false,
-                'message' => 'This verification code has expired (10-minute limit). Please click "Resend Code" to receive a fresh code.'
+                'message' => 'This verification code has expired (5-minute limit). Please click "Resend Code" to receive a fresh code.'
             ];
         }
 
@@ -290,10 +324,11 @@ class BookingVerificationHelper {
             ];
         }
 
-        // Cooldown check: 60 seconds
+        // Cooldown check: 60 seconds (Only enforce if the prior send did not fail)
         $last_resend = (int)($pending['last_resend_at'] ?? 0);
+        $last_failed = !empty($pending['last_send_failed']);
         $elapsed = time() - $last_resend;
-        if ($elapsed < self::RESEND_COOLDOWN_SECONDS) {
+        if (!$last_failed && $elapsed < self::RESEND_COOLDOWN_SECONDS) {
             $wait = self::RESEND_COOLDOWN_SECONDS - $elapsed;
             return [
                 'success' => false,
@@ -301,25 +336,41 @@ class BookingVerificationHelper {
             ];
         }
 
-        // Generate fresh 6-digit code
-        $new_code = sprintf("%06d", random_int(100000, 999999));
-        $_SESSION['pending_booking_verification']['code']           = $new_code;
-        $_SESSION['pending_booking_verification']['expires_at']     = time() + self::CODE_EXPIRY_SECONDS;
-        $_SESSION['pending_booking_verification']['last_resend_at'] = time();
-        $_SESSION['pending_booking_verification']['attempts']       = 0; // reset attempts for fresh code
-
-        $masked_email = self::maskEmail($pending['email']);
+        // Generate candidate fresh 6-digit code - DO NOT overwrite existing code until email succeeds!
+        $candidate_code = sprintf("%06d", random_int(100000, 999999));
+        $resend_error = '';
 
         $sent = NotificationHelper::sendBookingVerificationCodeEmail(
             $conn,
             $pending['email'],
             $pending['name'],
-            $new_code,
-            $pending['summary'] ?? []
+            $candidate_code,
+            $pending['summary'] ?? [],
+            $resend_error
         );
+
+        if (!$sent) {
+            $_SESSION['pending_booking_verification']['last_send_failed'] = true;
+            return [
+                'success'    => false,
+                'email_sent' => false,
+                'error'      => $resend_error,
+                'message'    => "Unable to deliver verification code to {$pending['email']}. " . (!empty($resend_error) ? "Reason: {$resend_error}. " : "") . "Please verify your email address or use 'Change Email'."
+            ];
+        }
+
+        // Send succeeded: Now safely update active session code, expiry, cooldown, and reset attempts
+        $_SESSION['pending_booking_verification']['code']             = $candidate_code;
+        $_SESSION['pending_booking_verification']['expires_at']       = time() + self::CODE_EXPIRY_SECONDS;
+        $_SESSION['pending_booking_verification']['last_resend_at']   = time();
+        $_SESSION['pending_booking_verification']['last_send_failed'] = false;
+        $_SESSION['pending_booking_verification']['attempts']         = 0;
+
+        $masked_email = self::maskEmail($pending['email']);
 
         return [
             'success'      => true,
+            'email_sent'   => true,
             'message'      => "A fresh 6-digit verification code has been dispatched to {$pending['email']}.",
             'email'        => $pending['email'],
             'masked_email' => $masked_email,
@@ -356,11 +407,21 @@ class BookingVerificationHelper {
             ];
         }
 
-        $new_email = trim($new_email);
+        $new_email = strtolower(trim($new_email));
         if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
             return [
                 'success' => false,
                 'message' => 'Please enter a valid email address (e.g. name@gmail.com).'
+            ];
+        }
+
+        $email_domain = strtolower(substr(strrchr($new_email, "@"), 1));
+        $typo_suggestion = self::checkDomainTypo($new_email);
+        if ($typo_suggestion) {
+            $suggested_full = substr($new_email, 0, strrpos($new_email, '@') + 1) . $typo_suggestion;
+            return [
+                'success' => false,
+                'message' => "The email domain '@{$email_domain}' appears to be a typo for '@{$typo_suggestion}'. Did you mean '{$suggested_full}'? Please fix it to receive your verification code."
             ];
         }
 
@@ -375,38 +436,51 @@ class BookingVerificationHelper {
             ];
         }
 
-        // Generate fresh 6-digit code
-        $new_code = sprintf("%06d", random_int(100000, 999999));
+        // Generate candidate fresh 6-digit code for the updated email
+        $candidate_code = sprintf("%06d", random_int(100000, 999999));
+        $update_error = '';
 
-        // Update pending session state
-        $_SESSION['pending_booking_verification']['email']          = $new_email;
-        if (isset($_SESSION['pending_booking_verification']['payload']) && is_array($_SESSION['pending_booking_verification']['payload'])) {
-            $_SESSION['pending_booking_verification']['payload']['client_email'] = $new_email;
-        }
-        if (isset($_SESSION['pending_booking_verification']['summary']) && is_array($_SESSION['pending_booking_verification']['summary'])) {
-            $_SESSION['pending_booking_verification']['summary']['client_email'] = $new_email;
-        }
-        $_SESSION['pending_booking_verification']['code']           = $new_code;
-        $_SESSION['pending_booking_verification']['expires_at']     = time() + self::CODE_EXPIRY_SECONDS;
-        $_SESSION['pending_booking_verification']['last_resend_at'] = time();
-        $_SESSION['pending_booking_verification']['attempts']       = 0;
-
-        $masked_email = self::maskEmail($new_email);
+        $summary = $pending['summary'] ?? [];
+        $summary['client_email'] = $new_email;
 
         $sent = NotificationHelper::sendBookingVerificationCodeEmail(
             $conn,
             $new_email,
             $pending['name'],
-            $new_code,
-            $_SESSION['pending_booking_verification']['summary'] ?? []
+            $candidate_code,
+            $summary,
+            $update_error
         );
+
+        if (!$sent) {
+            return [
+                'success'    => false,
+                'email_sent' => false,
+                'error'      => $update_error,
+                'message'    => "Failed to deliver verification code to {$new_email}. " . (!empty($update_error) ? "({$update_error}) " : "") . "Please check spelling or provide a different address."
+            ];
+        }
+
+        // Dispatch succeeded: Now update pending session state
+        $_SESSION['pending_booking_verification']['email']            = $new_email;
+        if (isset($_SESSION['pending_booking_verification']['payload']) && is_array($_SESSION['pending_booking_verification']['payload'])) {
+            $_SESSION['pending_booking_verification']['payload']['client_email'] = $new_email;
+        }
+        $_SESSION['pending_booking_verification']['summary']          = $summary;
+        $_SESSION['pending_booking_verification']['code']             = $candidate_code;
+        $_SESSION['pending_booking_verification']['expires_at']       = time() + self::CODE_EXPIRY_SECONDS;
+        $_SESSION['pending_booking_verification']['last_resend_at']   = time();
+        $_SESSION['pending_booking_verification']['last_send_failed'] = false;
+        $_SESSION['pending_booking_verification']['attempts']         = 0;
+
+        $masked_email = self::maskEmail($new_email);
 
         return [
             'success'      => true,
+            'email_sent'   => true,
             'message'      => "Verification code has been successfully dispatched to your corrected email: {$new_email}.",
             'email'        => $new_email,
             'masked_email' => $masked_email,
-            'email_sent'   => $sent,
             'expires_in'   => self::CODE_EXPIRY_SECONDS
         ];
     }
@@ -432,5 +506,43 @@ class BookingVerificationHelper {
             'expires_in'   => $remaining_secs,
             'summary'      => $pending['summary'] ?? []
         ];
+    }
+
+    /**
+     * Checks if the email domain is a common mistyped variant of major email providers.
+     * Returns suggested correction string or null if not recognized as a typo.
+     */
+    public static function checkDomainTypo(string $email): ?string {
+        $parts = explode('@', trim($email));
+        if (count($parts) !== 2) return null;
+        $domain = strtolower($parts[1]);
+
+        $common_domain_typos = [
+            'gmai.com'   => 'gmail.com',
+            'gmial.com'  => 'gmail.com',
+            'gamil.com'  => 'gmail.com',
+            'gnail.com'  => 'gmail.com',
+            'gmaill.com' => 'gmail.com',
+            'gmal.com'   => 'gmail.com',
+            'gmaik.com'  => 'gmail.com',
+            'gmail.co'   => 'gmail.com',
+            'gmail.con'  => 'gmail.com',
+            'gemail.com' => 'gmail.com',
+            'yaho.com'   => 'yahoo.com',
+            'yahooo.com' => 'yahoo.com',
+            'yhaoo.com'  => 'yahoo.com',
+            'yahoo.co'   => 'yahoo.com',
+            'yahoo.con'  => 'yahoo.com',
+            'hotmial.com'=> 'hotmail.com',
+            'hotmaill.com'=> 'hotmail.com',
+            'hotmai.com' => 'hotmail.com',
+            'outlok.com' => 'outlook.com',
+            'outloo.com' => 'outlook.com',
+            'outllok.com'=> 'outlook.com',
+            'iclod.com'  => 'icloud.com',
+            'iclou.com'  => 'icloud.com'
+        ];
+
+        return $common_domain_typos[$domain] ?? null;
     }
 }

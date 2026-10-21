@@ -5,8 +5,8 @@
 # Prevent directory indexing/browsing
 Options -Indexes
 
-# Protect sensitive configuration, environment, and database files
-<FilesMatch "^(\.env.*|\.git.*|\.ht.*|.*\.sql|.*\.log|composer\.(json|lock)|phpunit\.xml|\.user\.ini)$">
+# Protect sensitive configuration, environment, database, and cache files
+<FilesMatch "^(\.env.*|\.git.*|\.ht.*|.*\.sql|.*\.log|.*\.cache|.*\.bak|composer\.(json|lock)|phpunit\.xml|\.user\.ini)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

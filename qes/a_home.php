@@ -116,7 +116,7 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title><?= htmlspecialchars($business_name) ?> - Admin Dashboard</title>
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
@@ -364,12 +364,34 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
                 <i class="fa-solid fa-crown" style="position: absolute; right: -15px; bottom: -20px; font-size: 140px; color: rgba(255, 255, 255, 0.05); pointer-events: none;"></i>
             </div>
 
-            <!-- Gemini Free Tier AI Quota Monitor -->
+            <?php if ($pending_count > 0): ?>
+                <!-- Pending Inquiries Attention Alert -->
+                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-lg); padding: 18px 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: var(--shadow-sm);">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <div style="width: 44px; height: 44px; border-radius: 50%; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
+                            <i class="fa-solid fa-bell"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; font-size: 15px; color: #92400e;">
+                                <?= $pending_count ?> New Client <?= ($pending_count === 1) ? 'Inquiry' : 'Inquiries' ?> Awaiting Your Review
+                            </div>
+                            <div style="font-size: 13px; color: #b45309; margin-top: 2px;">
+                                Clients have submitted booking inquiries through the public booking portal. Review their requested dates and custom package estimates.
+                            </div>
+                        </div>
+                    </div>
+                    <a href="a_events.php?status=pending" class="btn-primary" style="padding: 10px 20px; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; border-radius: 8px;">
+                        <i class="fa-solid fa-clock"></i> Review Inquiries
+                    </a>
+                </div>
+            <?php endif; ?>
+
+            <!-- AI Quota Monitor -->
             <div class="ai-quota-card">
                 <div class="ai-quota-header">
                     <div class="ai-quota-title">
                         <i class="fa-solid fa-robot"></i>
-                        <span>AI Chatbot Daily Quota <small style="font-weight:400;color:var(--text-muted);">(Gemini Free Tier)</small></span>
+                        <span>AI Chatbot Daily Quota</span>
                     </div>
                     <span class="ai-status-badge" style="background: <?= $ai_status_color ?>;">
                         <i class="fa-solid fa-circle" style="font-size:7px;"></i>
@@ -387,8 +409,6 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
                     <span><strong><?= $ai_daily_remaining ?></strong> requests remaining today</span>
                     <span>•</span>
                     <span>Resets at <strong>midnight (12:00 AM)</strong></span>
-                    <span>•</span>
-                    <span>Hard cap: <strong>1,500 RPD / 15 RPM</strong> (Google Free Tier)</span>
                 </div>
             </div>
 
@@ -418,28 +438,6 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
                     <div style="font-size: 12px; color: #15803d; font-weight: 600;">Customer accounts</div>
                 </div>
             </div>
-
-            <?php if ($pending_count > 0): ?>
-                <!-- Pending Inquiries Attention Alert -->
-                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-lg); padding: 18px 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: var(--shadow-sm);">
-                    <div style="display: flex; align-items: center; gap: 14px;">
-                        <div style="width: 44px; height: 44px; border-radius: 50%; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
-                            <i class="fa-solid fa-bell"></i>
-                        </div>
-                        <div>
-                            <div style="font-weight: 700; font-size: 15px; color: #92400e;">
-                                <?= $pending_count ?> New Client <?= ($pending_count === 1) ? 'Inquiry' : 'Inquiries' ?> Awaiting Your Review
-                            </div>
-                            <div style="font-size: 13px; color: #b45309; margin-top: 2px;">
-                                Clients have submitted booking inquiries through the public booking portal. Review their requested dates and custom package estimates.
-                            </div>
-                        </div>
-                    </div>
-                    <a href="a_events.php?status=pending" class="btn-primary" style="padding: 10px 20px; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; border-radius: 8px;">
-                        <i class="fa-solid fa-clock"></i> Review Inquiries
-                    </a>
-                </div>
-            <?php endif; ?>
 
             <!-- Panel 8: Two-Column Grid (Recent Bookings Table + Upcoming Events List) -->
             <div class="dashboard-grid" style="grid-template-columns: 1.5fr 1fr; gap: 24px;">
