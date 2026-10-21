@@ -18,8 +18,8 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         await expect(clientModal).toHaveClass(/active/);
         await expect(clientModal.locator('h3')).toContainText('Client Portal');
 
-        // Verify Google Auth button container is present
-        await expect(clientModal.locator('#modalGoogleBtnContainer')).toBeAttached();
+        // Verify Google Auth button is present
+        await expect(clientModal.locator('#modalSupabaseGoogleBtn')).toBeVisible();
 
         // Verify tabs
         const tabLogin = clientModal.locator('#tabModalLogin');
