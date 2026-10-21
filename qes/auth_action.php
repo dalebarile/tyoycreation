@@ -352,6 +352,165 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 
     // ============================================================
+    // SUPABASE OAUTH LOGIN ACTION (Verified via Supabase Auth API)
+    // ============================================================
+    if ($action === 'supabase_login') {
+        $client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $rate_check = qes_rate_limit_check('supabase_login', $client_ip, 10, 600);
+        if (!$rate_check['allowed']) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'message' => $rate_check['message']]);
+            exit;
+        }
+
+        $access_token = trim($_POST['access_token'] ?? '');
+        if (empty($access_token)) {
+            echo json_encode(['success' => false, 'message' => 'Supabase access token required.']);
+            exit;
+        }
+
+        $supabase_url = defined('ENV_SUPABASE_URL') ? rtrim(ENV_SUPABASE_URL, '/') : 'https://kanotzhwqsscejqecqom.supabase.co';
+        $anon_key = defined('ENV_SUPABASE_ANON_KEY') ? ENV_SUPABASE_ANON_KEY : '';
+
+        // Query Supabase /auth/v1/user with bearer access_token
+        $ch = curl_init("{$supabase_url}/auth/v1/user");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$access_token}",
+            "apikey: {$anon_key}"
+        ]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $res = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $userData = json_decode($res, true);
+        if ($code !== 200 || empty($userData['email'])) {
+            echo json_encode(['success' => false, 'message' => 'Failed to verify user identity with Supabase.']);
+            exit;
+        }
+
+        $email = strtolower(trim($userData['email']));
+        $user_meta = $userData['user_metadata'] ?? [];
+        $full_name = trim($user_meta['full_name'] ?? ($user_meta['name'] ?? ''));
+        if (empty($full_name)) {
+            $parts = explode('@', $email);
+            $full_name = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+        }
+
+        // Match or create in users table
+        $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        if ($res && $res->num_rows === 1) {
+            $user = $res->fetch_assoc();
+            $stmt->close();
+
+            if ($user['status'] !== 'approved') {
+                echo json_encode(['success' => false, 'message' => 'Your account status is: ' . htmlspecialchars($user['status']) . '.']);
+                exit;
+            }
+
+            if (in_array($user['role'], ['admin', 'super_admin', 'main_admin'])) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Administrator accounts must sign in via the Admin Portal with administrative credentials.'
+                ]);
+                exit;
+            }
+
+            qes_rate_limit_clear('supabase_login', $client_ip);
+            session_regenerate_id(true);
+
+            $_SESSION['id'] = (int)$user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = 'user';
+            $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $full_name;
+            $_SESSION['email'] = $user['email'];
+            $_SESSION['phone'] = $user['phone'] ?? '';
+
+            if (function_exists('track_user_session')) {
+                track_user_session($conn, (int)$user['id'], true);
+            }
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'Signed in with Google via Supabase successfully!',
+                'user' => [
+                    'id' => $_SESSION['id'],
+                    'username' => $_SESSION['username'],
+                    'full_name' => $_SESSION['full_name'],
+                    'email' => $_SESSION['email'],
+                    'phone' => $_SESSION['phone'],
+                    'role' => 'user'
+                ],
+                'redirect' => 'index.php'
+            ]);
+            exit;
+        } else {
+            if ($stmt) $stmt->close();
+
+            $username_base = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode('@', $email)[0]));
+            if (empty($username_base)) $username_base = 'user';
+            $username = $username_base;
+
+            $check_u = $conn->prepare("SELECT id FROM users WHERE username = ?");
+            $check_u->bind_param("s", $username);
+            $check_u->execute();
+            if ($check_u->get_result()->num_rows > 0) {
+                $username = $username_base . rand(100, 999);
+            }
+            $check_u->close();
+
+            $dummy_pass = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+            $role = 'user';
+            $status = 'approved';
+
+            $insert = $conn->prepare("INSERT INTO users (username, full_name, email, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+            $insert->bind_param("ssssss", $username, $full_name, $email, $dummy_pass, $role, $status);
+
+            if ($insert->execute()) {
+                $new_id = (int)$insert->insert_id;
+                $insert->close();
+
+                qes_rate_limit_clear('supabase_login', $client_ip);
+                session_regenerate_id(true);
+
+                $_SESSION['id'] = $new_id;
+                $_SESSION['username'] = $username;
+                $_SESSION['role'] = 'user';
+                $_SESSION['full_name'] = $full_name;
+                $_SESSION['email'] = $email;
+                $_SESSION['phone'] = '';
+
+                if (function_exists('track_user_session')) {
+                    track_user_session($conn, $new_id, true);
+                }
+
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Connected successfully via Supabase!',
+                    'user' => [
+                        'id' => $new_id,
+                        'username' => $username,
+                        'full_name' => $full_name,
+                        'email' => $email,
+                        'phone' => '',
+                        'role' => 'user'
+                    ],
+                    'redirect' => 'index.php'
+                ]);
+                exit;
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Could not create account due to a database error. Please try again shortly.']);
+                exit;
+            }
+        }
+    }
+
+    // ============================================================
     // REGISTRATION ACTION (Public Client Registration)
     // ============================================================
     if ($action === 'register') {

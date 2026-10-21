@@ -521,17 +521,16 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                 <span id="dividerText">or continue with Google</span>
             </div>
 
-            <!-- Google One-Click Connect Button (placed below) -->
+            <!-- Google One-Click Connect Button via Supabase OAuth -->
             <div class="google-connect-wrapper" style="margin-bottom: 8px;">
-                <div id="googleBtnContainer" style="display: flex; justify-content: center; width: 100%;"></div>
-                <button type="button" class="btn-google-custom" id="fallbackGoogleBtn" onclick="triggerGoogleOneTap()" style="display: none;">
+                <button type="button" class="btn-google-custom" id="supabaseGoogleBtn" onclick="signInWithSupabaseGoogle()" style="display: flex; justify-content: center; align-items: center; gap: 10px; width: 100%;">
                     <svg width="18" height="18" viewBox="0 0 18 18">
                         <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"/>
                         <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
                         <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.59.102-1.167.282-1.707V4.961H.957C.347 6.173 0 7.548 0 9s.347 2.827.957 4.039l3.007-2.332z"/>
                         <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
                     </svg>
-                    <span>Connect with Google Account</span>
+                    <span>Continue with Google</span>
                 </button>
             </div>
         </div>
@@ -613,94 +612,63 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             }
         }
 
-        // Google Identity Services (GIS)
-        let gisInitialized = false;
-        function initGoogleAuth() {
-            if (window.google && GOOGLE_CLIENT_ID && !gisInitialized) {
-                try {
-                    google.accounts.id.initialize({
-                        client_id: GOOGLE_CLIENT_ID,
-                        callback: handleGoogleCredentialResponse,
-                        auto_select: false,
-                        cancel_on_tap_outside: true
-                    });
+        // Supabase Google OAuth
+        const SUPABASE_AUTH_URL = <?= json_encode(defined('ENV_SUPABASE_URL') ? rtrim(ENV_SUPABASE_URL, '/') : 'https://kanotzhwqsscejqecqom.supabase.co') ?>;
 
-                    const btnContainer = document.getElementById('googleBtnContainer');
-                    if (btnContainer) {
-                        google.accounts.id.renderButton(btnContainer, {
-                            type: 'standard',
-                            theme: 'outline',
-                            size: 'large',
-                            text: 'continue_with',
-                            shape: 'rectangular',
-                            width: 320,
-                            logo_alignment: 'left'
-                        });
-                    }
-                    gisInitialized = true;
-                } catch (e) {
-                    console.warn('[QES Google GIS] Init warning:', e);
-                    showFallbackGoogleBtn();
-                }
-            } else if (!GOOGLE_CLIENT_ID) {
-                showFallbackGoogleBtn();
-            }
-        }
-
-        function showFallbackGoogleBtn() {
-            const fallback = document.getElementById('fallbackGoogleBtn');
-            if (fallback) fallback.style.display = 'flex';
-        }
-
-        function triggerGoogleOneTap() {
-            if (window.google && GOOGLE_CLIENT_ID) {
-                try {
-                    google.accounts.id.prompt();
-                } catch (e) {
-                    console.warn('[QES Google One Tap]', e);
-                }
-            }
-        }
-
-        window.addEventListener('load', () => {
-            initGoogleAuth();
-        });
-
-        async function handleGoogleCredentialResponse(response) {
+        function signInWithSupabaseGoogle() {
             hideAlert();
-            if (!response || !response.credential) {
-                showAlert('No Google authorization credential received. Please try again.');
-                return;
+            const btn = document.getElementById('supabaseGoogleBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting to Google...';
             }
+            const redirectUrl = window.location.origin + window.location.pathname;
+            window.location.href = `${SUPABASE_AUTH_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+        }
+
+        async function checkSupabaseOAuthCallback() {
+            const hash = window.location.hash.substring(1);
+            if (!hash || !hash.includes('access_token=')) return;
+
+            const params = new URLSearchParams(hash);
+            const accessToken = params.get('access_token');
+            if (!accessToken) return;
+
+            showAlert('Verifying Google authorization with Supabase...', 'success');
 
             try {
                 const formData = new FormData();
                 formData.append('csrf_token', <?= json_encode(csrf_token()) ?>);
-                formData.append('action', 'google_login');
-                formData.append('credential', response.credential);
+                formData.append('action', 'supabase_login');
+                formData.append('access_token', accessToken);
 
-                const res = await fetch('auth_action.php?action=google_login', {
+                const res = await fetch('auth_action.php?action=supabase_login', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
                 if (data.success) {
+                    try { history.replaceState(null, '', window.location.pathname); } catch(e){}
                     if (REDIRECT_TARGET === 'index.php') {
                         try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
                     } else {
                         sessionStorage.setItem('tyoy_privacy_agreed', '1');
                     }
-                    showAlert('Signed in with Google! Redirecting...', 'success');
+                    showAlert('Signed in with Google successfully! Redirecting...', 'success');
                     setTimeout(() => {
                         window.location.href = REDIRECT_TARGET;
                     }, 500);
                 } else {
-                    showAlert(data.message || 'Google sign in failed.');
+                    showAlert(data.message || 'Supabase authentication failed.');
                 }
             } catch (err) {
                 showAlert('Network error communicating with server. Please try again.');
             }
         }
+
+        window.addEventListener('load', () => {
+            checkSupabaseOAuthCallback();
+        });
 
         // Standard Login Submit
         async function handleLoginSubmit(e) {

@@ -371,7 +371,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <span>or continue with</span>
         </div>
 
-        <button type="button" class="btn-google-connect" onclick="openGoogleAuthModal()" title="Sign up with Google">
+        <button type="button" class="btn-google-connect" id="supabaseGoogleRegBtn" onclick="signInWithSupabaseGoogle()" title="Sign up with Google">
             <svg width="20" height="20" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -439,98 +439,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        let gisInitialized = false;
+        // Supabase Google OAuth
+        const SUPABASE_AUTH_URL = <?= json_encode(defined('ENV_SUPABASE_URL') ? rtrim(ENV_SUPABASE_URL, '/') : 'https://kanotzhwqsscejqecqom.supabase.co') ?>;
 
-        function initGoogleAuth() {
-            if (window.google && GOOGLE_CLIENT_ID && !gisInitialized) {
-                try {
-                    google.accounts.id.initialize({
-                        client_id: GOOGLE_CLIENT_ID,
-                        callback: handleGoogleCredentialResponse,
-                        auto_select: false,
-                        cancel_on_tap_outside: true
-                    });
-                    
-                    const btnContainer = document.getElementById('googleSignInBtn');
-                    if (btnContainer) {
-                        google.accounts.id.renderButton(btnContainer, {
-                            type: 'standard',
-                            theme: 'outline',
-                            size: 'large',
-                            text: 'continue_with',
-                            shape: 'rectangular',
-                            width: 280,
-                            logo_alignment: 'left'
-                        });
-                    }
-                    gisInitialized = true;
-                } catch (e) {
-                    console.warn('[QES Google] GIS init:', e);
-                }
+        function signInWithSupabaseGoogle() {
+            const btn = document.getElementById('supabaseGoogleRegBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting to Google...';
             }
+            const redirectUrl = window.location.origin + window.location.pathname;
+            window.location.href = `${SUPABASE_AUTH_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
         }
 
-        window.addEventListener('load', () => {
-            initGoogleAuth();
-        });
+        async function checkSupabaseOAuthCallback() {
+            const hash = window.location.hash.substring(1);
+            if (!hash || !hash.includes('access_token=')) return;
 
-        function openGoogleAuthModal() {
-            const modal = document.getElementById('googleAuthModal');
-            if (modal) modal.style.display = 'flex';
-            if (window.google && GOOGLE_CLIENT_ID) {
-                initGoogleAuth();
-                try {
-                    google.accounts.id.prompt();
-                } catch (e) {
-                    console.warn('[QES Google] One Tap prompt error:', e);
-                }
-            }
-        }
+            const params = new URLSearchParams(hash);
+            const accessToken = params.get('access_token');
+            if (!accessToken) return;
 
-        function closeGoogleAuthModal() {
-            const modal = document.getElementById('googleAuthModal');
-            if (modal) modal.style.display = 'none';
-        }
-
-        async function handleGoogleCredentialResponse(response) {
-            const errBox = document.getElementById('googleAuthError');
-            if (errBox) errBox.style.display = 'none';
-
-            if (!response || !response.credential) {
-                if (errBox) {
-                    errBox.textContent = 'No Google credential received. Please try again.';
-                    errBox.style.display = 'block';
-                }
-                return;
+            const btn = document.getElementById('supabaseGoogleRegBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verifying with Google...';
             }
 
             try {
                 const formData = new FormData();
                 formData.append('csrf_token', <?= json_encode(csrf_token()) ?>);
-                formData.append('action', 'google_login');
-                formData.append('credential', response.credential);
+                formData.append('action', 'supabase_login');
+                formData.append('access_token', accessToken);
 
-                const res = await fetch('auth_action.php?action=google_login', {
+                const res = await fetch('auth_action.php?action=supabase_login', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
                 if (data.success) {
+                    try { history.replaceState(null, '', window.location.pathname); } catch(e){}
                     const redirect = new URLSearchParams(window.location.search).get('redirect') || data.redirect || 'index.php';
                     window.location.href = redirect;
                 } else {
-                    if (errBox) {
-                        errBox.textContent = data.message || 'Google sign in failed.';
-                        errBox.style.display = 'block';
+                    alert(data.message || 'Supabase authentication failed.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = 'Continue with Google';
                     }
                 }
             } catch (err) {
-                if (errBox) {
-                    errBox.textContent = 'Connection error during verification. Please try again.';
-                    errBox.style.display = 'block';
+                alert('Connection error communicating with server. Please try again.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = 'Continue with Google';
                 }
             }
         }
+
+        window.addEventListener('load', () => {
+            checkSupabaseOAuthCallback();
+        });
     </script>
 </body>
 </html>
