@@ -3,7 +3,7 @@ require_once __DIR__ . '/db.php';
 
 // Determine base href
 $script_dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
-$base_href = ($script_dir === '/' || $script_dir === '.') ? '/' : ($script_dir . '/');
+$base_href = ($script_dir === '/' || $script_dir === '.' || $script_dir === '/api') ? '/' : ($script_dir . '/');
 
 // If already logged in, redirect
 if (isset($_SESSION['id']) && !empty($_SESSION['role'])) {

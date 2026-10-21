@@ -3,13 +3,16 @@ require_once __DIR__ . '/db.php';
 
 // Determine web root path (e.g., /qes)
 $script_dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
-if ($script_dir === '/' || $script_dir === '.') {
+if ($script_dir === '/' || $script_dir === '.' || $script_dir === '/api') {
     $base_href = '/';
 } else {
     $base_href = $script_dir . '/';
 }
 
 // If already logged in as admin, redirect to admin home
+if (empty($_SESSION['id']) && function_exists('qes_restore_admin_session_from_cookie')) {
+    qes_restore_admin_session_from_cookie($conn);
+}
 if (isset($_SESSION['id']) && !empty($_SESSION['role'])) {
     if (in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'])) {
         header("Location: " . $base_href . "a_home.php");
@@ -34,16 +37,23 @@ if (!$ip_initial_check['allowed']) {
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && !$is_locked) {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-
-    // Cloudflare Turnstile Verification
-    if (qes_is_turnstile_enabled($conn)) {
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $login_error = "Your security token has expired. Please enter your credentials to log in.";
+    } elseif (qes_is_turnstile_enabled($conn)) {
+        // Cloudflare Turnstile Verification
         $ts_token = $_POST['cf-turnstile-response'] ?? '';
-        $ts_check = qes_verify_turnstile($ts_token, $client_ip, $conn);
-        if (!$ts_check['success']) {
-            $login_error = $ts_check['error'] ?? 'Security check failed. Please complete the Cloudflare Turnstile verification.';
+        $ts_failed = (!empty($_POST['cf_turnstile_failed']) && $_POST['cf_turnstile_failed'] === '1');
+
+        if (!empty($ts_token)) {
+            $ts_check = qes_verify_turnstile($ts_token, $client_ip, $conn);
+            if (!$ts_check['success']) {
+                $login_error = $ts_check['error'] ?? 'Security check failed. Please complete the Cloudflare Turnstile verification.';
+            }
+        } elseif ($ts_failed) {
+            // Widget failed to connect on this network/domain. Allow login under strict brute-force rate limits.
+            error_log("[QES Turnstile] Widget connection failure on client IP: {$client_ip}. Proceeding with brute-force rate limit protection.");
+        } else {
+            $login_error = "Please complete the Cloudflare Turnstile security check.";
         }
     }
 
@@ -71,6 +81,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && !$is_locked) {
 
                 // Track device & active session
                 track_user_session($conn, (int)$user['id'], true);
+
+                // Set signed admin auth cookie for serverless session persistence
+                qes_set_admin_auth_cookie((int)$user['id'], $user['password']);
 
                 header("Location: " . $base_href . "a_home.php");
                 exit;
@@ -378,8 +391,16 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
 
             <?php if (qes_is_turnstile_enabled($conn)): ?>
             <!-- Cloudflare Turnstile CAPTCHA Protection -->
-            <div class="login-field" style="margin-bottom: 18px; display: flex; justify-content: center;">
-                <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars(qes_get_turnstile_site_key($conn)) ?>" data-theme="light"></div>
+            <div class="login-field" id="turnstileWrapper" style="margin-bottom: 18px; display: flex; flex-direction: column; align-items: center;">
+                <div class="cf-turnstile" 
+                     data-sitekey="<?= htmlspecialchars(qes_get_turnstile_site_key($conn)) ?>" 
+                     data-theme="light"
+                     data-error-callback="onTurnstileError"
+                     data-timeout-callback="onTurnstileTimeout"></div>
+                <input type="hidden" name="cf_turnstile_failed" id="cfTurnstileFailed" value="0">
+                <div id="turnstileFallbackNotice" style="display: none; font-size: 11.5px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px; margin-top: 8px; text-align: center; max-width: 300px;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Security challenge unavailable on this domain. Protected by server-side rate limits.
+                </div>
             </div>
             <?php endif; ?>
 
@@ -632,6 +653,20 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         const CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
         let fpCurrentIdentifier = '';
         let fpVerifiedCode = '';
+
+        function onTurnstileError(errorCode) {
+            console.warn('[QES Turnstile] Connection error:', errorCode);
+            const flag = document.getElementById('cfTurnstileFailed');
+            if (flag) flag.value = '1';
+            const notice = document.getElementById('turnstileFallbackNotice');
+            if (notice) notice.style.display = 'block';
+        }
+
+        function onTurnstileTimeout() {
+            console.warn('[QES Turnstile] Timeout');
+            const flag = document.getElementById('cfTurnstileFailed');
+            if (flag) flag.value = '1';
+        }
 
         function togglePasswordVisibility() {
             const input = document.getElementById('passwordInput');

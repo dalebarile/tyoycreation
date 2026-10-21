@@ -142,6 +142,17 @@ class SecurityTest extends TestCase
         // Forged or empty token fails hash_equals
         $this->assertFalse(hash_equals($_SESSION['csrf_token'], 'forged_csrf_token_value_attempt'));
         $this->assertFalse(hash_equals($_SESSION['csrf_token'], ''));
+
+        // qes_verify_csrf validation
+        $this->assertTrue(qes_verify_csrf($token));
+        $this->assertFalse(qes_verify_csrf('forged_csrf_token_value_attempt'));
+        $this->assertFalse(qes_verify_csrf(''));
+
+        // Test stateless serverless resilience: token verifies even when $_SESSION is empty
+        unset($_SESSION['csrf_token']);
+        $_COOKIE['tyoy_csrf'] = '';
+        $this->assertTrue(qes_verify_csrf($token), 'Stateless HMAC token must verify even when session container is empty');
+        $this->assertSame($token, $_SESSION['csrf_token'], 'qes_verify_csrf must re-populate session upon valid stateless verification');
     }
 
     public function test_password_reset_code_is_six_digits(): void

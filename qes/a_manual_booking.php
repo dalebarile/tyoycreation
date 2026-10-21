@@ -10,10 +10,10 @@ $success_msg = '';
 $error_msg = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-    $client_name = trim($_POST['client_name'] ?? '');
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $error_msg = 'Security validation token expired. Please refresh the page and try again.';
+    } else {
+        $client_name = trim($_POST['client_name'] ?? '');
     $client_phone = preg_replace('/[^0-9]/', '', trim($_POST['client_phone'] ?? ''));
     $client_email = trim($_POST['client_email'] ?? '');
     $client_address = trim($_POST['client_address'] ?? '');
@@ -55,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $error_msg = $createResult['message'];
     }
+}
 }
 ?>
 <!DOCTYPE html>

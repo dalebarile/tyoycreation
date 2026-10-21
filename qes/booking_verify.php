@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'status') {
 
 // CSRF check
 $csrf = $_POST['csrf_token'] ?? '';
-if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
+if (!qes_verify_csrf($csrf)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Security token mismatch. Please refresh and try again.']);
     exit;

@@ -16,9 +16,9 @@ $register_error = '';
 $register_success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $register_error = 'Your registration session has expired. Please try again.';
+    } else {
 
     $full_name = trim($_POST['full_name'] ?? '');
     $username = trim($_POST['username'] ?? '');
@@ -89,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+}
 }
 ?>
 <!DOCTYPE html>

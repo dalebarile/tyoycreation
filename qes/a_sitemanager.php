@@ -34,11 +34,10 @@ function handle_image_upload($file_key, $existing_val) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-
-    $action = $_POST['action'] ?? '';
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $msg_error = 'Security validation token expired. Please refresh the page and try again.';
+    } else {
+        $action = $_POST['action'] ?? '';
 
     if ($action === 'save_business') {
         $active_tab = 'business';
@@ -143,6 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $msg_success = "Portfolio photos and details updated successfully!";
     }
+}
 }
 
 // Fetch current values

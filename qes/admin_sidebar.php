@@ -3,10 +3,7 @@
 require_once __DIR__ . '/db.php';
 
 // Auth check
-if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'])) {
-    header("Location: loginadmin.php");
-    exit;
-}
+require_login();
 
 $is_main_admin = in_array($_SESSION['role'] ?? '', ['main_admin', 'super_admin']);
 

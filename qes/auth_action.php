@@ -97,7 +97,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     // CSRF check (supabase_login is cryptographically authenticated via Supabase /auth/v1/user bearer token)
     $csrf = $_POST['csrf_token'] ?? '';
     $is_supabase_login = ($action === 'supabase_login' && !empty($_POST['access_token']));
-    if (!$is_supabase_login && !hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
+    if (!$is_supabase_login && !qes_verify_csrf($csrf)) {
         echo json_encode(['success' => false, 'message' => 'CSRF validation failed. Please refresh the page.']);
         exit;
     }
@@ -152,6 +152,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     // Track device & active session
                     if (function_exists('track_user_session')) {
                         track_user_session($conn, (int)$user['id'], true);
+                    }
+
+                    if (in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin']) && function_exists('qes_set_admin_auth_cookie')) {
+                        qes_set_admin_auth_cookie((int)$user['id'], $user['password']);
                     }
 
                     $redirect = ($user['role'] === 'admin' || $user['role'] === 'super_admin' || $user['role'] === 'main_admin') ? 'a_home.php' : 'index.php';

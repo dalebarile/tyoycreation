@@ -104,6 +104,7 @@ if (!function_exists('qes_load_env')) {
             'EMAIL_FROM_NAME'        => 'ENV_EMAIL_FROM_NAME',
             'GOOGLE_CLIENT_ID'       => 'ENV_GOOGLE_CLIENT_ID',
             'GOOGLE_CLIENT_SECRET'   => 'ENV_GOOGLE_CLIENT_SECRET',
+            'TURNSTILE_ENABLED'      => 'ENV_TURNSTILE_ENABLED',
             'TURNSTILE_SITE_KEY'     => 'ENV_TURNSTILE_SITE_KEY',
             'TURNSTILE_SECRET_KEY'   => 'ENV_TURNSTILE_SECRET_KEY',
             'DB_HOST'                => 'ENV_DB_HOST',

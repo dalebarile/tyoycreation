@@ -18,10 +18,10 @@ $flash_error = '';
 
 // Handle POST actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-    $action = $_POST['action'] ?? '';
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $flash_error = 'Security validation token expired. Please refresh the page and try again.';
+    } else {
+        $action = $_POST['action'] ?? '';
     $family = $_POST['family'] ?? $active_family;
     if (!in_array($family, ['theme_party', 'wedding'], true)) {
         $family = 'theme_party';
@@ -117,6 +117,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $flash_error = "Failed to reset to defaults.";
         }
     }
+}
 }
 
 // Fetch current pricing catalogs

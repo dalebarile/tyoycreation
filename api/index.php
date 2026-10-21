@@ -6,6 +6,9 @@
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $uri = ltrim($uri, '/');
+if (str_starts_with($uri, 'api/')) {
+    $uri = substr($uri, 4);
+}
 
 $qesDir = dirname(__DIR__) . '/qes';
 if (is_dir($qesDir)) {

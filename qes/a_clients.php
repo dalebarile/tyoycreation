@@ -13,11 +13,11 @@ $alert_type = 'success';
 
 // Handle Data-Subject Requests (DSR) & Retention Schedule Actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-
-    $action = $_POST['action'] ?? '';
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $alert_message = 'Security validation token expired. Please refresh the page and try again.';
+        $alert_type = 'warning';
+    } else {
+        $action = $_POST['action'] ?? '';
 
     // ACTION 1: Export Data-Subject Archive (Right to Data Portability - RA 10173 Sec. 36)
     if ($action === 'export_dsr') {
@@ -76,6 +76,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $alert_type = 'warning';
         }
     }
+}
 }
 
 // Pagination setup

@@ -19,10 +19,11 @@ $monitor_msg_success = '';
 $monitor_msg_error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-    $action = $_POST['action'] ?? '';
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $monitor_msg_error = 'Security validation token expired. Please refresh the page and try again.';
+        $pwd_error = 'Security validation token expired. Please refresh the page and try again.';
+    } else {
+        $action = $_POST['action'] ?? '';
 
     // ─── ACTION 1: Changing Password ─────────────────────────────────────────
     if ($action === 'change_password') {
@@ -280,6 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $up->close();
         }
     }
+}
 }
 
 // ─── Fetch logged-in devices / sessions for current user ─────────────────────

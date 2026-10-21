@@ -27,6 +27,12 @@ if ($uid > 0 && isset($conn) && is_object($conn)) {
 $is_client = (isset($_SESSION['role']) && $_SESSION['role'] === 'user');
 
 $_SESSION = [];
+if (function_exists('qes_clear_admin_auth_cookie')) {
+    qes_clear_admin_auth_cookie();
+}
+if (!headers_sent()) {
+    setcookie('tyoy_csrf', '', time() - 3600, '/');
+}
 if (ini_get("session.use_cookies")) {
     $params = session_get_cookie_params();
     setcookie(session_name(), '', time() - 42000,

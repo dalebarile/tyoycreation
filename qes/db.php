@@ -70,16 +70,125 @@ if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() 
     session_start();
 }
 
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+if (!function_exists('qes_csrf_secret')) {
+    function qes_csrf_secret(): string {
+        if (defined('ENCRYPTION_KEY') && !empty(ENCRYPTION_KEY)) {
+            return ENCRYPTION_KEY;
+        }
+        if (defined('ENV_ENCRYPTION_KEY') && !empty(ENV_ENCRYPTION_KEY)) {
+            return ENV_ENCRYPTION_KEY;
+        }
+        return 'tyoy_master_qes_secret_2026_aes256_sec!';
+    }
 }
 
 if (!function_exists('csrf_token')) {
-    function csrf_token() {
-        if (empty($_SESSION['csrf_token'])) {
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    function csrf_token(): string {
+        $secret = qes_csrf_secret();
+
+        // 1. If session already has a valid token, return it
+        if (!empty($_SESSION['csrf_token']) && is_string($_SESSION['csrf_token'])) {
+            return $_SESSION['csrf_token'];
         }
-        return $_SESSION['csrf_token'] ?? '';
+
+        // 2. If cookie has a valid signed token, restore it into session
+        if (!empty($_COOKIE['tyoy_csrf']) && is_string($_COOKIE['tyoy_csrf'])) {
+            $c_tok = trim($_COOKIE['tyoy_csrf']);
+            if (qes_verify_csrf($c_tok)) {
+                $_SESSION['csrf_token'] = $c_tok;
+                return $_SESSION['csrf_token'];
+            }
+        }
+
+        // 3. Generate a 64-character hex cryptographically signed token:
+        // 16 bytes payload (4-byte timestamp + 12-byte nonce) + 16-byte HMAC signature
+        $ts = pack('N', time());
+        $nonce = random_bytes(12);
+        $data = $ts . $nonce;
+        $sig = substr(hash_hmac('sha256', $data, $secret, true), 0, 16);
+        $token = bin2hex($data . $sig);
+
+        $_SESSION['csrf_token'] = $token;
+
+        // Set matching cookie for stateless serverless resilience
+        if (!headers_sent() && php_sapi_name() !== 'cli') {
+            $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+
+            setcookie('tyoy_csrf', $token, [
+                'expires' => time() + 86400,
+                'path' => '/',
+                'domain' => '',
+                'secure' => $is_https,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
+
+        return $token;
+    }
+}
+
+// Initialize CSRF token
+csrf_token();
+
+if (!function_exists('qes_verify_csrf')) {
+    function qes_verify_csrf(?string $submitted = null): bool {
+        if ($submitted === null) {
+            $submitted = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+        }
+        $submitted = trim((string)$submitted);
+        if (empty($submitted)) {
+            return false;
+        }
+
+        // 1. Session match (fast path)
+        if (!empty($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $submitted)) {
+            return true;
+        }
+
+        // 2. Double-Submit Cookie match (resilient across serverless containers)
+        if (!empty($_COOKIE['tyoy_csrf']) && hash_equals($_COOKIE['tyoy_csrf'], $submitted)) {
+            $_SESSION['csrf_token'] = $submitted;
+            return true;
+        }
+
+        $secret = qes_csrf_secret();
+
+        // 3. Cryptographic HMAC validation for 64-char hex format (16-byte payload + 16-byte HMAC)
+        if (strlen($submitted) === 64 && ctype_xdigit($submitted)) {
+            $raw = @hex2bin($submitted);
+            if ($raw !== false && strlen($raw) === 32) {
+                $v_data = substr($raw, 0, 16);
+                $v_sig = substr($raw, 16, 16);
+                $v_ts = unpack('Nts', substr($v_data, 0, 4))['ts'] ?? 0;
+                // Allow 24h validity window with 5m clock skew allowance
+                if ($v_ts > (time() - 86400) && $v_ts <= (time() + 300)) {
+                    $expected_sig = substr(hash_hmac('sha256', $v_data, $secret, true), 0, 16);
+                    if (hash_equals($expected_sig, $v_sig)) {
+                        $_SESSION['csrf_token'] = $submitted;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 4. Fallback: Dotted format ($ts.$nonce.$sig)
+        $parts = explode('.', $submitted);
+        if (count($parts) === 3) {
+            list($ts, $nonce, $sig) = $parts;
+            $ts = (int)$ts;
+            if ($ts > (time() - 86400) && $ts <= (time() + 300)) {
+                $expected_sig = hash_hmac('sha256', $ts . '.' . $nonce, $secret);
+                if (hash_equals($expected_sig, $sig)) {
+                    $_SESSION['csrf_token'] = $submitted;
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
 
@@ -917,12 +1026,105 @@ if (!function_exists('is_current_session_blocked')) {
     }
 }
 
+if (!function_exists('qes_set_admin_auth_cookie')) {
+    function qes_set_admin_auth_cookie(int $userId, string $passwordHash): void {
+        if ($userId <= 0 || headers_sent() || php_sapi_name() === 'cli') {
+            return;
+        }
+        $secret = qes_csrf_secret();
+        $sig = hash_hmac('sha256', $userId . '|' . $passwordHash, $secret);
+        $val = $userId . '|' . $sig;
+        
+        $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+            || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+
+        setcookie('tyoy_admin_auth', $val, [
+            'expires' => time() + (86400 * 7),
+            'path' => '/',
+            'domain' => '',
+            'secure' => $is_https,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+    }
+}
+
+if (!function_exists('qes_clear_admin_auth_cookie')) {
+    function qes_clear_admin_auth_cookie(): void {
+        if (!headers_sent() && php_sapi_name() !== 'cli') {
+            setcookie('tyoy_admin_auth', '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
+    }
+}
+
+if (!function_exists('qes_restore_admin_session_from_cookie')) {
+    function qes_restore_admin_session_from_cookie($conn): bool {
+        if (!empty($_SESSION['id']) && !empty($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'])) {
+            return true;
+        }
+        if (empty($_COOKIE['tyoy_admin_auth']) || !is_string($_COOKIE['tyoy_admin_auth'])) {
+            return false;
+        }
+        $parts = explode('|', $_COOKIE['tyoy_admin_auth'], 2);
+        if (count($parts) !== 2) {
+            return false;
+        }
+        $userId = (int)$parts[0];
+        $sig = $parts[1];
+        if ($userId <= 0 || empty($sig) || !isset($conn) || !is_object($conn)) {
+            return false;
+        }
+
+        $stmt = $conn->prepare("SELECT id, username, role, full_name, email, phone, password, status FROM users WHERE id = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param("i", $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $user = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+
+        if (!$user || !in_array($user['status'] ?? '', ['approved', 'active'], true) || !in_array($user['role'] ?? '', ['admin', 'super_admin', 'main_admin'], true)) {
+            qes_clear_admin_auth_cookie();
+            return false;
+        }
+
+        $secret = qes_csrf_secret();
+        $expected = hash_hmac('sha256', $userId . '|' . $user['password'], $secret);
+        if (!hash_equals($expected, $sig)) {
+            qes_clear_admin_auth_cookie();
+            return false;
+        }
+
+        // Restore session variables
+        $_SESSION['id'] = (int)$user['id'];
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['role'] = $user['role'];
+        $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
+        $_SESSION['email'] = $user['email'];
+        $_SESSION['phone'] = $user['phone'] ?? '';
+
+        return true;
+    }
+}
+
 if (!function_exists('require_login')) {
     function require_login() {
         global $conn;
         if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'])) {
-            header("Location: loginadmin.php");
-            exit;
+            if (!qes_restore_admin_session_from_cookie($conn)) {
+                header("Location: loginadmin.php");
+                exit;
+            }
         }
 
         $uid = (int)($_SESSION['id'] ?? 0);
@@ -930,6 +1132,7 @@ if (!function_exists('require_login')) {
             if (is_current_session_blocked($conn, $uid)) {
                 session_unset();
                 session_destroy();
+                qes_clear_admin_auth_cookie();
                 header("Location: loginadmin.php?error=device_blocked");
                 exit;
             }
@@ -1171,6 +1374,12 @@ if (!function_exists('qes_get_turnstile_secret_key')) {
 
 if (!function_exists('qes_is_turnstile_enabled')) {
     function qes_is_turnstile_enabled($conn = null): bool {
+        if (defined('ENV_TURNSTILE_ENABLED')) {
+            $env_en = strtolower(trim((string)ENV_TURNSTILE_ENABLED));
+            if ($env_en === '0' || $env_en === 'false' || $env_en === 'off' || $env_en === 'no') {
+                return false;
+            }
+        }
         if ($conn && function_exists('get_setting')) {
             $status = get_setting($conn, 'turnstile_enabled', '1');
             if ($status === '0' || $status === 'false') return false;

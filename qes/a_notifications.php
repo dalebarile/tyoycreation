@@ -10,11 +10,15 @@ $success_msg = '';
 $error_msg = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-
-    $post_action = trim($_POST['post_action'] ?? 'send');
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        if (!empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'message' => 'Security validation token expired. Please refresh the page.']);
+            exit;
+        }
+        $error_msg = 'Security validation token expired. Please refresh the page and try again.';
+    } else {
+        $post_action = trim($_POST['post_action'] ?? 'send');
 
     // ── Retry a specific failed/pending notification ───────────
     if ($post_action === 'retry_notification') {
@@ -116,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+}
 }
 
 // Fetch all clients for recipient dropdown

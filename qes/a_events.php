@@ -38,33 +38,35 @@ $status_counts['bookings'] = $status_counts['approved'] + $status_counts['reject
 // Handle Actions (POST)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
-        die('CSRF token validation failed.');
-    }
-    $action = $_POST['action'] ?? '';
-    $booking_id = (int)($_POST['booking_id'] ?? 0);
-
-    if ($action === 'approve' && $booking_id > 0) {
-        $result = update_booking_status($conn, $booking_id, 'approve');
-        $alert_message = $result['message'];
-        $alert_type = $result['success'] ? 'success' : 'warning';
-    } elseif ($action === 'reject' && $booking_id > 0) {
-        $reason = trim($_POST['rejection_reason'] ?? 'Requested schedule or venue is unavailable.');
-        $result = update_booking_status($conn, $booking_id, 'reject', $reason);
-        $alert_message = $result['message'];
+    if (!qes_verify_csrf($_POST['csrf_token'] ?? '')) {
+        $alert_message = 'Security validation token expired. Please refresh the page and try again.';
         $alert_type = 'warning';
-    } elseif ($action === 'delete_rejected' && $booking_id > 0) {
-        // Only allow permanent deletion of rejected bookings
-        $stmt = $conn->prepare("DELETE FROM bookings WHERE id = ? AND status = 'rejected'");
-        $stmt->bind_param("i", $booking_id);
-        if ($stmt->execute() && $stmt->affected_rows > 0) {
-            $alert_message = "Rejected booking #{$booking_id} has been permanently deleted from the system.";
+    } else {
+        $action = $_POST['action'] ?? '';
+        $booking_id = (int)($_POST['booking_id'] ?? 0);
+
+        if ($action === 'approve' && $booking_id > 0) {
+            $result = update_booking_status($conn, $booking_id, 'approve');
+            $alert_message = $result['message'];
+            $alert_type = $result['success'] ? 'success' : 'warning';
+        } elseif ($action === 'reject' && $booking_id > 0) {
+            $reason = trim($_POST['rejection_reason'] ?? 'Requested schedule or venue is unavailable.');
+            $result = update_booking_status($conn, $booking_id, 'reject', $reason);
+            $alert_message = $result['message'];
             $alert_type = 'warning';
-        } else {
-            $alert_message = "Could not delete booking. Only rejected bookings can be permanently deleted.";
-            $alert_type = 'warning';
+        } elseif ($action === 'delete_rejected' && $booking_id > 0) {
+            // Only allow permanent deletion of rejected bookings
+            $stmt = $conn->prepare("DELETE FROM bookings WHERE id = ? AND status = 'rejected'");
+            $stmt->bind_param("i", $booking_id);
+            if ($stmt->execute() && $stmt->affected_rows > 0) {
+                $alert_message = "Rejected booking #{$booking_id} has been permanently deleted from the system.";
+                $alert_type = 'warning';
+            } else {
+                $alert_message = "Could not delete booking. Only rejected bookings can be permanently deleted.";
+                $alert_type = 'warning';
+            }
+            $stmt->close();
         }
-        $stmt->close();
     }
 }
 
