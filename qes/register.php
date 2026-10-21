@@ -382,7 +382,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </button>
 
         <div class="login-switch-text">
-            Already have an account? <a href="loginadmin.php<?= !empty($_GET['redirect']) ? '?redirect=' . urlencode($_GET['redirect']) : '' ?>">Sign In here</a>
+            Already have an account? <a href="login.php<?= !empty($_GET['redirect']) ? '?redirect=' . urlencode($_GET['redirect']) : '' ?>">Sign In here</a>
         </div>
 
         <a href="index.php" class="back-to-site">

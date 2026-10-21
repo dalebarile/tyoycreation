@@ -538,11 +538,6 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             <p>
                 <a href="index.php"><i class="fa-solid fa-arrow-left"></i> Return to Homepage</a>
             </p>
-            <p>
-                <a href="loginadmin.php" class="admin-link-discreet">
-                    <i class="fa-solid fa-shield"></i> Staff &amp; Administrator Portal
-                </a>
-            </p>
         </div>
     </div>
 

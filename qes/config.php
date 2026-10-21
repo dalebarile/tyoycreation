@@ -12,7 +12,7 @@ if (!defined('GEMINI_API_KEY')) {
     define('GEMINI_API_KEY', defined('ENV_GEMINI_API_KEY') ? ENV_GEMINI_API_KEY : '');
 }
 if (!defined('GEMINI_MODEL')) {
-    define('GEMINI_MODEL', 'gemini-flash-lite-latest');
+    define('GEMINI_MODEL', 'gemini-3.5-flash-lite');
 }
 if (!defined('GEMINI_URL')) {
     define('GEMINI_URL',

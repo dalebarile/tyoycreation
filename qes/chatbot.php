@@ -626,8 +626,14 @@ if (empty($raw_reply) && (
 // ─── FAST-PATH CHECK 5: HOW TO BOOK QUERY ──────────────────────────────────
 if (empty($raw_reply) && (
     strpos($lower_msg, 'how to book') !== false ||
+    strpos($lower_msg, 'how do i book') !== false ||
+    strpos($lower_msg, 'how can i book') !== false ||
+    strpos($lower_msg, 'how to reserve') !== false ||
+    strpos($lower_msg, 'how do i reserve') !== false ||
     strpos($lower_msg, 'paano mag book') !== false ||
     strpos($lower_msg, 'paano mag-book') !== false ||
+    strpos($lower_msg, 'paano magpareserve') !== false ||
+    strpos($lower_msg, 'paano magpa-reserve') !== false ||
     strpos($lower_msg, 'steps to book') !== false ||
     strpos($lower_msg, 'booking process') !== false ||
     strpos($lower_msg, 'how does booking work') !== false
@@ -1012,14 +1018,14 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
         ],
         'generationConfig' => [
             'temperature'     => 0.7,
-            'maxOutputTokens' => 1000
+            'maxOutputTokens' => 500
         ]
     ];
     $payload_json = json_encode($payload);
 
-    // Multi-model resilience: try primary model, then auto-failover if 503 or 404
-    $preferred_model = defined('GEMINI_MODEL') && !empty(GEMINI_MODEL) ? GEMINI_MODEL : 'gemini-flash-lite-latest';
-    $models_to_try = array_unique([$preferred_model, 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest']);
+    // Multi-model resilience: try high-speed primary model, then auto-failover if 503 or 404
+    $preferred_model = defined('GEMINI_MODEL') && !empty(GEMINI_MODEL) ? GEMINI_MODEL : 'gemini-3.5-flash-lite';
+    $models_to_try = array_unique([$preferred_model, 'gemini-3.5-flash-lite', 'gemini-3.5-flash']);
 
     foreach ($models_to_try as $model_name) {
         // API key is sent via header (x-goog-api-key), NOT the URL, so it never
@@ -1035,8 +1041,8 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
                 'Content-Type: application/json',
                 'x-goog-api-key: ' . $api_key,
             ],
-            CURLOPT_TIMEOUT        => 8,
-            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_CONNECTTIMEOUT => 2,
             CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4, // Prevent IPv6 timeout
             // SECURITY: Always verify the server's TLS certificate and hostname.
             // Never disable these — doing so allows man-in-the-middle interception

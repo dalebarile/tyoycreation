@@ -6,6 +6,8 @@ $business_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS
 $contact_phone = get_setting($conn, 'contact_phone', '+63 912 345 6789');
 $contact_email = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
 
+$is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
+
 // Database-driven pricing packages
 $pricing_theme = get_packages_pricing($conn, 'theme_party');
 $pricing_wedding = get_packages_pricing($conn, 'wedding');
@@ -224,6 +226,22 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 font-size: 15.5px;
                 padding: 10px 4px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .client-user-badge {
+                justify-content: center;
+                padding: 10px 16px !important;
+                font-size: 14px !important;
+                margin-top: 6px;
+            }
+            .client-logout-nav {
+                justify-content: center;
+                padding: 8px 12px;
+                color: #fca5a5 !important;
+                font-size: 14px !important;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
             }
             .btn-admin-nav {
                 margin-top: 8px;
@@ -2846,7 +2864,20 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 <a href="index.php#services" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Services</a>
                 <a href="index.php#portfolio" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Portfolio</a>
                 <a href="index.php#contact" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Contact</a>
-                <a href="booking.php" class="btn-admin-nav" style="background: #ffffff; color: #233a2d; font-weight: 700; border-radius: 9999px; padding: 7px 18px; border: none; font-size: 13px; text-decoration: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">Book Now</a>
+                <?php if ($is_client_logged_in): ?>
+                    <span class="client-user-badge" style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: #18392b; padding: 6px 14px; background: #ffffff; border-radius: 9999px; box-shadow: 0 1px 4px rgba(0,0,0,0.18);">
+                        <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
+                        <?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User') ?>
+                    </span>
+                    <a href="logout.php?redirect=booking.php" class="client-logout-nav" style="font-size: 13px; color: #cbd5e1; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='#cbd5e1'" title="Sign Out">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                    </a>
+                <?php else: ?>
+                    <a href="login.php?redirect=booking.php" class="btn-nav-client-signin" style="text-decoration: none; font-weight: 600; font-size: 13px; color: #ffffff; padding: 6px 14px; border: 1.5px solid rgba(255,255,255,0.7); border-radius: 9999px; transition: all 0.2s ease;">
+                        <i class="fa-solid fa-user"></i> Sign In
+                    </a>
+                    <a href="booking.php" class="btn-admin-nav" style="background: #ffffff; color: #233a2d; font-weight: 700; border-radius: 9999px; padding: 7px 18px; border: none; font-size: 13px; text-decoration: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">Book Now</a>
+                <?php endif; ?>
             </div>
         </div>
     </nav>

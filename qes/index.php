@@ -2097,11 +2097,8 @@ if ($has_wedding) {
                     <a href="https://tiktok.com" target="_blank" rel="noopener" title="Tyoy Creation TikTok" aria-label="Tyoy Creation TikTok" style="color: #ffffff; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; text-decoration: none; transition: background 0.2s, transform 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'; this.style.transform='translateY(-2px)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'; this.style.transform='none'"><i class="fa-brands fa-tiktok"></i></a>
                 </div>
             </div>
-            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; text-align: center;">
                 <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.45);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved.</p>
-                <a href="loginadmin.php" style="color: rgba(255,255,255,0.40); text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='rgba(255,255,255,0.40)'">
-                    <i class="fa-solid fa-lock"></i> Staff / Admin Portal
-                </a>
             </div>
         </div>
     </footer>
