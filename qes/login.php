@@ -645,11 +645,14 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
+            // Clear the hash from address bar immediately so reloads don't loop the same token!
+            try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(e){}
+
             isLoginOAuthVerifying = true;
             showAlert('<i class="fa-solid fa-circle-notch fa-spin" style="margin-right: 6px;"></i> Signing you in with Google...', 'success');
 
             const controller = new AbortController();
-            const timeoutTimer = setTimeout(() => controller.abort(), 6000);
+            const timeoutTimer = setTimeout(() => controller.abort(), 20000);
 
             try {
                 const formData = new FormData();
@@ -665,7 +668,6 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                 clearTimeout(timeoutTimer);
                 const data = await res.json();
                 if (data.success) {
-                    try { history.replaceState(null, '', window.location.pathname); } catch(e){}
                     if (REDIRECT_TARGET === 'index.php') {
                         try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
                     } else {
@@ -674,19 +676,15 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                     showAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Redirecting...', 'success');
                     setTimeout(() => {
                         window.location.href = REDIRECT_TARGET;
-                    }, 80);
+                    }, 100);
                 } else {
                     isLoginOAuthVerifying = false;
-                    showAlert(data.message || 'Google sign-in could not be completed.');
+                    showAlert(data.message || 'Google sign-in could not be completed. Please try again.');
                 }
             } catch (err) {
                 clearTimeout(timeoutTimer);
                 isLoginOAuthVerifying = false;
-                if (err.name === 'AbortError') {
-                    showAlert('Sign-in took longer than expected. Please try clicking Continue with Google again.');
-                } else {
-                    showAlert('Network error communicating with server. Please try again.');
-                }
+                showAlert('Connection took longer than expected. Please click Continue with Google to try again.');
             }
         }
 

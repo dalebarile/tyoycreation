@@ -440,6 +440,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
+            // Clear the hash from address bar immediately so reloads don't loop the same token!
+            try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(e){}
+
             const btn = document.getElementById('supabaseGoogleRegBtn');
             if (btn) {
                 btn.disabled = true;

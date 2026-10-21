@@ -379,8 +379,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             "Authorization: Bearer {$access_token}",
             "apikey: {$anon_key}"
         ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 12);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         $res = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);

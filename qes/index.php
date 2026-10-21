@@ -2702,6 +2702,9 @@ if ($has_wedding) {
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
+            // Clear the hash from address bar immediately so reloads don't loop the same token!
+            try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(e){}
+
             isIndexOAuthVerifying = true;
 
             // Open client sign modal so user sees the verification progress
@@ -2709,7 +2712,7 @@ if ($has_wedding) {
             showModalAlert('<i class="fa-solid fa-circle-notch fa-spin" style="margin-right: 6px;"></i> Signing you in with Google...', 'success');
 
             const controller = new AbortController();
-            const timeoutTimer = setTimeout(() => controller.abort(), 6000);
+            const timeoutTimer = setTimeout(() => controller.abort(), 20000);
 
             try {
                 const formData = new FormData();
@@ -2725,23 +2728,18 @@ if ($has_wedding) {
                 clearTimeout(timeoutTimer);
                 const data = await res.json();
                 if (data.success) {
-                    try { history.replaceState(null, '', window.location.pathname); } catch(e){}
                     showModalAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Loading your portal...', 'success');
                     setTimeout(() => {
                         window.location.href = 'index.php';
-                    }, 80);
+                    }, 100);
                 } else {
                     isIndexOAuthVerifying = false;
-                    showModalAlert(data.message || 'Google sign-in could not be completed.');
+                    showModalAlert(data.message || 'Google sign-in could not be completed. Please try again.');
                 }
             } catch (err) {
                 clearTimeout(timeoutTimer);
                 isIndexOAuthVerifying = false;
-                if (err.name === 'AbortError') {
-                    showModalAlert('Sign-in took longer than expected. Please try clicking Continue with Google again.');
-                } else {
-                    showModalAlert('Network error communicating with server.');
-                }
+                showModalAlert('Connection took longer than expected. Please click Continue with Google to try again.');
             }
         }
 
