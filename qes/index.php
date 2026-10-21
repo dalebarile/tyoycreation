@@ -2700,7 +2700,7 @@ if ($has_wedding) {
 
             // Open client sign modal so user sees the verification progress
             openClientSignModal('index.php');
-            showModalAlert('Verifying Google authorization with Supabase...', 'success');
+            showModalAlert('Signing you in with Google...', 'success');
 
             try {
                 const formData = new FormData();
@@ -2715,12 +2715,12 @@ if ($has_wedding) {
                 const data = await res.json();
                 if (data.success) {
                     try { history.replaceState(null, '', window.location.pathname); } catch(e){}
-                    showModalAlert('Connected with Google! Returning to landing page...', 'success');
+                    showModalAlert('Signed in with Google! Welcome back...', 'success');
                     setTimeout(() => {
                         window.location.href = 'index.php';
-                    }, 400);
+                    }, 150);
                 } else {
-                    showModalAlert(data.message || 'Supabase authentication failed.');
+                    showModalAlert(data.message || 'Google sign-in could not be completed.');
                 }
             } catch (err) {
                 showModalAlert('Network error communicating with server.');

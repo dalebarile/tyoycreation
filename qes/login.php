@@ -641,7 +641,7 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
-            showAlert('Verifying Google authorization with Supabase...', 'success');
+            showAlert('Signing you in with Google...', 'success');
 
             try {
                 const formData = new FormData();
@@ -661,12 +661,12 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                     } else {
                         sessionStorage.setItem('tyoy_privacy_agreed', '1');
                     }
-                    showAlert('Signed in with Google successfully! Redirecting...', 'success');
+                    showAlert('Signed in with Google! Redirecting...', 'success');
                     setTimeout(() => {
                         window.location.href = REDIRECT_TARGET;
-                    }, 500);
+                    }, 150);
                 } else {
-                    showAlert(data.message || 'Supabase authentication failed.');
+                    showAlert(data.message || 'Google sign-in could not be completed.');
                 }
             } catch (err) {
                 showAlert('Network error communicating with server. Please try again.');

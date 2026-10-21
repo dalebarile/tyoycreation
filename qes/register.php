@@ -443,7 +443,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const btn = document.getElementById('supabaseGoogleRegBtn');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verifying with Google...';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Signing in with Google...';
             }
 
             try {
@@ -462,7 +462,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const redirect = new URLSearchParams(window.location.search).get('redirect') || data.redirect || 'index.php';
                     window.location.href = redirect;
                 } else {
-                    alert(data.message || 'Supabase authentication failed.');
+                    alert(data.message || 'Google sign-in could not be completed.');
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = 'Continue with Google';
