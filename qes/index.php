@@ -2678,12 +2678,16 @@ if ($has_wedding) {
             window.location.href = `${SUPABASE_AUTH_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
         }
 
+        let isIndexOAuthVerifying = false;
         async function checkIndexSupabaseOAuthCallback() {
+            if (isIndexOAuthVerifying) return;
+
             const hash = window.location.hash.substring(1);
             const search = window.location.search.substring(1);
 
             // Handle OAuth cancellation or errors from Supabase/Google
             if (hash.includes('error=') || search.includes('error=')) {
+                isIndexOAuthVerifying = true;
                 const errParams = new URLSearchParams(hash.includes('error=') ? hash : search);
                 const errMsg = errParams.get('error_description') || errParams.get('error') || 'Google sign-in was cancelled or failed.';
                 openClientSignModal('index.php');
@@ -2698,9 +2702,14 @@ if ($has_wedding) {
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
+            isIndexOAuthVerifying = true;
+
             // Open client sign modal so user sees the verification progress
             openClientSignModal('index.php');
-            showModalAlert('Signing you in with Google...', 'success');
+            showModalAlert('<i class="fa-solid fa-circle-notch fa-spin" style="margin-right: 6px;"></i> Signing you in with Google...', 'success');
+
+            const controller = new AbortController();
+            const timeoutTimer = setTimeout(() => controller.abort(), 6000);
 
             try {
                 const formData = new FormData();
@@ -2710,20 +2719,29 @@ if ($has_wedding) {
 
                 const res = await fetch('auth_action.php?action=supabase_login', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutTimer);
                 const data = await res.json();
                 if (data.success) {
                     try { history.replaceState(null, '', window.location.pathname); } catch(e){}
-                    showModalAlert('Signed in with Google! Welcome back...', 'success');
+                    showModalAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Loading your portal...', 'success');
                     setTimeout(() => {
                         window.location.href = 'index.php';
-                    }, 150);
+                    }, 80);
                 } else {
+                    isIndexOAuthVerifying = false;
                     showModalAlert(data.message || 'Google sign-in could not be completed.');
                 }
             } catch (err) {
-                showModalAlert('Network error communicating with server.');
+                clearTimeout(timeoutTimer);
+                isIndexOAuthVerifying = false;
+                if (err.name === 'AbortError') {
+                    showModalAlert('Sign-in took longer than expected. Please try clicking Continue with Google again.');
+                } else {
+                    showModalAlert('Network error communicating with server.');
+                }
             }
         }
 

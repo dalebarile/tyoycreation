@@ -625,10 +625,14 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             window.location.href = `${SUPABASE_AUTH_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
         }
 
+        let isLoginOAuthVerifying = false;
         async function checkSupabaseOAuthCallback() {
+            if (isLoginOAuthVerifying) return;
+
             const hash = window.location.hash.substring(1);
             const search = window.location.search.substring(1);
             if (hash.includes('error=') || search.includes('error=')) {
+                isLoginOAuthVerifying = true;
                 const errParams = new URLSearchParams(hash.includes('error=') ? hash : search);
                 const errMsg = errParams.get('error_description') || errParams.get('error') || 'Google sign-in was cancelled or failed.';
                 showAlert(decodeURIComponent(errMsg.replace(/\+/g, ' ')));
@@ -641,7 +645,11 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
-            showAlert('Signing you in with Google...', 'success');
+            isLoginOAuthVerifying = true;
+            showAlert('<i class="fa-solid fa-circle-notch fa-spin" style="margin-right: 6px;"></i> Signing you in with Google...', 'success');
+
+            const controller = new AbortController();
+            const timeoutTimer = setTimeout(() => controller.abort(), 6000);
 
             try {
                 const formData = new FormData();
@@ -651,8 +659,10 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
 
                 const res = await fetch('auth_action.php?action=supabase_login', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutTimer);
                 const data = await res.json();
                 if (data.success) {
                     try { history.replaceState(null, '', window.location.pathname); } catch(e){}
@@ -661,15 +671,22 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                     } else {
                         sessionStorage.setItem('tyoy_privacy_agreed', '1');
                     }
-                    showAlert('Signed in with Google! Redirecting...', 'success');
+                    showAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Redirecting...', 'success');
                     setTimeout(() => {
                         window.location.href = REDIRECT_TARGET;
-                    }, 150);
+                    }, 80);
                 } else {
+                    isLoginOAuthVerifying = false;
                     showAlert(data.message || 'Google sign-in could not be completed.');
                 }
             } catch (err) {
-                showAlert('Network error communicating with server. Please try again.');
+                clearTimeout(timeoutTimer);
+                isLoginOAuthVerifying = false;
+                if (err.name === 'AbortError') {
+                    showAlert('Sign-in took longer than expected. Please try clicking Continue with Google again.');
+                } else {
+                    showAlert('Network error communicating with server. Please try again.');
+                }
             }
         }
 

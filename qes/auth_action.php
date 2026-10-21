@@ -373,14 +373,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $supabase_url = defined('ENV_SUPABASE_URL') ? rtrim(ENV_SUPABASE_URL, '/') : 'https://kanotzhwqsscejqecqom.supabase.co';
         $anon_key = defined('ENV_SUPABASE_ANON_KEY') ? ENV_SUPABASE_ANON_KEY : '';
 
-        // Query Supabase /auth/v1/user with bearer access_token
         $ch = curl_init("{$supabase_url}/auth/v1/user");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$access_token}",
             "apikey: {$anon_key}"
         ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
         $res = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
