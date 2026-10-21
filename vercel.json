@@ -1,0 +1,50 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "builds": [
+    {
+      "src": "qes/*.php",
+      "use": "vercel-php@0.7.2"
+    },
+    {
+      "src": "qes/assets/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "qes/style.css",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/admin/?$", "dest": "/qes/loginadmin.php" },
+    { "src": "/admin-page/?$", "dest": "/qes/loginadmin.php" },
+    { "src": "/login/?$", "dest": "/qes/loginadmin.php" },
+    { "src": "/assets/(.*)", "dest": "/qes/assets/$1" },
+    { "src": "/style.css", "dest": "/qes/style.css" },
+    { "src": "/(.*\\.css)", "dest": "/qes/$1" },
+    { "src": "/index.php(.*)", "dest": "/qes/index.php$1" },
+    { "src": "/(.*\\.php)", "dest": "/qes/$1" },
+    { "src": "^/$", "dest": "/qes/index.php" },
+    { "src": "/(.*)", "dest": "/qes/$1" }
+  ],
+  "env": {
+    "PHP_INI_DISPLAY_ERRORS": "0",
+    "PHP_INI_LOG_ERRORS": "1"
+  },
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

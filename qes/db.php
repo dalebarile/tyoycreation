@@ -1,9 +1,6 @@
 <?php
-// Load DB credentials from .env.php (falls back to local dev defaults if not set)
-$env_file = __DIR__ . '/.env.php';
-if (file_exists($env_file)) {
-    require_once $env_file;
-}
+// Load DB credentials and environment variables (.env / .env.php / system getenv)
+require_once __DIR__ . '/env_loader.php';
 
 date_default_timezone_set('Asia/Manila');
 

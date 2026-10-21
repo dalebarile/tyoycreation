@@ -4,11 +4,8 @@
 // API keys are loaded from .env.php (never hardcoded here).
 // ============================================================
 
-// Load secrets from the separate environment file
-$env_file = __DIR__ . '/.env.php';
-if (file_exists($env_file)) {
-    require_once $env_file;
-}
+// Load secrets from the environment (.env / .env.php / system getenv)
+require_once __DIR__ . '/env_loader.php';
 
 // ── Gemini AI ──────────────────────────────────────────────
 if (!defined('GEMINI_API_KEY')) {
