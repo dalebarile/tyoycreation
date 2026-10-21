@@ -1698,7 +1698,7 @@ if ($has_wedding) {
                         <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
                     </a>
                 <?php else: ?>
-                    <a href="login.php?redirect=booking.php" class="btn-nav-client-signin" onclick="event.preventDefault(); openClientSignModal('booking.php');" style="text-decoration: none; font-weight: 600; font-size: 13px; color: #18392b; padding: 6px 14px; border: 1.5px solid #18392b; border-radius: 9999px; transition: all 0.2s ease;">
+                    <a href="login.php?redirect=index.php" class="btn-nav-client-signin" onclick="event.preventDefault(); openClientSignModal('index.php');" style="text-decoration: none; font-weight: 600; font-size: 13px; color: #18392b; padding: 6px 14px; border: 1.5px solid #18392b; border-radius: 9999px; transition: all 0.2s ease;">
                         <i class="fa-solid fa-user"></i> Sign In
                     </a>
                 <?php endif; ?>
@@ -2560,7 +2560,6 @@ if ($has_wedding) {
             if (modal) {
                 modal.classList.add('active');
                 document.body.style.overflow = 'hidden';
-                initModalGoogleAuth();
             }
         }
 
@@ -2681,12 +2680,26 @@ if ($has_wedding) {
 
         async function checkIndexSupabaseOAuthCallback() {
             const hash = window.location.hash.substring(1);
+            const search = window.location.search.substring(1);
+
+            // Handle OAuth cancellation or errors from Supabase/Google
+            if (hash.includes('error=') || search.includes('error=')) {
+                const errParams = new URLSearchParams(hash.includes('error=') ? hash : search);
+                const errMsg = errParams.get('error_description') || errParams.get('error') || 'Google sign-in was cancelled or failed.';
+                openClientSignModal('index.php');
+                showModalAlert(decodeURIComponent(errMsg.replace(/\+/g, ' ')));
+                try { history.replaceState(null, '', window.location.pathname); } catch(e){}
+                return;
+            }
+
             if (!hash || !hash.includes('access_token=')) return;
 
             const params = new URLSearchParams(hash);
             const accessToken = params.get('access_token');
             if (!accessToken) return;
 
+            // Open client sign modal so user sees the verification progress
+            openClientSignModal('index.php');
             showModalAlert('Verifying Google authorization with Supabase...', 'success');
 
             try {
@@ -2702,10 +2715,10 @@ if ($has_wedding) {
                 const data = await res.json();
                 if (data.success) {
                     try { history.replaceState(null, '', window.location.pathname); } catch(e){}
-                    showModalAlert('Connected with Google! Reloading...', 'success');
+                    showModalAlert('Connected with Google! Returning to landing page...', 'success');
                     setTimeout(() => {
-                        window.location.reload();
-                    }, 500);
+                        window.location.href = 'index.php';
+                    }, 400);
                 } else {
                     showModalAlert(data.message || 'Supabase authentication failed.');
                 }
@@ -2714,9 +2727,8 @@ if ($has_wedding) {
             }
         }
 
-        window.addEventListener('load', () => {
-            checkIndexSupabaseOAuthCallback();
-        });
+        window.addEventListener('DOMContentLoaded', checkIndexSupabaseOAuthCallback);
+        window.addEventListener('load', checkIndexSupabaseOAuthCallback);
 
         async function handleModalLoginSubmit(e) {
             e.preventDefault();

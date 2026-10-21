@@ -94,9 +94,10 @@ if (!function_exists('qes_verify_google_token')) {
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    // CSRF check
+    // CSRF check (supabase_login is cryptographically authenticated via Supabase /auth/v1/user bearer token)
     $csrf = $_POST['csrf_token'] ?? '';
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
+    $is_supabase_login = ($action === 'supabase_login' && !empty($_POST['access_token']));
+    if (!$is_supabase_login && !hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
         echo json_encode(['success' => false, 'message' => 'CSRF validation failed. Please refresh the page.']);
         exit;
     }

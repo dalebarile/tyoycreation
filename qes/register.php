@@ -453,6 +453,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         async function checkSupabaseOAuthCallback() {
             const hash = window.location.hash.substring(1);
+            const search = window.location.search.substring(1);
+            if (hash.includes('error=') || search.includes('error=')) {
+                const errParams = new URLSearchParams(hash.includes('error=') ? hash : search);
+                const errMsg = errParams.get('error_description') || errParams.get('error') || 'Google sign-in was cancelled or failed.';
+                showAlert(decodeURIComponent(errMsg.replace(/\+/g, ' ')));
+                try { history.replaceState(null, '', window.location.pathname); } catch(e){}
+                return;
+            }
             if (!hash || !hash.includes('access_token=')) return;
 
             const params = new URLSearchParams(hash);
