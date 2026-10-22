@@ -671,8 +671,19 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                     signal: controller.signal
                 });
                 clearTimeout(timeoutTimer);
-                const data = await res.json();
-                if (data.success) {
+
+                const text = await res.text();
+                let data = null;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    console.error('HTTP ' + res.status + ' non-JSON response:', text.slice(0, 200));
+                    isLoginOAuthVerifying = false;
+                    showAlert('Sign-in service returned an unexpected response (HTTP ' + res.status + '). Please try again.');
+                    return;
+                }
+
+                if (data && data.success) {
                     if (REDIRECT_TARGET === 'index.php') {
                         try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
                     } else {
@@ -684,12 +695,16 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                     }, 100);
                 } else {
                     isLoginOAuthVerifying = false;
-                    showAlert(data.message || 'Google sign-in could not be completed. Please try again.');
+                    showAlert((data && data.message) ? data.message : 'Google sign-in could not be completed. Please try again.');
                 }
             } catch (err) {
                 clearTimeout(timeoutTimer);
                 isLoginOAuthVerifying = false;
-                showAlert('Connection took longer than expected. Please click Continue with Google to try again.');
+                if (err && err.name === 'AbortError') {
+                    showAlert('Connection took longer than expected. Please click Continue with Google to try again.');
+                } else {
+                    showAlert('An error occurred during sign-in. Please try again.');
+                }
             }
         }
 

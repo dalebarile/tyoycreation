@@ -2744,20 +2744,35 @@ if ($has_wedding) {
                     signal: controller.signal
                 });
                 clearTimeout(timeoutTimer);
-                const data = await res.json();
-                if (data.success) {
+
+                const text = await res.text();
+                let data = null;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    console.error('HTTP ' + res.status + ' non-JSON response:', text.slice(0, 200));
+                    isIndexOAuthVerifying = false;
+                    showModalAlert('Sign-in service returned an unexpected response (HTTP ' + res.status + '). Please try again.');
+                    return;
+                }
+
+                if (data && data.success) {
                     showModalAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Loading your portal...', 'success');
                     setTimeout(() => {
                         window.location.reload();
                     }, 100);
                 } else {
                     isIndexOAuthVerifying = false;
-                    showModalAlert(data.message || 'Google sign-in could not be completed. Please try again.');
+                    showModalAlert((data && data.message) ? data.message : 'Google sign-in could not be completed. Please try again.');
                 }
             } catch (err) {
                 clearTimeout(timeoutTimer);
                 isIndexOAuthVerifying = false;
-                showModalAlert('Connection took longer than expected. Please click Continue with Google to try again.');
+                if (err && err.name === 'AbortError') {
+                    showModalAlert('Connection took longer than expected. Please click Continue with Google to try again.');
+                } else {
+                    showModalAlert('An error occurred during sign-in. Please try again.');
+                }
             }
         }
 
