@@ -2935,7 +2935,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             </div>
         </div>
         <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; opacity: 0.65;">
-            &copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved.
+            &copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved. &bull; <a href="loginadmin.php" style="color: inherit; text-decoration: none;"><i class="fa-solid fa-lock" style="font-size: 10px; margin-right: 4px;"></i>Staff Portal</a>
         </div>
     </footer>
 

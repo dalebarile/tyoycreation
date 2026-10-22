@@ -2112,7 +2112,7 @@ if ($has_wedding) {
                 </div>
             </div>
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; text-align: center;">
-                <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.45);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved.</p>
+                <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.45);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved. &bull; <a href="loginadmin.php" style="color: rgba(255,255,255,0.45); text-decoration: none; font-size: 12px;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='rgba(255,255,255,0.45)'"><i class="fa-solid fa-lock" style="font-size: 10px; margin-right: 4px;"></i>Staff Portal</a></p>
             </div>
         </div>
     </footer>
