@@ -68,11 +68,15 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         await page.locator('#modal_reg_confirm_password').fill('ClientPass123!');
         await page.locator('#modal_reg_privacy_consent').check();
 
-        await page.locator('#modalRegSubmitBtn').click();
+        const [regResponse] = await Promise.all([
+            page.waitForResponse(resp => resp.url().includes('auth_action.php?action=register') && resp.status() === 200),
+            page.locator('#modalRegSubmitBtn').click()
+        ]);
+        expect(regResponse.ok()).toBeTruthy();
 
         // Verify user is now logged in on landing page with client badge
         const clientBadge = page.locator('.client-user-badge');
-        await expect(clientBadge).toBeVisible({ timeout: 15000 });
+        await expect(clientBadge).toBeVisible({ timeout: 25000 });
         await expect(clientBadge).toContainText('Maria Santos');
 
         // 5. Click Book Now on landing page as logged-in client

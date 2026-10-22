@@ -487,6 +487,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
             if ($insert->execute()) {
                 $new_id = (int)$insert->insert_id;
+                if ($new_id <= 0 && $conn->insert_id > 0) {
+                    $new_id = (int)$conn->insert_id;
+                }
+                if ($new_id <= 0) {
+                    $idStmt = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+                    if ($idStmt) {
+                        $idStmt->bind_param("s", $email);
+                        $idStmt->execute();
+                        $idRes = $idStmt->get_result();
+                        if ($idRes && $idRow = $idRes->fetch_assoc()) {
+                            $new_id = (int)$idRow['id'];
+                        }
+                        $idStmt->close();
+                    }
+                }
                 $insert->close();
 
                 qes_rate_limit_clear('supabase_login', $client_ip);
@@ -592,6 +607,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $insert->bind_param("sssssss", $username, $full_name, $email, $phone, $hashed, $role, $status);
         if ($insert->execute()) {
             $new_id = (int)$insert->insert_id;
+            if ($new_id <= 0 && $conn->insert_id > 0) {
+                $new_id = (int)$conn->insert_id;
+            }
+            if ($new_id <= 0) {
+                $idStmt = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+                if ($idStmt) {
+                    $idStmt->bind_param("s", $email);
+                    $idStmt->execute();
+                    $idRes = $idStmt->get_result();
+                    if ($idRes && $idRow = $idRes->fetch_assoc()) {
+                        $new_id = (int)$idRow['id'];
+                    }
+                    $idStmt->close();
+                }
+            }
             $insert->close();
 
             // Auto-login registered user
