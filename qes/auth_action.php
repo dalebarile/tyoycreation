@@ -379,25 +379,52 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $supabase_url = defined('ENV_SUPABASE_URL') ? rtrim(ENV_SUPABASE_URL, '/') : 'https://kanotzhwqsscejqecqom.supabase.co';
         $anon_key = defined('ENV_SUPABASE_ANON_KEY') ? ENV_SUPABASE_ANON_KEY : '';
 
-        $ch = curl_init("{$supabase_url}/auth/v1/user");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_ENCODING, '');
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer {$access_token}",
-            "apikey: {$anon_key}"
-        ]);
-        $res = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $userData = null;
 
-        $userData = json_decode($res, true);
-        if ($code !== 200 || empty($userData['email'])) {
-            echo json_encode(['success' => false, 'message' => 'Failed to verify user identity with Supabase.']);
-            exit;
+        // Fast Path: Try local JWT decode & signature check if service key is known
+        $jwtParts = explode('.', $access_token);
+        if (count($jwtParts) === 3) {
+            $jwtPayloadJson = @base64_decode(strtr($jwtParts[1], '-_', '+/'));
+            if ($jwtPayloadJson) {
+                $jwtPayload = @json_decode($jwtPayloadJson, true);
+                if (!empty($jwtPayload['email']) && !empty($jwtPayload['exp']) && $jwtPayload['exp'] > time()) {
+                    $jwtSecret = defined('ENV_SUPABASE_SERVICE_KEY') ? ENV_SUPABASE_SERVICE_KEY : '';
+                    if (!empty($jwtSecret)) {
+                        $expectedSig = hash_hmac('sha256', "{$jwtParts[0]}.{$jwtParts[1]}", $jwtSecret, true);
+                        $actualSig = base64_decode(strtr($jwtParts[2], '-_', '+/'));
+                        if (hash_equals($expectedSig, $actualSig)) {
+                            $userData = [
+                                'email' => $jwtPayload['email'],
+                                'user_metadata' => $jwtPayload['user_metadata'] ?? []
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Authoritative Supabase Auth API verification
+        if (!$userData) {
+            $ch = curl_init("{$supabase_url}/auth/v1/user");
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+            curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "Authorization: Bearer {$access_token}",
+                "apikey: {$anon_key}"
+            ]);
+            $res = curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            $userData = json_decode($res, true);
+            if ($code !== 200 || empty($userData['email'])) {
+                echo json_encode(['success' => false, 'message' => 'Failed to verify user identity with Supabase.']);
+                exit;
+            }
         }
 
         $email = strtolower(trim($userData['email']));
@@ -466,44 +493,45 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         } else {
             if ($stmt) $stmt->close();
 
+            // Generate unique username without extra collision round-trips
             $username_base = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode('@', $email)[0]));
             if (empty($username_base)) $username_base = 'user';
-            $username = $username_base;
-
-            $check_u = $conn->prepare("SELECT id FROM users WHERE username = ?");
-            $check_u->bind_param("s", $username);
-            $check_u->execute();
-            if ($check_u->get_result()->num_rows > 0) {
-                $username = $username_base . rand(100, 999);
-            }
-            $check_u->close();
+            $username = $username_base . '_' . substr(bin2hex(random_bytes(3)), 0, 4);
 
             $dummy_pass = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
             $role = 'user';
             $status = 'approved';
 
-            $insert = $conn->prepare("INSERT INTO users (username, full_name, email, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+            // Atomic INSERT with verified unique constraint ON CONFLICT (email)
+            $insert = $conn->prepare("INSERT INTO users (username, full_name, email, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (email) DO NOTHING RETURNING id");
             $insert->bind_param("ssssss", $username, $full_name, $email, $dummy_pass, $role, $status);
 
+            $new_id = 0;
             if ($insert->execute()) {
                 $new_id = (int)$insert->insert_id;
                 if ($new_id <= 0 && $conn->insert_id > 0) {
                     $new_id = (int)$conn->insert_id;
                 }
-                if ($new_id <= 0) {
-                    $idStmt = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
-                    if ($idStmt) {
-                        $idStmt->bind_param("s", $email);
-                        $idStmt->execute();
-                        $idRes = $idStmt->get_result();
-                        if ($idRes && $idRow = $idRes->fetch_assoc()) {
-                            $new_id = (int)$idRow['id'];
-                        }
-                        $idStmt->close();
-                    }
-                }
                 $insert->close();
+            }
 
+            // Fallback lookup only if conflict occurred due to race condition
+            if ($new_id <= 0) {
+                $idStmt = $conn->prepare("SELECT id, username, password FROM users WHERE email = ? LIMIT 1");
+                if ($idStmt) {
+                    $idStmt->bind_param("s", $email);
+                    $idStmt->execute();
+                    $idRes = $idStmt->get_result();
+                    if ($idRes && $idRow = $idRes->fetch_assoc()) {
+                        $new_id = (int)$idRow['id'];
+                        $username = $idRow['username'];
+                        $dummy_pass = $idRow['password'];
+                    }
+                    $idStmt->close();
+                }
+            }
+
+            if ($new_id > 0) {
                 qes_rate_limit_clear('supabase_login', $client_ip);
                 session_regenerate_id(true);
 

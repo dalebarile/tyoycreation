@@ -1138,15 +1138,16 @@ if (!function_exists('qes_set_client_auth_cookie')) {
             return;
         }
         $secret = qes_csrf_secret();
-        $sig = hash_hmac('sha256', $userId . '|client|' . $passwordHash, $secret);
-        $val = $userId . '|' . $sig;
+        $expires = time() + (86400 * 14); // 14 days
+        $sig = hash_hmac('sha256', $userId . '|client|' . $expires . '|' . $passwordHash, $secret);
+        $val = $userId . '|' . $expires . '|' . $sig;
         
         $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
             || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
             || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
 
         setcookie('tyoy_client_auth', $val, [
-            'expires' => time() + (86400 * 14),
+            'expires' => $expires,
             'path' => '/',
             'domain' => '',
             'secure' => $is_https,
@@ -1179,12 +1180,28 @@ if (!function_exists('qes_restore_client_session_from_cookie')) {
         if (empty($_COOKIE['tyoy_client_auth']) || !is_string($_COOKIE['tyoy_client_auth'])) {
             return false;
         }
-        $parts = explode('|', $_COOKIE['tyoy_client_auth'], 2);
-        if (count($parts) !== 2) {
+        $parts = explode('|', $_COOKIE['tyoy_client_auth']);
+        $userId = 0;
+        $expiry = 0;
+        $sig = '';
+
+        if (count($parts) === 3) {
+            $userId = (int)$parts[0];
+            $expiry = (int)$parts[1];
+            $sig = $parts[2];
+            // Check expiry with 5m clock skew allowance
+            if ($expiry < (time() - 300)) {
+                qes_clear_client_auth_cookie();
+                return false;
+            }
+        } elseif (count($parts) === 2) {
+            // Backwards-compatible legacy format
+            $userId = (int)$parts[0];
+            $sig = $parts[1];
+        } else {
             return false;
         }
-        $userId = (int)$parts[0];
-        $sig = $parts[1];
+
         if ($userId <= 0 || empty($sig) || !isset($conn) || !is_object($conn)) {
             return false;
         }
@@ -1205,7 +1222,12 @@ if (!function_exists('qes_restore_client_session_from_cookie')) {
         }
 
         $secret = qes_csrf_secret();
-        $expected = hash_hmac('sha256', $userId . '|client|' . $user['password'], $secret);
+        if ($expiry > 0) {
+            $expected = hash_hmac('sha256', $userId . '|client|' . $expiry . '|' . $user['password'], $secret);
+        } else {
+            $expected = hash_hmac('sha256', $userId . '|client|' . $user['password'], $secret);
+        }
+
         if (!hash_equals($expected, $sig)) {
             qes_clear_client_auth_cookie();
             return false;

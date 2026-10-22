@@ -43,14 +43,20 @@ if (!function_exists('qes_load_env')) {
                             $val = substr($val, 1, -1);
                         }
 
-                        // Set in $_ENV, $_SERVER, and putenv if not already set
-                        if (!isset($_ENV[$key])) {
+                        // Don't overwrite existing non-empty system environment variables with empty .env values
+                        $existing = getenv($key);
+                        if ($existing !== false && $existing !== '' && $val === '') {
+                            continue;
+                        }
+                        if (!isset($_ENV[$key]) || ($_ENV[$key] === '' && $val !== '')) {
                             $_ENV[$key] = $val;
                         }
-                        if (!isset($_SERVER[$key])) {
+                        if (!isset($_SERVER[$key]) || ($_SERVER[$key] === '' && $val !== '')) {
                             $_SERVER[$key] = $val;
                         }
-                        putenv("{$key}={$val}");
+                        if ($val !== '' || $existing === false) {
+                            putenv("{$key}={$val}");
+                        }
                     }
                 }
                 break; // Use the first found .env file
