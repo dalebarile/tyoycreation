@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 test.describe('Client Sign-In & Booking Modal Flow', () => {
     test('Landing page: clicking Book Now opens Client Sign Modal for guests', async ({ page }) => {
         // Go to landing page
-        await page.goto('http://localhost/Tyoy_Creation_QES_updated/qes/index.php');
+        await page.goto('index.php');
 
         // Check page title
         await expect(page).toHaveTitle(/Tyoy Creation/i);
@@ -48,7 +48,7 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
     test('Flow verification: landing page -> book -> register/login -> back to landing page -> book -> data privacy act modal -> booking form', async ({ page }) => {
         test.setTimeout(60000);
         // 1. Go to landing page
-        await page.goto('http://localhost/Tyoy_Creation_QES_updated/qes/index.php');
+        await page.goto('index.php');
 
         // 2. Click Book Now -> opens sign modal
         await page.locator('nav .btn-nav-book').click();
@@ -117,7 +117,7 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
     });
 
     test('Dedicated client login.php page renders for clients', async ({ page }) => {
-        await page.goto('http://localhost/Tyoy_Creation_QES_updated/qes/login.php');
+        await page.goto('login.php');
 
         // Check header title
         await expect(page).toHaveTitle(/Client Sign In/i);
