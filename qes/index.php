@@ -3228,7 +3228,7 @@ if ($has_wedding) {
                         if (!IS_CLIENT_LOGGED_IN) {
                             e.preventDefault();
                             closePackageModal();
-                            openClientSignModal('index.php');
+                            openClientSignModal(targetHref);
                             return;
                         }
                         // Logged in: allow seamless navigation without privacy act modal
@@ -3239,7 +3239,7 @@ if ($has_wedding) {
                     // Main Landing Page Book buttons:
                     if (!IS_CLIENT_LOGGED_IN) {
                         e.preventDefault();
-                        openClientSignModal('index.php');
+                        openClientSignModal(targetHref);
                         return;
                     }
 

@@ -4094,23 +4094,19 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     return;
                 }
 
-                // 3. Prevent typo misconception: If email has a broken domain (e.g. gmai.com), block and alert!
+                // 3. Prevent typo misconception: Check for common domain typos
                 const typo = detectEmailIssues(clientEmail);
-                if (typo) {
-                    setErrors(prev => ({
-                        ...prev,
-                        clientEmail: typo.message + (typo.suggested ? ` (Suggested: ${typo.suggested})` : '')
-                    }));
-                    setSubmitError(`Invalid email domain: ${typo.message}`);
-                    const emailEl = document.getElementById('client_email_input');
-                    if (emailEl) {
-                        emailEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        emailEl.focus();
-                    }
-                    return;
-                }
 
-                // Email is valid - dispatch verification code directly!
+                // Open Email Confirmation & Misconception Prevention Modal before dispatching code
+                setEmailWarningModal({
+                    isOpen: true,
+                    email: clientEmail.trim(),
+                    typoWarning: typo
+                });
+            };
+
+            const handleProceedWithEmail = () => {
+                setEmailWarningModal({ isOpen: false, email: '', typoWarning: null });
                 executeBookingSubmit();
             };
 
