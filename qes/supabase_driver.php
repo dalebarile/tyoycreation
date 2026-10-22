@@ -147,6 +147,8 @@ class SupabaseConnection {
     private $token;
     private $projectRef;
     private $pdo = null;
+    private $pdoConnectDuration = null;
+    private $pdoError = null;
     private $curlHandle = null;
     private $queryCache = [];
 
@@ -157,21 +159,53 @@ class SupabaseConnection {
         // Check if direct PostgreSQL connection is configured with password
         if (defined('ENV_SUPABASE_DB_PASS') && !empty(ENV_SUPABASE_DB_PASS) && extension_loaded('pdo_pgsql')) {
             $host = defined('ENV_SUPABASE_DB_HOST') ? ENV_SUPABASE_DB_HOST : "aws-0-ap-southeast-1.pooler.supabase.com";
-            $port = defined('ENV_SUPABASE_DB_PORT') ? ENV_SUPABASE_DB_PORT : "6543";
+            $port = defined('ENV_SUPABASE_DB_PORT') ? (string)ENV_SUPABASE_DB_PORT : "6543";
             $user = defined('ENV_SUPABASE_DB_USER') ? ENV_SUPABASE_DB_USER : "postgres.{$this->projectRef}";
+            if (!empty($this->projectRef) && strpos($user, '.') === false) {
+                $user = "{$user}.{$this->projectRef}";
+            }
             $pass = ENV_SUPABASE_DB_PASS;
             try {
-                $dsn = "pgsql:host={$host};port={$port};dbname=postgres;sslmode=require";
+                $pStart = microtime(true);
+                $dsn = "pgsql:host={$host};port={$port};dbname=postgres;sslmode=require;connect_timeout=4";
                 $this->pdo = new PDO($dsn, $user, $pass, [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT,
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_EMULATE_PREPARES => true,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_TIMEOUT => 5
+                    PDO::ATTR_TIMEOUT => 4
                 ]);
                 $this->pdo->exec("SET timezone = 'Asia/Manila'");
+                $this->pdoConnectDuration = round((microtime(true) - $pStart) * 1000, 2);
             } catch (Exception $e) {
                 $this->pdo = null;
+                $this->pdoError = $e->getMessage();
+                error_log('[SupabaseConnection PDO Error] ' . $e->getMessage());
             }
         }
+
+        if (!headers_sent() && php_sapi_name() !== 'cli') {
+            if ($this->pdo) {
+                header("X-DB-Engine: pdo; connect_ms={$this->pdoConnectDuration}");
+            } else {
+                header("X-DB-Engine: api" . ($this->pdoError ? "; error=" . rawurlencode(substr($this->pdoError, 0, 80)) : ""));
+            }
+        }
+    }
+
+    public function isPdoConnected(): bool {
+        return $this->pdo !== null;
+    }
+
+    public function getEngine(): string {
+        return $this->pdo !== null ? 'pdo' : 'api';
+    }
+
+    public function getPdoConnectDuration(): ?float {
+        return $this->pdoConnectDuration;
+    }
+
+    public function getPdoError(): ?string {
+        return $this->pdoError;
     }
 
     public function set_charset(string $charset): bool {
