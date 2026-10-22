@@ -12,6 +12,14 @@ test.describe('UI Visual Testing & Screenshot Capture', () => {
     }
   });
 
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('tyoy_cookie_consent', 'accepted');
+      sessionStorage.setItem('tyoy_privacy_agreed', '1');
+      document.cookie = 'cookie_consent=accepted; path=/';
+    });
+  });
+
   test('UI Test 1: Desktop Landing Page Full Layout', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('index.php');

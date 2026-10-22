@@ -16,9 +16,10 @@ test.describe('Responsive Cross-Device & Viewport QA Suite', () => {
   ];
 
   test.beforeEach(async ({ page }) => {
-    // Pre-accept cookies in automated tests so modal doesn't intercept pointer events
+    // Pre-accept cookies and privacy consent in automated tests so modal doesn't intercept pointer events
     await page.addInitScript(() => {
       localStorage.setItem('tyoy_cookie_consent', 'accepted');
+      sessionStorage.setItem('tyoy_privacy_agreed', '1');
       document.cookie = 'cookie_consent=accepted; path=/';
     });
   });
