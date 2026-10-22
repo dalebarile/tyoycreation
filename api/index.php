@@ -42,14 +42,17 @@ if ($uri === 'logout' || $uri === 'logout/') {
 }
 
 // Candidates for file resolution
-$candidates = [$uri];
+$cleanUri = rtrim($uri, '/');
+$candidates = array_unique(array_filter([$uri, $cleanUri]));
 
 // If uri starts with admin/ or qes/ (e.g., admin/auth_action.php, admin/a_events.php),
 // allow resolving to the underlying script in qes/
 $stripped = preg_replace('#^(admin|qes)/+#', '', $uri);
 if ($stripped !== $uri && !empty($stripped)) {
     $candidates[] = $stripped;
+    $candidates[] = rtrim($stripped, '/');
 }
+$candidates = array_unique(array_filter($candidates));
 
 foreach ($candidates as $cand) {
     $target = $qesDir . '/' . $cand;

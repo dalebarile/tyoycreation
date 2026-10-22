@@ -34,6 +34,68 @@ class BookingVerificationHelper {
     }
 
     /**
+     * Retrieves pending booking data from active session or encrypted cookie fallback (resilient across serverless containers).
+     */
+    public static function getPendingBooking(): ?array {
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        $pending = $_SESSION['pending_booking_verification'] ?? null;
+        if (is_array($pending) && !empty($pending['token'])) {
+            return $pending;
+        }
+
+        if (!empty($_COOKIE['qes_staged_booking']) && function_exists('qes_decrypt')) {
+            $dec_json = qes_decrypt($_COOKIE['qes_staged_booking']);
+            if (!empty($dec_json)) {
+                $dec_data = json_decode($dec_json, true);
+                if (is_array($dec_data) && !empty($dec_data['token'])) {
+                    $_SESSION['pending_booking_verification'] = $dec_data;
+                    return $dec_data;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Persists pending booking data in session and encrypted cookie.
+     */
+    public static function savePendingBooking(array $staged_data): void {
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        $_SESSION['pending_booking_verification'] = $staged_data;
+
+        if (!headers_sent() && function_exists('qes_encrypt')) {
+            $enc_state = qes_encrypt(json_encode($staged_data));
+            $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+            setcookie('qes_staged_booking', $enc_state, [
+                'expires' => (int)($staged_data['expires_at'] ?? (time() + self::CODE_EXPIRY_SECONDS)),
+                'path' => '/',
+                'secure' => $is_https,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
+    }
+
+    /**
+     * Clears pending booking state from session and cookie.
+     */
+    public static function clearPendingBooking(): void {
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        unset($_SESSION['pending_booking_verification']);
+        if (!headers_sent()) {
+            setcookie('qes_staged_booking', '', ['expires' => time() - 3600, 'path' => '/']);
+        }
+    }
+
+    /**
      * Validates and temporarily stages a booking submission.
      * Generates a 6-digit OTP code and dispatches a verification email.
      * DOES NOT insert into the main database `bookings` table.
@@ -162,8 +224,8 @@ class BookingVerificationHelper {
             'privacy_consent'      => 'Acknowledged under RA 10173 on ' . ($params['privacy_consent_at'] ?? date('Y-m-d H:i:s'))
         ];
 
-        // 8. Save temporarily in session
-        $_SESSION['pending_booking_verification'] = [
+        // 8. Save temporarily in session and encrypted cookie fallback
+        $staged_data = [
             'token'            => $token,
             'code'             => $code,
             'email'            => $client_email,
@@ -176,6 +238,7 @@ class BookingVerificationHelper {
             'last_resend_at'   => time(),
             'last_send_failed' => false
         ];
+        self::savePendingBooking($staged_data);
 
         // 9. Dispatch Email with Verification Code & Booking Summary
         $email_error = '';
@@ -232,7 +295,7 @@ class BookingVerificationHelper {
             session_start();
         }
 
-        $pending = $_SESSION['pending_booking_verification'] ?? null;
+        $pending = self::getPendingBooking();
         if (!$pending || !is_array($pending)) {
             return [
                 'success' => false,
@@ -250,7 +313,7 @@ class BookingVerificationHelper {
 
         // Check maximum attempt cap
         if (($pending['attempts'] ?? 0) >= self::MAX_VERIFY_ATTEMPTS) {
-            unset($_SESSION['pending_booking_verification']);
+            self::clearPendingBooking();
             return [
                 'success' => false,
                 'message' => 'Too many failed verification attempts (maximum 5). For your security, this session has been cancelled. Please submit your booking again.'
@@ -270,8 +333,9 @@ class BookingVerificationHelper {
 
         // Check code match
         if (empty($clean_code) || !hash_equals($expected_code, $clean_code)) {
-            $_SESSION['pending_booking_verification']['attempts'] = ($pending['attempts'] ?? 0) + 1;
-            $remaining = max(0, self::MAX_VERIFY_ATTEMPTS - $_SESSION['pending_booking_verification']['attempts']);
+            $pending['attempts'] = ($pending['attempts'] ?? 0) + 1;
+            self::savePendingBooking($pending);
+            $remaining = max(0, self::MAX_VERIFY_ATTEMPTS - $pending['attempts']);
             return [
                 'success' => false,
                 'message' => "The 6-digit verification code entered is incorrect. Please re-check your email ({$remaining} attempts remaining)."
@@ -290,7 +354,7 @@ class BookingVerificationHelper {
         }
 
         // Successfully committed! Clear temporary session storage
-        unset($_SESSION['pending_booking_verification']);
+        self::clearPendingBooking();
 
         return [
             'success'      => true,
@@ -316,7 +380,7 @@ class BookingVerificationHelper {
             session_start();
         }
 
-        $pending = $_SESSION['pending_booking_verification'] ?? null;
+        $pending = self::getPendingBooking();
         if (!$pending || !is_array($pending)) {
             return [
                 'success' => false,
@@ -350,7 +414,8 @@ class BookingVerificationHelper {
         );
 
         if (!$sent) {
-            $_SESSION['pending_booking_verification']['last_send_failed'] = true;
+            $pending['last_send_failed'] = true;
+            self::savePendingBooking($pending);
             return [
                 'success'    => false,
                 'email_sent' => false,
@@ -360,11 +425,12 @@ class BookingVerificationHelper {
         }
 
         // Send succeeded: Now safely update active session code, expiry, cooldown, and reset attempts
-        $_SESSION['pending_booking_verification']['code']             = $candidate_code;
-        $_SESSION['pending_booking_verification']['expires_at']       = time() + self::CODE_EXPIRY_SECONDS;
-        $_SESSION['pending_booking_verification']['last_resend_at']   = time();
-        $_SESSION['pending_booking_verification']['last_send_failed'] = false;
-        $_SESSION['pending_booking_verification']['attempts']         = 0;
+        $pending['code']             = $candidate_code;
+        $pending['expires_at']       = time() + self::CODE_EXPIRY_SECONDS;
+        $pending['last_resend_at']   = time();
+        $pending['last_send_failed'] = false;
+        $pending['attempts']         = 0;
+        self::savePendingBooking($pending);
 
         $masked_email = self::maskEmail($pending['email']);
 
@@ -392,7 +458,7 @@ class BookingVerificationHelper {
             session_start();
         }
 
-        $pending = $_SESSION['pending_booking_verification'] ?? null;
+        $pending = self::getPendingBooking();
         if (!$pending || !is_array($pending)) {
             return [
                 'success' => false,
@@ -461,17 +527,18 @@ class BookingVerificationHelper {
             ];
         }
 
-        // Dispatch succeeded: Now update pending session state
-        $_SESSION['pending_booking_verification']['email']            = $new_email;
-        if (isset($_SESSION['pending_booking_verification']['payload']) && is_array($_SESSION['pending_booking_verification']['payload'])) {
-            $_SESSION['pending_booking_verification']['payload']['client_email'] = $new_email;
+        // Dispatch succeeded: Now update pending session state & cookie
+        $pending['email']            = $new_email;
+        if (isset($pending['payload']) && is_array($pending['payload'])) {
+            $pending['payload']['client_email'] = $new_email;
         }
-        $_SESSION['pending_booking_verification']['summary']          = $summary;
-        $_SESSION['pending_booking_verification']['code']             = $candidate_code;
-        $_SESSION['pending_booking_verification']['expires_at']       = time() + self::CODE_EXPIRY_SECONDS;
-        $_SESSION['pending_booking_verification']['last_resend_at']   = time();
-        $_SESSION['pending_booking_verification']['last_send_failed'] = false;
-        $_SESSION['pending_booking_verification']['attempts']         = 0;
+        $pending['summary']          = $summary;
+        $pending['code']             = $candidate_code;
+        $pending['expires_at']       = time() + self::CODE_EXPIRY_SECONDS;
+        $pending['last_resend_at']   = time();
+        $pending['last_send_failed'] = false;
+        $pending['attempts']         = 0;
+        self::savePendingBooking($pending);
 
         $masked_email = self::maskEmail($new_email);
 
@@ -492,7 +559,7 @@ class BookingVerificationHelper {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             session_start();
         }
-        $pending = $_SESSION['pending_booking_verification'] ?? null;
+        $pending = self::getPendingBooking();
         if (!$pending || !is_array($pending)) return null;
 
         $remaining_secs = max(0, ($pending['expires_at'] ?? 0) - time());
