@@ -2748,7 +2748,7 @@ if ($has_wedding) {
                 if (data.success) {
                     showModalAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Loading your portal...', 'success');
                     setTimeout(() => {
-                        window.location.href = 'index.php';
+                        window.location.reload();
                     }, 100);
                 } else {
                     isIndexOAuthVerifying = false;
@@ -2790,8 +2790,8 @@ if ($has_wedding) {
                     try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
                     showModalAlert('Login successful! Returning to landing page...', 'success');
                     setTimeout(() => {
-                        window.location.href = 'index.php';
-                    }, 500);
+                        window.location.reload();
+                    }, 150);
                 } else {
                     showModalAlert(data.message || 'Invalid username/email or password.');
                     btn.disabled = false;
@@ -2837,8 +2837,8 @@ if ($has_wedding) {
                     try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
                     showModalAlert('Account registered successfully! Returning to landing page...', 'success');
                     setTimeout(() => {
-                        window.location.href = 'index.php';
-                    }, 500);
+                        window.location.reload();
+                    }, 150);
                 } else {
                     showModalAlert(data.message || 'Registration failed. Please check your details.');
                     btn.disabled = false;
