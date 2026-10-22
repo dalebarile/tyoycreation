@@ -156,8 +156,11 @@ class SupabaseConnection {
         $this->token = defined('ENV_SUPABASE_TOKEN') ? ENV_SUPABASE_TOKEN : '';
         $this->projectRef = defined('ENV_SUPABASE_PROJECT_REF') ? ENV_SUPABASE_PROJECT_REF : '';
 
+        $hasPass = defined('ENV_SUPABASE_DB_PASS') && !empty(ENV_SUPABASE_DB_PASS);
+        $hasExt = extension_loaded('pdo_pgsql');
+
         // Check if direct PostgreSQL connection is configured with password
-        if (defined('ENV_SUPABASE_DB_PASS') && !empty(ENV_SUPABASE_DB_PASS) && extension_loaded('pdo_pgsql')) {
+        if ($hasPass && $hasExt) {
             $host = defined('ENV_SUPABASE_DB_HOST') ? ENV_SUPABASE_DB_HOST : "aws-0-ap-southeast-1.pooler.supabase.com";
             $port = defined('ENV_SUPABASE_DB_PORT') ? (string)ENV_SUPABASE_DB_PORT : "6543";
             $user = defined('ENV_SUPABASE_DB_USER') ? ENV_SUPABASE_DB_USER : "postgres.{$this->projectRef}";
@@ -181,13 +184,15 @@ class SupabaseConnection {
                 $this->pdoError = $e->getMessage();
                 error_log('[SupabaseConnection PDO Error] ' . $e->getMessage());
             }
+        } else {
+            $this->pdoError = (!$hasPass ? 'no_pass' : '') . (!$hasExt ? '_no_pdo_pgsql' : '');
         }
 
         if (!headers_sent() && php_sapi_name() !== 'cli') {
             if ($this->pdo) {
                 header("X-DB-Engine: pdo; connect_ms={$this->pdoConnectDuration}");
             } else {
-                header("X-DB-Engine: api" . ($this->pdoError ? "; error=" . rawurlencode(substr($this->pdoError, 0, 80)) : ""));
+                header("X-DB-Engine: api" . ($this->pdoError ? "; reason=" . rawurlencode(substr($this->pdoError, 0, 80)) : ""));
             }
         }
     }
