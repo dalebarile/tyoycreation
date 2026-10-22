@@ -82,6 +82,79 @@ if (!function_exists('qes_csrf_secret')) {
     }
 }
 
+if (!function_exists('qes_verify_csrf_stateless')) {
+    function qes_verify_csrf_stateless(string $token): bool {
+        $token = trim($token);
+        if (empty($token)) {
+            return false;
+        }
+        $secret = qes_csrf_secret();
+
+        // 64-char hex format (16-byte payload + 16-byte HMAC)
+        if (strlen($token) === 64 && ctype_xdigit($token)) {
+            $raw = @hex2bin($token);
+            if ($raw !== false && strlen($raw) === 32) {
+                $v_data = substr($raw, 0, 16);
+                $v_sig = substr($raw, 16, 16);
+                $v_ts = unpack('Nts', substr($v_data, 0, 4))['ts'] ?? 0;
+                // Allow 24h validity window with 5m clock skew allowance
+                if ($v_ts > (time() - 86400) && $v_ts <= (time() + 300)) {
+                    $expected_sig = substr(hash_hmac('sha256', $v_data, $secret, true), 0, 16);
+                    if (hash_equals($expected_sig, $v_sig)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Fallback: Dotted format ($ts.$nonce.$sig)
+        $parts = explode('.', $token);
+        if (count($parts) === 3) {
+            list($ts, $nonce, $sig) = $parts;
+            $ts = (int)$ts;
+            if ($ts > (time() - 86400) && $ts <= (time() + 300)) {
+                $expected_sig = hash_hmac('sha256', $ts . '.' . $nonce, $secret);
+                if (hash_equals($expected_sig, $sig)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('qes_verify_csrf')) {
+    function qes_verify_csrf(?string $submitted = null): bool {
+        if ($submitted === null) {
+            $submitted = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+        }
+        $submitted = trim((string)$submitted);
+        if (empty($submitted)) {
+            return false;
+        }
+
+        // 1. Session match (fast path)
+        if (!empty($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $submitted)) {
+            return true;
+        }
+
+        // 2. Cryptographic HMAC validation
+        if (qes_verify_csrf_stateless($submitted)) {
+            $_SESSION['csrf_token'] = $submitted;
+            return true;
+        }
+
+        // 3. Double-Submit Cookie match (if cookie is a valid signed token)
+        if (!empty($_COOKIE['tyoy_csrf']) && hash_equals($_COOKIE['tyoy_csrf'], $submitted) && qes_verify_csrf_stateless($_COOKIE['tyoy_csrf'])) {
+            $_SESSION['csrf_token'] = $submitted;
+            return true;
+        }
+
+        return false;
+    }
+}
+
 if (!function_exists('csrf_token')) {
     function csrf_token(): string {
         $secret = qes_csrf_secret();
@@ -94,7 +167,7 @@ if (!function_exists('csrf_token')) {
         // 2. If cookie has a valid signed token, restore it into session
         if (!empty($_COOKIE['tyoy_csrf']) && is_string($_COOKIE['tyoy_csrf'])) {
             $c_tok = trim($_COOKIE['tyoy_csrf']);
-            if (qes_verify_csrf($c_tok)) {
+            if (qes_verify_csrf_stateless($c_tok)) {
                 $_SESSION['csrf_token'] = $c_tok;
                 return $_SESSION['csrf_token'];
             }
@@ -132,65 +205,6 @@ if (!function_exists('csrf_token')) {
 
 // Initialize CSRF token
 csrf_token();
-
-if (!function_exists('qes_verify_csrf')) {
-    function qes_verify_csrf(?string $submitted = null): bool {
-        if ($submitted === null) {
-            $submitted = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
-        }
-        $submitted = trim((string)$submitted);
-        if (empty($submitted)) {
-            return false;
-        }
-
-        // 1. Session match (fast path)
-        if (!empty($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $submitted)) {
-            return true;
-        }
-
-        // 2. Double-Submit Cookie match (resilient across serverless containers)
-        if (!empty($_COOKIE['tyoy_csrf']) && hash_equals($_COOKIE['tyoy_csrf'], $submitted)) {
-            $_SESSION['csrf_token'] = $submitted;
-            return true;
-        }
-
-        $secret = qes_csrf_secret();
-
-        // 3. Cryptographic HMAC validation for 64-char hex format (16-byte payload + 16-byte HMAC)
-        if (strlen($submitted) === 64 && ctype_xdigit($submitted)) {
-            $raw = @hex2bin($submitted);
-            if ($raw !== false && strlen($raw) === 32) {
-                $v_data = substr($raw, 0, 16);
-                $v_sig = substr($raw, 16, 16);
-                $v_ts = unpack('Nts', substr($v_data, 0, 4))['ts'] ?? 0;
-                // Allow 24h validity window with 5m clock skew allowance
-                if ($v_ts > (time() - 86400) && $v_ts <= (time() + 300)) {
-                    $expected_sig = substr(hash_hmac('sha256', $v_data, $secret, true), 0, 16);
-                    if (hash_equals($expected_sig, $v_sig)) {
-                        $_SESSION['csrf_token'] = $submitted;
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // 4. Fallback: Dotted format ($ts.$nonce.$sig)
-        $parts = explode('.', $submitted);
-        if (count($parts) === 3) {
-            list($ts, $nonce, $sig) = $parts;
-            $ts = (int)$ts;
-            if ($ts > (time() - 86400) && $ts <= (time() + 300)) {
-                $expected_sig = hash_hmac('sha256', $ts . '.' . $nonce, $secret);
-                if (hash_equals($expected_sig, $sig)) {
-                    $_SESSION['csrf_token'] = $submitted;
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-}
 
 // =========================================================================
 // Hardened Rate Limiter for Authentication & Security-Sensitive Operations
