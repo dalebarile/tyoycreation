@@ -653,6 +653,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
         const CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
         let fpCurrentIdentifier = '';
         let fpVerifiedCode = '';
+        let fpResetToken = '';
 
         function onTurnstileError(errorCode) {
             console.warn('[QES Turnstile] Connection error:', errorCode);
@@ -712,6 +713,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             document.getElementById('fpCodeInput').value = '';
             document.getElementById('fpNewPassword').value = '';
             document.getElementById('fpConfirmPassword').value = '';
+            fpResetToken = '';
             hideFpAlert('fpStep1Alert');
             hideFpAlert('fpStep2Alert');
             hideFpAlert('fpStep3Alert');
@@ -798,7 +800,13 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
                     method: 'POST',
                     body: formData
                 });
-                const data = await res.json();
+                let data;
+                try {
+                    data = await res.json();
+                } catch (jsonErr) {
+                    showFpAlert(alertId, 'error', 'Server returned an invalid response. Please try again.');
+                    return;
+                }
 
                 if (data.success) {
                     fpCurrentIdentifier = data.identifier || identifier;
@@ -849,10 +857,19 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
                     method: 'POST',
                     body: formData
                 });
-                const data = await res.json();
+                let data;
+                try {
+                    data = await res.json();
+                } catch (jsonErr) {
+                    showFpAlert('fpStep2Alert', 'error', 'Server returned an invalid response. Please try again.');
+                    return;
+                }
 
                 if (data.success) {
                     fpVerifiedCode = code;
+                    if (data.reset_token) {
+                        fpResetToken = data.reset_token;
+                    }
 
                     // Transition to Step 3 (Set New Password)
                     document.getElementById('fpStep2').style.display = 'none';
@@ -1018,12 +1035,21 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
                 formData.append('new_password', newPassword);
                 formData.append('confirm_password', confirmPassword);
                 formData.append('code', fpVerifiedCode);
+                if (fpResetToken) {
+                    formData.append('reset_token', fpResetToken);
+                }
 
                 const res = await fetch('auth_action.php?action=forgot_password_reset', {
                     method: 'POST',
                     body: formData
                 });
-                const data = await res.json();
+                let data;
+                try {
+                    data = await res.json();
+                } catch (jsonErr) {
+                    showFpAlert('fpStep3Alert', 'error', 'Server returned an invalid response. Please try again.');
+                    return;
+                }
 
                 if (data.success) {
                     // Transition to Step 4 (Success celebration)
@@ -1040,7 +1066,7 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
                     showFpAlert('fpStep3Alert', 'error', data.message || 'Failed to update password. Please try again.');
                 }
             } catch (err) {
-                showFpAlert('fpStep3Alert', 'error', 'Network error while updating password.');
+                showFpAlert('fpStep3Alert', 'error', 'Network error while updating password. Please try again.');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalBtnHtml;

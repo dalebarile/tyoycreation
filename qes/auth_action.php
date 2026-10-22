@@ -862,17 +862,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $clear_code->execute();
             $clear_code->close();
 
-            // Issue a cryptographically random, one-time session token for Step 3
-            $session_token = bin2hex(random_bytes(32));
+            // Issue a cryptographically signed, one-time reset token for Step 3 (works seamlessly across serverless instances)
+            $token_exp = time() + 900; // 15-minute validity window
+            $secret = function_exists('qes_csrf_secret') ? qes_csrf_secret() : 'qes_reset_fallback_key';
+            $sig = hash_hmac('sha256', $uid . '|' . $token_exp, $secret);
+            $session_token = $uid . '.' . $token_exp . '.' . $sig;
+
             $_SESSION['pw_reset_user_id'] = $uid;
             $_SESSION['pw_reset_token'] = $session_token;
-            $_SESSION['pw_reset_token_expires'] = time() + 900; // 15-minute validity window
+            $_SESSION['pw_reset_token_expires'] = $token_exp;
+
+            if (!headers_sent()) {
+                setcookie('qes_pw_reset', $session_token, [
+                    'expires' => $token_exp,
+                    'path' => '/',
+                    'secure' => (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https'),
+                    'httponly' => true,
+                    'samesite' => 'Lax'
+                ]);
+            }
 
             // Clear failed attempts counter
             qes_rate_limit_clear('pw_verify_code', $verify_key);
 
             echo json_encode([
                 'success' => true,
+                'reset_token' => $session_token,
                 'message' => 'Verification code confirmed! You may now set your new password.'
             ]);
             exit;
@@ -893,6 +908,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $user_id = (int)($_SESSION['pw_reset_user_id'] ?? 0);
         $reset_token = $_SESSION['pw_reset_token'] ?? '';
         $token_expires = (int)($_SESSION['pw_reset_token_expires'] ?? 0);
+
+        // Stateless verification fallback for serverless instances (Vercel)
+        if ($user_id <= 0 || empty($reset_token) || time() > $token_expires) {
+            $candidate_token = $_POST['reset_token'] ?? ($_COOKIE['qes_pw_reset'] ?? '');
+            if (!empty($candidate_token) && is_string($candidate_token)) {
+                $parts = explode('.', $candidate_token);
+                if (count($parts) === 3) {
+                    $c_uid = (int)$parts[0];
+                    $c_exp = (int)$parts[1];
+                    $c_sig = $parts[2];
+                    $secret = function_exists('qes_csrf_secret') ? qes_csrf_secret() : 'qes_reset_fallback_key';
+                    $expected_sig = hash_hmac('sha256', $c_uid . '|' . $c_exp, $secret);
+                    if (hash_equals($expected_sig, $c_sig) && time() <= $c_exp && $c_uid > 0) {
+                        $user_id = $c_uid;
+                        $reset_token = $candidate_token;
+                        $token_expires = $c_exp;
+                    }
+                }
+            }
+        }
 
         if (empty($new_password) || empty($confirm_password)) {
             echo json_encode(['success' => false, 'message' => 'Please fill in both the new password and confirmation password fields.']);
@@ -919,6 +954,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         // Validate verified session token
         if ($user_id <= 0 || empty($reset_token) || time() > $token_expires) {
             unset($_SESSION['pw_reset_user_id'], $_SESSION['pw_reset_token'], $_SESSION['pw_reset_token_expires']);
+            if (!headers_sent()) {
+                setcookie('qes_pw_reset', '', ['expires' => time() - 3600, 'path' => '/']);
+            }
             echo json_encode(['success' => false, 'message' => 'Your verification session has expired. Please restart the password reset process.']);
             exit;
         }
@@ -941,6 +979,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
             // Invalidate the one-time reset session token immediately
             unset($_SESSION['pw_reset_user_id'], $_SESSION['pw_reset_token'], $_SESSION['pw_reset_token_expires']);
+            if (!headers_sent()) {
+                setcookie('qes_pw_reset', '', ['expires' => time() - 3600, 'path' => '/']);
+            }
             session_regenerate_id(true);
 
             echo json_encode([
