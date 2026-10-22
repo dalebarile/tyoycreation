@@ -82,8 +82,41 @@
         }, 0);
     });
 
-    // Smart background hover/touch prefetching (ignores same page anchors and stateful routes)
+    // Smart background hover/touch prefetching & Speculation Rules prerender
     const prefetchedUrls = new Set();
+
+    // 1. Speculation Rules API for zero-latency page transitions in supported browsers (Chrome, Edge)
+    try {
+        if (HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
+            const isAdmin = window.location.pathname.includes('a_') || window.location.pathname.includes('admin');
+            const targetUrls = isAdmin ? [
+                'a_home.php',
+                'a_events.php',
+                'a_calendar.php',
+                'a_packages.php',
+                'a_clients.php',
+                'a_settings.php',
+                'a_notifications.php',
+                'a_sitemanager.php'
+            ] : [
+                'index.php',
+                'booking.php',
+                'login.php'
+            ];
+
+            const specScript = document.createElement('script');
+            specScript.type = 'speculationrules';
+            specScript.textContent = JSON.stringify({
+                prerender: [{
+                    source: "list",
+                    urls: targetUrls,
+                    eagerness: "moderate"
+                }]
+            });
+            document.head.appendChild(specScript);
+        }
+    } catch (_) {}
+
     function prefetchUrl(link) {
         if (!link || !link.href) return;
         const hrefAttr = link.getAttribute('href') || '';
@@ -108,11 +141,16 @@
             if (prefetchedUrls.has(cleanUrl)) return;
             prefetchedUrls.add(cleanUrl);
 
-            const linkElem = document.createElement('link');
-            linkElem.rel = 'prefetch';
-            linkElem.as = 'document';
-            linkElem.href = cleanUrl;
-            document.head.appendChild(linkElem);
+            // Fetch cache pre-warming
+            if (window.fetch) {
+                fetch(cleanUrl, { priority: 'low', credentials: 'same-origin' }).catch(function(){});
+            } else {
+                const linkElem = document.createElement('link');
+                linkElem.rel = 'prefetch';
+                linkElem.as = 'document';
+                linkElem.href = cleanUrl;
+                document.head.appendChild(linkElem);
+            }
         } catch (_) {}
     }
 
@@ -129,4 +167,13 @@
             prefetchUrl(link);
         }
     }, { passive: true });
+
+    // Idle pre-warm for primary navigation links
+    const scheduleIdle = window.requestIdleCallback || function(cb) { setTimeout(cb, 1200); };
+    scheduleIdle(function() {
+        const navLinks = document.querySelectorAll('.admin-nav-item, .admin-sidebar a, .public-nav a');
+        navLinks.forEach(function(l) {
+            prefetchUrl(l);
+        });
+    });
 })();

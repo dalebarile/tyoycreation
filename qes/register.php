@@ -101,6 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://kanotzhwqsscejqecqom.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="https://kanotzhwqsscejqecqom.supabase.co">
+    <link rel="preconnect" href="https://accounts.google.com">
+    <link rel="dns-prefetch" href="https://accounts.google.com">
     <style>
         body {
             background: radial-gradient(circle at 15% 15%, #232f22 0%, #172117 50%, #0c120c 100%);
@@ -481,9 +485,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        window.addEventListener('load', () => {
+        // Immediate check for instantaneous Google sign-in response
+        if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) {
             checkSupabaseOAuthCallback();
-        });
+        } else {
+            window.addEventListener('DOMContentLoaded', checkSupabaseOAuthCallback);
+        }
+        window.addEventListener('load', checkSupabaseOAuthCallback);
     </script>
+    <script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>
 </body>
 </html>

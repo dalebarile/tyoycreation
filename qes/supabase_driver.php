@@ -458,13 +458,14 @@ class SupabaseConnection {
             $this->curlHandle = curl_init("https://api.supabase.com/v1/projects/{$this->projectRef}/database/query");
             curl_setopt($this->curlHandle, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($this->curlHandle, CURLOPT_POST, true);
+            curl_setopt($this->curlHandle, CURLOPT_ENCODING, '');
             curl_setopt($this->curlHandle, CURLOPT_HTTPHEADER, [
                 "Authorization: Bearer {$this->token}",
                 "Content-Type: application/json"
             ]);
             curl_setopt($this->curlHandle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-            curl_setopt($this->curlHandle, CURLOPT_CONNECTTIMEOUT, 4);
-            curl_setopt($this->curlHandle, CURLOPT_TIMEOUT, 12);
+            curl_setopt($this->curlHandle, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($this->curlHandle, CURLOPT_TIMEOUT, 8);
             curl_setopt($this->curlHandle, CURLOPT_TCP_KEEPALIVE, 1);
             curl_setopt($this->curlHandle, CURLOPT_TCP_KEEPIDLE, 120);
             curl_setopt($this->curlHandle, CURLOPT_TCP_KEEPINTVL, 60);
@@ -630,6 +631,10 @@ class SupabaseConnection {
             $ch = curl_init($endpoint);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
             $prefer = "return=representation";
             if ($isUpsert) {
                 $prefer .= ",resolution=merge-duplicates";
@@ -770,6 +775,10 @@ class SupabaseConnection {
             $ch = curl_init($endpoint);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 "apikey: {$serviceKey}",
                 "Authorization: Bearer {$serviceKey}",
@@ -848,6 +857,10 @@ class SupabaseConnection {
             $ch = curl_init($endpoint);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 "apikey: {$serviceKey}",
                 "Authorization: Bearer {$serviceKey}",

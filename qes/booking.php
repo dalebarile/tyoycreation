@@ -6,6 +6,9 @@ $business_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS
 $contact_phone = get_setting($conn, 'contact_phone', '+63 912 345 6789');
 $contact_email = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
 
+if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_cookie')) {
+    qes_restore_client_session_from_cookie($conn);
+}
 $is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
 
 // Database-driven pricing packages

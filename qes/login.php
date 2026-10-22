@@ -6,6 +6,9 @@ $script_dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''
 $base_href = ($script_dir === '/' || $script_dir === '.' || $script_dir === '/api') ? '/' : ($script_dir . '/');
 
 // If already logged in, redirect
+if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_cookie')) {
+    qes_restore_client_session_from_cookie($conn);
+}
 if (isset($_SESSION['id']) && !empty($_SESSION['role'])) {
     if (in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'])) {
         header("Location: " . $base_href . "a_home.php");
@@ -40,6 +43,10 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://kanotzhwqsscejqecqom.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="https://kanotzhwqsscejqecqom.supabase.co">
+    <link rel="preconnect" href="https://accounts.google.com">
+    <link rel="dns-prefetch" href="https://accounts.google.com">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -686,9 +693,13 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             }
         }
 
-        window.addEventListener('load', () => {
+        // Immediate check for instantaneous Google sign-in response
+        if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) {
             checkSupabaseOAuthCallback();
-        });
+        } else {
+            window.addEventListener('DOMContentLoaded', checkSupabaseOAuthCallback);
+        }
+        window.addEventListener('load', checkSupabaseOAuthCallback);
 
         // Standard Login Submit
         async function handleLoginSubmit(e) {
@@ -787,5 +798,6 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
             }
         }
     </script>
+    <script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>
 </body>
 </html>

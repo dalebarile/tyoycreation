@@ -91,12 +91,12 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         expect(page.url()).toContain('booking.php');
 
         // Clean up session by logging out
-        await page.goto('http://localhost/Tyoy_Creation_QES_updated/qes/logout.php?redirect=index.php');
+        await page.goto('logout.php?redirect=index.php');
     });
 
     test('Real-time pricing modal: privacy act modal is removed when clicking package options', async ({ page }) => {
         // Go to landing page
-        await page.goto('http://localhost/Tyoy_Creation_QES_updated/qes/index.php');
+        await page.goto('index.php');
 
         // Open Birthday Package Inclusions modal
         await page.locator('.btn-svc-details').first().click();

@@ -156,6 +156,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
                     if (in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin']) && function_exists('qes_set_admin_auth_cookie')) {
                         qes_set_admin_auth_cookie((int)$user['id'], $user['password']);
+                    } elseif (function_exists('qes_set_client_auth_cookie')) {
+                        qes_set_client_auth_cookie((int)$user['id'], $user['password'] ?? '');
                     }
 
                     $redirect = ($user['role'] === 'admin' || $user['role'] === 'super_admin' || $user['role'] === 'main_admin') ? 'a_home.php' : 'index.php';
@@ -379,12 +381,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         $ch = curl_init("{$supabase_url}/auth/v1/user");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_ENCODING, '');
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$access_token}",
             "apikey: {$anon_key}"
         ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 12);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         $res = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
@@ -440,6 +445,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 track_user_session($conn, (int)$user['id'], true);
             }
 
+            if (function_exists('qes_set_client_auth_cookie')) {
+                qes_set_client_auth_cookie((int)$user['id'], $user['password'] ?? '');
+            }
+
             echo json_encode([
                 'success' => true,
                 'message' => 'Signed in with Google via Supabase successfully!',
@@ -492,6 +501,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
                 if (function_exists('track_user_session')) {
                     track_user_session($conn, $new_id, true);
+                }
+
+                if (function_exists('qes_set_client_auth_cookie')) {
+                    qes_set_client_auth_cookie($new_id, $dummy_pass);
                 }
 
                 echo json_encode([
@@ -592,6 +605,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
             if (function_exists('track_user_session')) {
                 track_user_session($conn, $new_id, true);
+            }
+
+            if (function_exists('qes_set_client_auth_cookie')) {
+                qes_set_client_auth_cookie($new_id, $hashed);
             }
 
             echo json_encode([

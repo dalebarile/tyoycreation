@@ -26,6 +26,9 @@ $business_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS
 $contact_phone = get_setting($conn, 'contact_phone', '0956 035 3731');
 $contact_email = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
 $hero_bg_img = get_setting($conn, 'media_hero_bg', 'assets/tyoy_creation_banner.jpg');
+if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_cookie')) {
+    qes_restore_client_session_from_cookie($conn);
+}
 $is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
 $google_client_id = defined('ENV_GOOGLE_CLIENT_ID') ? ENV_GOOGLE_CLIENT_ID : (function_exists('get_setting') ? get_setting($conn, 'google_client_id', '') : '');
 
@@ -76,6 +79,10 @@ if ($has_wedding) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="preconnect" href="https://kanotzhwqsscejqecqom.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="https://kanotzhwqsscejqecqom.supabase.co">
+    <link rel="preconnect" href="https://accounts.google.com">
+    <link rel="dns-prefetch" href="https://accounts.google.com">
     <link rel="preload" as="image" href="<?= htmlspecialchars($hero_bg_img) ?>" fetchpriority="high">
     <link rel="preload" as="image" href="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" type="image/png">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -2754,7 +2761,12 @@ if ($has_wedding) {
             }
         }
 
-        window.addEventListener('DOMContentLoaded', checkIndexSupabaseOAuthCallback);
+        // Immediate execution for instantaneous Google sign-in response without waiting for full DOM rendering
+        if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) {
+            checkIndexSupabaseOAuthCallback();
+        } else {
+            window.addEventListener('DOMContentLoaded', checkIndexSupabaseOAuthCallback);
+        }
         window.addEventListener('load', checkIndexSupabaseOAuthCallback);
 
         async function handleModalLoginSubmit(e) {

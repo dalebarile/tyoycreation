@@ -67,6 +67,7 @@ if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() 
         'httponly' => true,
         'samesite' => 'Lax'
     ]);
+    session_cache_limiter('private_no_expire');
     session_start();
 }
 
@@ -1123,6 +1124,97 @@ if (!function_exists('qes_restore_admin_session_from_cookie')) {
         $_SESSION['id'] = (int)$user['id'];
         $_SESSION['username'] = $user['username'];
         $_SESSION['role'] = $user['role'];
+        $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
+        $_SESSION['email'] = $user['email'];
+        $_SESSION['phone'] = $user['phone'] ?? '';
+
+        return true;
+    }
+}
+
+if (!function_exists('qes_set_client_auth_cookie')) {
+    function qes_set_client_auth_cookie(int $userId, string $passwordHash): void {
+        if ($userId <= 0 || headers_sent() || php_sapi_name() === 'cli') {
+            return;
+        }
+        $secret = qes_csrf_secret();
+        $sig = hash_hmac('sha256', $userId . '|client|' . $passwordHash, $secret);
+        $val = $userId . '|' . $sig;
+        
+        $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+            || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+
+        setcookie('tyoy_client_auth', $val, [
+            'expires' => time() + (86400 * 14),
+            'path' => '/',
+            'domain' => '',
+            'secure' => $is_https,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+    }
+}
+
+if (!function_exists('qes_clear_client_auth_cookie')) {
+    function qes_clear_client_auth_cookie(): void {
+        if (!headers_sent() && php_sapi_name() !== 'cli') {
+            setcookie('tyoy_client_auth', '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
+    }
+}
+
+if (!function_exists('qes_restore_client_session_from_cookie')) {
+    function qes_restore_client_session_from_cookie($conn): bool {
+        if (!empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user')) {
+            return true;
+        }
+        if (empty($_COOKIE['tyoy_client_auth']) || !is_string($_COOKIE['tyoy_client_auth'])) {
+            return false;
+        }
+        $parts = explode('|', $_COOKIE['tyoy_client_auth'], 2);
+        if (count($parts) !== 2) {
+            return false;
+        }
+        $userId = (int)$parts[0];
+        $sig = $parts[1];
+        if ($userId <= 0 || empty($sig) || !isset($conn) || !is_object($conn)) {
+            return false;
+        }
+
+        $stmt = $conn->prepare("SELECT id, username, role, full_name, email, phone, password, status FROM users WHERE id = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param("i", $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $user = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+
+        if (!$user || !in_array($user['status'] ?? '', ['approved', 'active'], true) || ($user['role'] ?? '') !== 'user') {
+            qes_clear_client_auth_cookie();
+            return false;
+        }
+
+        $secret = qes_csrf_secret();
+        $expected = hash_hmac('sha256', $userId . '|client|' . $user['password'], $secret);
+        if (!hash_equals($expected, $sig)) {
+            qes_clear_client_auth_cookie();
+            return false;
+        }
+
+        // Restore session variables
+        $_SESSION['id'] = (int)$user['id'];
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['role'] = 'user';
         $_SESSION['full_name'] = !empty($user['full_name']) ? $user['full_name'] : $user['username'];
         $_SESSION['email'] = $user['email'];
         $_SESSION['phone'] = $user['phone'] ?? '';

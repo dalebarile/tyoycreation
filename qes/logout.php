@@ -30,6 +30,9 @@ $_SESSION = [];
 if (function_exists('qes_clear_admin_auth_cookie')) {
     qes_clear_admin_auth_cookie();
 }
+if (function_exists('qes_clear_client_auth_cookie')) {
+    qes_clear_client_auth_cookie();
+}
 if (!headers_sent()) {
     setcookie('tyoy_csrf', '', time() - 3600, '/');
 }
