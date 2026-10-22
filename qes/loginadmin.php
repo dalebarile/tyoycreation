@@ -660,7 +660,10 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
             const flag = document.getElementById('cfTurnstileFailed');
             if (flag) flag.value = '1';
             const notice = document.getElementById('turnstileFallbackNotice');
-            if (notice) notice.style.display = 'block';
+            if (notice) {
+                notice.style.display = 'block';
+                notice.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Security challenge unavailable (code ${errorCode || 'unknown'}). Protected by server-side rate limits.`;
+            }
         }
 
         function onTurnstileTimeout() {

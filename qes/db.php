@@ -1329,6 +1329,11 @@ if (!function_exists('set_setting')) {
 
 // ============================================================
 // CLOUDFLARE TURNSTILE CAPTCHA PROTECTION HELPERS
+//
+// Key Priority Order:
+// 1. Supabase `settings` table row turnstile_site_key / turnstile_secret_key, if non-empty.
+// 2. Env constants ENV_TURNSTILE_SITE_KEY / ENV_TURNSTILE_SECRET_KEY (from Vercel env vars).
+// 3. Cloudflare dummy test key (1x0000...).
 // ============================================================
 if (!function_exists('qes_get_turnstile_site_key')) {
     function qes_get_turnstile_site_key($conn = null): string {
@@ -1340,8 +1345,10 @@ if (!function_exists('qes_get_turnstile_site_key')) {
             if (!empty($db_key)) {
                 $db_key = trim((string)$db_key);
                 if ($is_local && strpos($db_key, '0x4') === 0 && !defined('FORCE_LIVE_TURNSTILE_ON_LOCAL')) {
+                    error_log('[QES Turnstile] Site key source: dummy (local dev fallback), prefix: 1x00');
                     return '1x00000000000000000000AA';
                 }
+                error_log('[QES Turnstile] Site key source: db, prefix: ' . substr($db_key, 0, 4));
                 return $db_key;
             }
         }
@@ -1349,11 +1356,14 @@ if (!function_exists('qes_get_turnstile_site_key')) {
         $env_key = defined('ENV_TURNSTILE_SITE_KEY') ? trim((string)ENV_TURNSTILE_SITE_KEY) : '';
         if (!empty($env_key)) {
             if ($is_local && strpos($env_key, '0x4') === 0 && !defined('FORCE_LIVE_TURNSTILE_ON_LOCAL')) {
+                error_log('[QES Turnstile] Site key source: dummy (local dev fallback), prefix: 1x00');
                 return '1x00000000000000000000AA';
             }
+            error_log('[QES Turnstile] Site key source: env, prefix: ' . substr($env_key, 0, 4));
             return $env_key;
         }
 
+        error_log('[QES Turnstile] Site key source: dummy (fallback), prefix: 1x00');
         return '1x00000000000000000000AA';
     }
 }
