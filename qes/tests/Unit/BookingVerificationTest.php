@@ -492,7 +492,7 @@ class BookingVerificationTest extends TestCase
         $this->assertSame($targetDate, $res['event_date']);
         $this->assertSame($targetTime, $res['event_time']);
         $this->assertSame('November 20, 2026', $res['friendly_date']);
-        $this->assertStringContainsString('Schedule Conflict', $res['message']);
+        $this->assertStringContainsString('already reserved', $res['message']);
 
         // 2. Data Privacy Act (RA 10173): Conflict message must NEVER expose conflicting party details
         $this->assertStringNotContainsString('Confidential Private Wedding', $res['message']);
@@ -500,6 +500,214 @@ class BookingVerificationTest extends TestCase
 
         // 3. OTP verification session MUST NOT be staged when double-booking is detected
         $this->assertArrayNotHasKey('pending_booking_verification', $_SESSION);
+    }
+
+    public function test_stage_booking_detects_pending_booking_conflict_and_halts_staging(): void
+    {
+        $targetDate = '2026-12-15';
+        $targetTime = '10:00';
+
+        $conflictSql = "SELECT id FROM bookings 
+                WHERE status IN ('pending', 'approved') 
+                  AND id != ? 
+                  AND DATE(event_start) = ? 
+                LIMIT 1";
+
+        // Conflict is a 'pending' booking
+        $this->conn->addQueryResult($conflictSql, [[
+            'id' => 101
+        ]]);
+
+        $params = [
+            'client_name'          => 'Eduardo Ramos',
+            'client_email'         => 'eduardo@example.com',
+            'client_phone'         => '09181234567',
+            'client_address'       => 'Pasig City',
+            'event_title'          => 'Eduardo Corporate Gala',
+            'event_type'           => 'Corporate Events',
+            'event_date'           => $targetDate,
+            'event_time'           => $targetTime,
+            'guest_count'          => 100,
+            'location_venue'       => 'Megamall Event Center',
+            'service_requirements' => 'Full Stage Setup'
+        ];
+
+        $res = BookingVerificationHelper::stageBooking($this->conn, $params);
+
+        $this->assertFalse($res['success']);
+        $this->assertFalse($res['available']);
+        $this->assertTrue($res['conflict']);
+        $this->assertTrue($res['is_conflict']);
+        $this->assertSame('DATE_CONFLICT', $res['code']);
+        $this->assertSame(
+            'Sorry, the date and time you selected is already reserved. Please choose a different date or time, or contact us if you need help.',
+            $res['message']
+        );
+
+        // OTP verification session MUST NOT be created
+        $this->assertArrayNotHasKey('pending_booking_verification', $_SESSION);
+    }
+
+    public function test_stage_booking_detects_approved_booking_conflict_and_halts_staging(): void
+    {
+        $targetDate = '2026-12-20';
+        $targetTime = '15:00';
+
+        $conflictSql = "SELECT id FROM bookings 
+                WHERE status IN ('pending', 'approved') 
+                  AND id != ? 
+                  AND DATE(event_start) = ? 
+                LIMIT 1";
+
+        // Conflict is an 'approved' booking
+        $this->conn->addQueryResult($conflictSql, [[
+            'id' => 102
+        ]]);
+
+        $params = [
+            'client_name'          => 'Beatriz Mendoza',
+            'client_email'         => 'beatriz@example.com',
+            'client_phone'         => '09191234567',
+            'client_address'       => 'Taguig City',
+            'event_title'          => 'Beatriz Wedding Reception',
+            'event_type'           => 'Weddings',
+            'event_date'           => $targetDate,
+            'event_time'           => $targetTime,
+            'guest_count'          => 150,
+            'location_venue'       => 'BGC High Street Lounge',
+            'service_requirements' => 'Floral Styling & Lighting'
+        ];
+
+        $res = BookingVerificationHelper::stageBooking($this->conn, $params);
+
+        $this->assertFalse($res['success']);
+        $this->assertFalse($res['available']);
+        $this->assertTrue($res['conflict']);
+        $this->assertTrue($res['is_conflict']);
+        $this->assertSame('DATE_CONFLICT', $res['code']);
+        $this->assertSame(
+            'Sorry, the date and time you selected is already reserved. Please choose a different date or time, or contact us if you need help.',
+            $res['message']
+        );
+
+        // OTP verification session MUST NOT be created
+        $this->assertArrayNotHasKey('pending_booking_verification', $_SESSION);
+    }
+
+    public function test_conflict_response_never_leaks_pii_or_status(): void
+    {
+        $targetDate = '2026-11-20';
+        $targetTime = '14:00';
+
+        // Preload conflicting celebration containing sensitive private information
+        $conflictSql = "SELECT id FROM bookings 
+                WHERE status IN ('pending', 'approved') 
+                  AND id != ? 
+                  AND DATE(event_start) = ? 
+                LIMIT 1";
+
+        $this->conn->addQueryResult($conflictSql, [[
+            'id'             => 99,
+            'reference_no'   => 'EV-2026-CONFIDENTIAL',
+            'event_title'    => 'Confidential Private Wedding',
+            'client_name'    => 'Secret VIP Client',
+            'client_email'   => 'secret@vip.com',
+            'client_phone'   => '09179999999',
+            'location_venue' => 'Exclusive Luxury Resort',
+            'status'         => 'pending'
+        ]]);
+
+        $params = [
+            'client_name'          => 'Clara Bautista',
+            'client_email'         => 'clara@example.com',
+            'client_phone'         => '09171234567',
+            'client_address'       => 'Makati City',
+            'event_title'          => 'Clara Debut Celebration',
+            'event_type'           => 'Kids Party',
+            'event_date'           => $targetDate,
+            'event_time'           => $targetTime,
+            'guest_count'          => 75,
+            'location_venue'       => 'Makati Sports Club',
+            'service_requirements' => 'Floral Arch & Stage Decor'
+        ];
+
+        $res = BookingVerificationHelper::stageBooking($this->conn, $params);
+
+        $this->assertFalse($res['success']);
+        $msg = $res['message'];
+
+        // Strict assertions that NO existing booking details or status are leaked
+        $this->assertStringNotContainsString('Secret VIP Client', $msg);
+        $this->assertStringNotContainsString('secret@vip.com', $msg);
+        $this->assertStringNotContainsString('09179999999', $msg);
+        $this->assertStringNotContainsString('EV-2026-CONFIDENTIAL', $msg);
+        $this->assertStringNotContainsString('Confidential Private Wedding', $msg);
+        $this->assertStringNotContainsString('Exclusive Luxury Resort', $msg);
+        $this->assertStringNotContainsString('pending', strtolower($msg));
+        $this->assertStringNotContainsString('approved', strtolower($msg));
+        $this->assertStringNotContainsString('EV-', $msg);
+
+        $this->assertSame(
+            'Sorry, the date and time you selected is already reserved. Please choose a different date or time, or contact us if you need help.',
+            $msg
+        );
+    }
+
+    public function test_verify_booking_rechecks_conflict_before_db_commit(): void
+    {
+        $targetDate = date('Y-m-d', strtotime('+45 days'));
+        $targetTime = '16:00';
+
+        // 1. Stage a booking when the date is clear (no conflict)
+        $params = [
+            'client_name'    => 'Race Condition Test',
+            'client_email'   => 'race@example.com',
+            'client_phone'   => '09171234567',
+            'event_title'    => 'Race Birthday Party',
+            'event_type'     => 'Kids Party',
+            'event_date'     => $targetDate,
+            'event_time'     => $targetTime,
+            'location_venue' => 'Quezon City Hall'
+        ];
+
+        $stageRes = BookingVerificationHelper::stageBooking($this->conn, $params);
+        $this->assertTrue($stageRes['success']);
+        $code  = $_SESSION['pending_booking_verification']['code'];
+        $token = $_SESSION['pending_booking_verification']['token'];
+
+        // 2. Now simulate a conflicting booking having been approved while user had OTP open
+        $conflictSql = "SELECT id FROM bookings 
+                WHERE status IN ('pending', 'approved') 
+                  AND id != ? 
+                  AND DATE(event_start) = ? 
+                LIMIT 1";
+
+        $this->conn->addQueryResult($conflictSql, [[
+            'id' => 888
+        ]]);
+
+        // 3. User enters correct code and submits verification
+        $verifyRes = BookingVerificationHelper::verifyBooking($this->conn, $code, $token);
+
+        // 4. Must detect conflict and reject WITHOUT committing
+        $this->assertFalse($verifyRes['success']);
+        $this->assertFalse($verifyRes['available']);
+        $this->assertTrue($verifyRes['conflict']);
+        $this->assertSame('DATE_CONFLICT', $verifyRes['code']);
+        $this->assertSame(
+            'Sorry, the date and time you selected is already reserved. Please choose a different date or time, or contact us if you need help.',
+            $verifyRes['message']
+        );
+
+        // Assert no INSERT query was performed
+        $dbHasInsert = false;
+        foreach ($this->conn->getPreparedStatements() as $stmt) {
+            if (stripos($stmt->getSql(), 'INSERT INTO bookings') !== false) {
+                $dbHasInsert = true;
+                break;
+            }
+        }
+        $this->assertFalse($dbHasInsert, 'Database must NOT commit booking if conflict arose before verification.');
     }
 }
 

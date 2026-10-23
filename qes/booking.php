@@ -3496,9 +3496,21 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     eventTime: eventTime,
                     friendlyDate: friendly,
                     friendlyTime: '',
-                    message: customMsg || `Double Booking Detected: ${friendly} is already fully booked. Tyoy Creation permits only one confirmed celebration per calendar day to ensure full crew dedication. You need to change the date to proceed with email verification.`
+                    message: customMsg || 'Sorry, the date and time you selected is already reserved. Please choose a different date or time, or contact us if you need help.'
                 });
             };
+
+            // Accessibility: Escape key dismisses Date Unavailable modal and focuses date input
+            useEffect(() => {
+                if (!conflictModal.isOpen) return;
+                const handleEscKey = (e) => {
+                    if (e.key === 'Escape') {
+                        handleResolveConflictChangeDate();
+                    }
+                };
+                window.addEventListener('keydown', handleEscKey);
+                return () => window.removeEventListener('keydown', handleEscKey);
+            }, [conflictModal.isOpen]);
 
             // Live Database-Driven Availability State (One confirmed event per day)
             const [bookedDates, setBookedDates] = useState([]);
@@ -4647,16 +4659,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         });
                     } else {
                         resetTurnstileWidget(modalTurnstileWidgetId);
-                        if (data.is_conflict || data.conflict) {
+                        if (data.is_conflict || data.conflict || data.code === 'DATE_CONFLICT') {
                             setVerifyModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
-                            setConflictModal({
-                                isOpen: true,
-                                eventDate: data.event_date || eventDate,
-                                eventTime: data.event_time || eventTime,
-                                friendlyDate: data.friendly_date || eventDate,
-                                friendlyTime: data.friendly_time || eventTime,
-                                message: data.message || 'The selected date and time overlaps with an existing confirmed celebration.'
-                            });
+                            triggerDoubleBookingModal(data.event_date || eventDate, data.message);
                         } else {
                             setVerifyModal(prev => ({
                                 ...prev,
@@ -6266,61 +6271,83 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     {conflictModal.isOpen && (() => {
                         const conflictModalContent = (
                             <div className="exit-warning-overlay" role="dialog" aria-modal="true" aria-labelledby="conflictReminderTitle" style={{ zIndex: 9999999 }}>
-                                <div className="exit-warning-card" style={{ maxWidth: '480px' }}>
+                                <div className="exit-warning-card" style={{ maxWidth: '460px', padding: '32px 28px', borderRadius: '16px', background: '#ffffff', boxShadow: '0 20px 40px rgba(15, 30, 20, 0.22)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
                                     <button
                                         type="button"
                                         className="verify-modal-close-btn"
-                                        title="Close reminder and change date"
-                                        aria-label="Close conflict reminder"
+                                        title="Close and choose another date"
+                                        aria-label="Close date unavailable modal"
                                         onClick={handleResolveConflictChangeDate}
                                     >
                                         <i className="fa-solid fa-xmark"></i>
                                     </button>
 
-                                    <div className="exit-warning-icon" style={{ background: '#fef3c7', color: '#d97706' }}>
-                                        <i className="fa-solid fa-calendar-xmark"></i>
+                                    <div className="exit-warning-icon" style={{ background: '#fef3c7', color: '#b45309', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', margin: '0 auto 16px', border: '2px solid #fde68a' }}>
+                                        <i className="fa-solid fa-triangle-exclamation"></i>
                                     </div>
 
-                                    <h3 id="conflictReminderTitle" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
-                                        Double Booking Detected
+                                    <h3 id="conflictReminderTitle" style={{ fontSize: '20px', fontWeight: 800, color: '#14261c', margin: '0 0 10px 0', fontFamily: "'Playfair Display', Georgia, serif" }}>
+                                        Date Unavailable
                                     </h3>
 
-                                    <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.45, margin: '0 0 14px 0' }}>
-                                        We cannot proceed with email verification because this calendar date already has a confirmed celebration in our system.
+                                    <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, margin: '0 0 20px 0' }}>
+                                        {conflictModal.message || 'Sorry, the date and time you selected is already reserved. Please choose a different date or time, or contact us if you need help.'}
                                     </p>
 
-                                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', borderRadius: '10px', padding: '12px 14px', textAlign: 'left', marginBottom: '16px', fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
-                                        <div style={{ fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: '#78350f' }}>
-                                            <i className="fa-solid fa-triangle-exclamation" style={{ color: '#d97706' }}></i>
-                                            <span>Action Required:</span>
+                                    {conflictModal.friendlyDate && (
+                                        <div style={{ background: '#f7f9f7', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px', marginBottom: '22px', fontSize: '12.5px', color: '#1e392a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                            <i className="fa-solid fa-calendar-day" style={{ color: '#c5a059' }}></i>
+                                            <span><strong>Selected Date:</strong> {conflictModal.friendlyDate}</span>
                                         </div>
-                                        <div style={{ marginBottom: '4px' }}>
-                                            <strong>Requested Date:</strong> {conflictModal.friendlyDate || conflictModal.eventDate}
-                                        </div>
-                                        {conflictModal.friendlyTime && (
-                                            <div style={{ marginBottom: '6px' }}>
-                                                <strong>Time Window:</strong> {conflictModal.friendlyTime}
-                                            </div>
-                                        )}
-                                        <div style={{ fontSize: '12px', color: '#78350f', marginTop: '6px', borderTop: '1px dashed #fcd34d', paddingTop: '6px' }}>
-                                            <i className="fa-solid fa-circle-info" style={{ marginRight: '4px' }}></i>
-                                            Tyoy Creation limits bookings to <strong>only one confirmed celebration per calendar day</strong> to guarantee full crew dedication.
-                                            <div style={{ marginTop: '6px', fontWeight: 700, color: '#b45309' }}>
-                                                You need to change the date to proceed with email verification.
-                                            </div>
-                                        </div>
-                                    </div>
+                                    )}
 
-                                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
                                         <button
                                             type="button"
-                                            className="btn-stay-booking"
+                                            className="btn-modal-choose-date"
                                             onClick={handleResolveConflictChangeDate}
-                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 22px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                                            style={{
+                                                background: '#18392b',
+                                                color: '#ffffff',
+                                                border: 'none',
+                                                borderRadius: '10px',
+                                                padding: '11px 22px',
+                                                fontSize: '13.5px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                boxShadow: '0 4px 12px rgba(24, 57, 43, 0.25)',
+                                                transition: 'all 0.2s'
+                                            }}
                                         >
                                             <i className="fa-solid fa-calendar-days"></i>
-                                            <span>Change Event Date to Proceed</span>
+                                            <span>Choose Another Date</span>
                                         </button>
+
+                                        <a
+                                            href="index.php#contact"
+                                            className="btn-modal-contact-us"
+                                            style={{
+                                                background: '#f8fafc',
+                                                color: '#18392b',
+                                                border: '1.5px solid #cbd5e1',
+                                                borderRadius: '10px',
+                                                padding: '10px 20px',
+                                                fontSize: '13.5px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                textDecoration: 'none',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <i className="fa-solid fa-headset" style={{ color: '#c5a059' }}></i>
+                                            <span>Contact Us</span>
+                                        </a>
                                     </div>
                                 </div>
                             </div>

@@ -14,12 +14,28 @@ header('X-Content-Type-Options: nosniff');
 header('Cache-Control: public, max-age=60'); // Safe 60s cache for fast UX
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/booking_verification_helper.php';
 
 $request_method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($request_method !== 'GET') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
     exit;
+}
+
+// Anti-scraping rate limit: 60 availability checks per 5 minutes per IP
+$client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+if (function_exists('qes_rate_limit_check')) {
+    $rate = qes_rate_limit_check('booking_avail', $client_ip, 60, 300);
+    if (!$rate['allowed']) {
+        http_response_code(429);
+        echo json_encode([
+            'success' => false,
+            'code'    => 'RATE_LIMIT_EXCEEDED',
+            'message' => 'Rate limit exceeded. Please wait a moment before checking dates again.'
+        ]);
+        exit;
+    }
 }
 
 try {
@@ -37,27 +53,29 @@ try {
             exit;
         }
 
-        $conflict = check_booking_conflict($conn, $requested_date);
+        $conflict = BookingVerificationHelper::checkDateConflict($conn, $requested_date);
         $is_available = empty($conflict['conflict']);
         $friendly_date = date('F j, Y', strtotime($requested_date));
 
         echo json_encode([
-            'success' => true,
-            'date' => $requested_date,
+            'success'        => true,
+            'date'           => $requested_date,
             'formatted_date' => $friendly_date,
-            'available' => $is_available,
-            'message' => $is_available
-                ? "{$friendly_date} is currently available for booking inquiries."
-                : "{$friendly_date} is already fully booked. Please select another date."
+            'available'      => $is_available,
+            'code'           => $is_available ? 'AVAILABLE' : 'DATE_CONFLICT',
+            'message'        => $is_available 
+                ? "{$friendly_date} is currently available for booking inquiries." 
+                : $conflict['message']
         ]);
         exit;
     }
 
-    // Default / Month query: Fetch all occupied calendar dates (approved or completed)
-    $sql = "SELECT DISTINCT DATE(event_start) as booked_date 
+    // Default / Month query: Fetch all occupied calendar dates (pending, approved, or completed)
+    // Extract both timezone-adjusted date and direct string date to cover evening events in Supabase
+    $sql = "SELECT DISTINCT DATE(event_start) as booked_date,
+                    SUBSTRING(CAST(event_start AS CHAR(10)), 1, 10) as booked_date_direct
             FROM bookings 
-            WHERE (status = 'approved' OR status = 'completed') 
-            ORDER BY booked_date ASC";
+            WHERE status IN ('pending', 'approved', 'completed')";
 
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -70,10 +88,12 @@ try {
     $booked_dates = [];
     if ($result) {
         while ($row = $result->fetch_assoc()) {
-            if (!empty($row['booked_date'])) {
-                $dt = substr(trim((string)$row['booked_date']), 0, 10);
-                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dt)) {
-                    $booked_dates[] = $dt;
+            foreach (['booked_date', 'booked_date_direct'] as $col) {
+                if (!empty($row[$col])) {
+                    $dt = substr(trim((string)$row[$col]), 0, 10);
+                    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dt)) {
+                        $booked_dates[] = $dt;
+                    }
                 }
             }
         }
