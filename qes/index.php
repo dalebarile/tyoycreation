@@ -1485,17 +1485,20 @@ if ($has_wedding) {
             background: #2b392a;
         }
 
-        /* Floating AI Chatbot CSS Variables & Styles */
+        /* Floating AI Chatbot CSS Variables & Styles (Botanical Emerald Brand Theme) */
         :root {
-            --chat-bg: #0b1120;
-            --chat-surface: #111c35;
-            --chat-accent: #3b82f6;
-            --chat-accent-hover: #2563eb;
-            --chat-accent-light: rgba(59, 130, 246, 0.14);
-            --chat-accent-border: rgba(59, 130, 246, 0.3);
-            --chat-accent-glow: rgba(59, 130, 246, 0.55);
+            --chat-bg: #0d2018;
+            --chat-surface: #142e23;
+            --chat-accent: #2d6a4f;
+            --chat-accent-hover: #1b4332;
+            --chat-accent-ring: #52b788;
+            --chat-accent-light: rgba(45, 106, 79, 0.32);
+            --chat-accent-border: rgba(82, 183, 136, 0.35);
+            --chat-accent-glow: rgba(82, 183, 136, 0.55);
             --chat-text: #ffffff;
-            --chat-muted: #94a3b8;
+            --chat-muted: #c8d9cf;
+            --chat-pill-text: #b7e4c7;
+            --chat-pill-icon: #52b788;
         }
 
         .chatbot-widget-container {
@@ -1505,15 +1508,15 @@ if ($has_wedding) {
             z-index: 1500;
         }
 
-        /* 1. Launcher button: Circular with glowing blue ring, dark fill, subtle glow shadow */
+        /* 1. Launcher button: Circular with glowing emerald ring, dark pine fill, subtle glow shadow */
         .chatbot-launcher-btn {
             width: 64px;
             height: 64px;
             border-radius: 50%;
             background: var(--chat-bg);
             color: var(--chat-text);
-            border: 2.5px solid var(--chat-accent);
-            box-shadow: 0 0 18px var(--chat-accent-glow), inset 0 0 10px rgba(59, 130, 246, 0.35), 0 8px 24px rgba(0, 0, 0, 0.5);
+            border: 2.5px solid var(--chat-accent-ring);
+            box-shadow: 0 0 18px var(--chat-accent-glow), inset 0 0 10px rgba(82, 183, 136, 0.35), 0 8px 24px rgba(0, 0, 0, 0.5);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -1527,8 +1530,8 @@ if ($has_wedding) {
         .chatbot-launcher-btn:hover,
         .chatbot-launcher-btn:focus-visible {
             transform: scale(1.08);
-            border-color: #60a5fa;
-            box-shadow: 0 0 28px rgba(59, 130, 246, 0.85), inset 0 0 12px rgba(59, 130, 246, 0.45), 0 12px 30px rgba(0, 0, 0, 0.6);
+            border-color: #74c69d;
+            box-shadow: 0 0 28px rgba(82, 183, 136, 0.85), inset 0 0 12px rgba(82, 183, 136, 0.45), 0 12px 30px rgba(0, 0, 0, 0.6);
         }
 
         /* 2. Welcome Popup Card (Speech Bubble above Launcher) */
@@ -1543,7 +1546,7 @@ if ($has_wedding) {
             border: 1px solid var(--chat-accent-border);
             border-radius: 24px;
             padding: 20px 22px 18px 22px;
-            box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.7), 0 0 25px rgba(59, 130, 246, 0.15);
+            box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.7), 0 0 25px rgba(82, 183, 136, 0.15);
             z-index: 1501;
             color: var(--chat-text);
             box-sizing: border-box;
@@ -1600,7 +1603,7 @@ if ($has_wedding) {
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            background: #16233f;
+            background: #142e23;
             border: 1px solid var(--chat-accent-border);
             display: flex;
             align-items: center;
@@ -1663,7 +1666,7 @@ if ($has_wedding) {
             display: flex;
             align-items: center;
             gap: 9px;
-            color: #93c5fd;
+            color: var(--chat-pill-text);
             font-size: 12px;
             font-weight: 500;
             line-height: 1.3;
@@ -1671,7 +1674,7 @@ if ($has_wedding) {
         .chatbot-welcome-notice-pill i {
             font-size: 13px;
             flex-shrink: 0;
-            color: #60a5fa;
+            color: var(--chat-pill-icon);
         }
 
         .chatbot-window {
@@ -1694,13 +1697,13 @@ if ($has_wedding) {
             display: flex;
         }
         .chatbot-header {
-            background: #0f172a;
+            background: #11281e;
             color: white;
             padding: 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+            border-bottom: 1px solid rgba(82, 183, 136, 0.25);
         }
         .chatbot-header-info {
             display: flex;
@@ -1711,28 +1714,28 @@ if ($has_wedding) {
             width: 34px;
             height: 34px;
             border-radius: 50%;
-            background: #1e293b;
-            border: 1px solid rgba(59, 130, 246, 0.4);
+            background: #0d2018;
+            border: 1.5px solid #52b788;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 16px;
-            color: #60a5fa;
+            color: #ffffff;
             overflow: hidden;
         }
         .chatbot-disclaimer-bar {
-            background: #f0f7ff;
-            border-bottom: 1px solid #dbeafe;
+            background: #f0f7f3;
+            border-bottom: 1px solid #d1e7dd;
             padding: 7px 12px;
             font-size: 11px;
-            color: #1e40af;
+            color: #18392b;
             display: flex;
             align-items: center;
             gap: 8px;
             line-height: 1.35;
         }
         .chatbot-disclaimer-bar i {
-            color: #3b82f6;
+            color: #2d6a4f;
             font-size: 12px;
             flex-shrink: 0;
         }
@@ -2675,14 +2678,14 @@ if ($has_wedding) {
         <div class="chatbot-welcome-popup" id="chatbotWelcomePopup" role="region" aria-label="AI Chatbot Welcome Notification">
             <div class="chatbot-welcome-tail" aria-hidden="true">
                 <svg width="20" height="10" viewBox="0 0 20 10" style="display: block;">
-                    <path d="M0 0 L10 9 L20 0" fill="#0b1120" stroke="rgba(59, 130, 246, 0.3)" stroke-width="1.2" />
-                    <line x1="0" y1="0" x2="20" y2="0" stroke="#0b1120" stroke-width="2.5" />
+                    <path d="M0 0 L10 9 L20 0" fill="#0d2018" stroke="rgba(82, 183, 136, 0.35)" stroke-width="1.2" />
+                    <line x1="0" y1="0" x2="20" y2="0" stroke="#0d2018" stroke-width="2.5" />
                 </svg>
             </div>
             <div class="chatbot-welcome-header">
                 <div class="chatbot-welcome-avatar">
                     <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="Anton" class="chatbot-welcome-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                    <i class="fa-solid fa-robot" style="display: none; color: #60a5fa; font-size: 16px;"></i>
+                    <i class="fa-solid fa-robot" style="display: none; color: #52b788; font-size: 16px;"></i>
                 </div>
                 <div class="chatbot-welcome-title">AI Chatbot</div>
                 <button type="button" class="chatbot-welcome-close" onclick="closeChatWelcomePopup(true)" aria-label="Close">
@@ -2701,7 +2704,7 @@ if ($has_wedding) {
             </div>
         </div>
 
-        <!-- 1. Floating Launcher Button: Circular with glowing blue ring & robot icon -->
+        <!-- 1. Floating Launcher Button: Circular with glowing emerald ring & robot icon -->
         <button type="button" class="chatbot-launcher-btn" onclick="toggleChatWindow()" aria-label="Open AI chat">
             <svg class="chatbot-robot-svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <line x1="16" y1="4.5" x2="16" y2="7.5"></line>
@@ -2717,7 +2720,7 @@ if ($has_wedding) {
         <div class="chatbot-window" id="chatbotWindow">
             <div class="chatbot-header">
                 <div class="chatbot-header-info">
-                    <div class="chatbot-avatar" style="background: #0b1120; border: 1.5px solid #3b82f6; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                    <div class="chatbot-avatar" style="background: #0d2018; border: 1.5px solid #52b788; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
                         <svg viewBox="0 0 32 32" width="20" height="20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <line x1="16" y1="4.5" x2="16" y2="7.5"></line>
                             <circle cx="16" cy="3.8" r="1.5" fill="#ffffff"></circle>
