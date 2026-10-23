@@ -3307,6 +3307,69 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         .avail-legend-dot.booked { background: #ef4444; }
         .avail-legend-dot.selected { background: var(--primary); }
         .avail-legend-dot.past { background: #cbd5e1; }
+
+        /* Big Calendar Popup Modal Styles */
+        .calendar-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(15, 23, 15, 0.65);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 9999990;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            box-sizing: border-box;
+            animation: fadeIn 0.2s ease-out;
+        }
+        .calendar-modal-card {
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 24px;
+            width: 100%;
+            max-width: 520px;
+            box-shadow: 0 25px 60px rgba(15, 30, 20, 0.28);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            position: relative;
+            max-height: 92vh;
+            overflow-y: auto;
+            animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .calendar-modal-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .calendar-modal-close-btn {
+            background: #f1f5f3;
+            border: 1px solid #e2e8f0;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .calendar-modal-close-btn:hover {
+            background: #fee2e2;
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+        .custom-date-trigger-box:hover {
+            border-color: var(--primary) !important;
+            box-shadow: 0 2px 8px rgba(24, 57, 43, 0.12) !important;
+        }
     </style>
 </head>
 <body>
@@ -3590,6 +3653,16 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [eventTitle, setEventTitle] = useState('');
             const [guestCount, setGuestCount] = useState('100');
             const [eventDate, setEventDate] = useState(todayStr);
+            const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+
+            const formattedEventDate = useMemo(() => {
+                if (!eventDate) return '';
+                try {
+                    return new Date(eventDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                } catch (e) {
+                    return eventDate;
+                }
+            }, [eventDate]);
             const [eventTime, setEventTime] = useState('14:00');
             const [locationVenue, setLocationVenue] = useState('');
             const [specialNotes, setSpecialNotes] = useState('');
@@ -3891,6 +3964,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         }
                         setEventDate(dStr);
                         setErrors(prev => ({ ...prev, eventDate: null }));
+                        setIsCalendarModalOpen(false);
                     };
 
                     cells.push(
@@ -4773,7 +4847,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 });
             };
 
-            // Resolve schedule conflict by dismissing reminder and focusing event date input
+            // Resolve schedule conflict by dismissing reminder and opening big calendar modal
             const handleResolveConflictChangeDate = () => {
                 setConflictModal({
                     isOpen: false,
@@ -4788,11 +4862,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     eventDate: 'Please select an open calendar date to proceed with email verification.'
                 }));
                 setTimeout(() => {
-                    const dateInput = document.getElementById('event_date_input');
-                    if (dateInput) {
-                        dateInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        dateInput.focus();
-                    }
+                    setIsCalendarModalOpen(true);
                 }, 100);
             };
 
@@ -5398,96 +5468,66 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                     1 Confirmed Event Per Day Policy
                                                 </span>
                                             </label>
-                                            <input 
-                                                type="date" 
-                                                id="event_date_input"
-                                                className={`form-control ${errors.eventDate ? 'is-invalid' : ''}`}
-                                                min={minDateStr}
-                                                value={eventDate}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setEventDate(val);
-                                                    if (val && val < minDateStr) {
-                                                        setErrors(prev => ({ ...prev, eventDate: 'Event date cannot be in the past. Please select today or a future date.' }));
-                                                    } else if (val && bookedDates.includes(val)) {
-                                                        triggerDoubleBookingModal(val);
-                                                    } else {
-                                                        setErrors(prev => ({ ...prev, eventDate: null }));
-                                                    }
+                                            {/* Custom Interactive Date Selector (replaces native browser datepicker dropdown) */}
+                                            <div 
+                                                className={`custom-date-trigger-box ${errors.eventDate ? 'is-invalid' : ''}`}
+                                                onClick={() => setIsCalendarModalOpen(true)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '11px 16px',
+                                                    background: '#ffffff',
+                                                    border: errors.eventDate ? '1.5px solid #dc2626' : '1.5px solid var(--border-color)',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                                                    minHeight: '44px'
                                                 }}
-                                                required
-                                            />
-
-                                            {/* Live Database-Driven Availability Calendar */}
-                                            <div className="avail-calendar-card">
-                                                <div className="avail-calendar-header">
-                                                    <button 
-                                                        type="button" 
-                                                        className="avail-nav-btn" 
-                                                        onClick={handlePrevMonth}
-                                                        title="Previous Month"
-                                                    >
-                                                        <i className="fa-solid fa-chevron-left"></i>
-                                                    </button>
-                                                    <div className="avail-calendar-title">
-                                                        <i className="fa-solid fa-calendar-days"></i>
-                                                        <span>{calendarMonthName}</span>
-                                                    </div>
-                                                    <button 
-                                                        type="button" 
-                                                        className="avail-nav-btn" 
-                                                        onClick={handleNextMonth}
-                                                        title="Next Month"
-                                                    >
-                                                        <i className="fa-solid fa-chevron-right"></i>
-                                                    </button>
+                                                title="Click to open calendar and select event date"
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    <i className="fa-solid fa-calendar-day" style={{ color: 'var(--primary)', fontSize: '16px' }}></i>
+                                                    <span style={{ fontSize: '14px', fontWeight: eventDate ? 600 : 400, color: eventDate ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                                                        {eventDate ? formattedEventDate : 'Select your event target date...'}
+                                                    </span>
                                                 </div>
-
-                                                {isAvailabilityLoading ? (
-                                                    <div style={{ textAlign: 'center', padding: '20px 12px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                                                        <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
-                                                        Checking real-time calendar availability...
-                                                    </div>
-                                                ) : availabilityError ? (
-                                                    <div style={{ textAlign: 'center', padding: '14px 12px', color: '#b91c1c', background: '#fef2f2', borderRadius: '8px', fontSize: '12.5px' }}>
-                                                        <div><i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '6px' }}></i>{availabilityError}</div>
-                                                        <button type="button" onClick={fetchAvailability} style={{ marginTop: '8px', padding: '4px 12px', fontSize: '11.5px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                                            <i className="fa-solid fa-rotate-right" style={{ marginRight: '4px' }}></i> Retry
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <div className="avail-weekdays">
-                                                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                                                                <div key={d} className="avail-weekday-label">{d}</div>
-                                                            ))}
-                                                        </div>
-                                                        <div className="avail-days-grid">
-                                                            {renderCalendarDays()}
-                                                        </div>
-                                                        <div className="avail-legend">
-                                                            <div className="avail-legend-item">
-                                                                <span className="avail-legend-dot available"></span>
-                                                                <span>Available</span>
-                                                            </div>
-                                                            <div className="avail-legend-item">
-                                                                <span className="avail-legend-dot booked"></span>
-                                                                <span>Fully Booked</span>
-                                                            </div>
-                                                            <div className="avail-legend-item">
-                                                                <span className="avail-legend-dot selected"></span>
-                                                                <span>Selected</span>
-                                                            </div>
-                                                            <div className="avail-legend-item">
-                                                                <span className="avail-legend-dot past"></span>
-                                                                <span>Past</span>
-                                                            </div>
-                                                        </div>
-                                                    </>
-                                                )}
+                                                <button 
+                                                    type="button" 
+                                                    className="btn-select-date-trigger"
+                                                    onClick={(e) => { e.stopPropagation(); setIsCalendarModalOpen(true); }}
+                                                    style={{
+                                                        background: 'var(--primary)',
+                                                        color: '#ffffff',
+                                                        border: 'none',
+                                                        borderRadius: '6px',
+                                                        padding: '6px 14px',
+                                                        fontSize: '12px',
+                                                        fontWeight: 700,
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                        transition: 'background 0.2s ease'
+                                                    }}
+                                                >
+                                                    <i className="fa-solid fa-calendar-days"></i>
+                                                    <span>{eventDate ? 'Change Date' : 'Choose Date'}</span>
+                                                </button>
                                             </div>
 
-                                            <div className={`lead-time-notice ${isWedding ? 'wedding-notice' : 'kids-notice'}`}>
+                                            {/* Hidden form input to preserve ID contracts and accessibility */}
+                                            <input 
+                                                type="text" 
+                                                id="event_date_input"
+                                                value={eventDate}
+                                                readOnly
+                                                style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', height: 0, width: 0 }}
+                                                tabIndex={-1}
+                                                aria-hidden="true"
+                                            />
+
+                                            <div className={`lead-time-notice ${isWedding ? 'wedding-notice' : 'kids-notice'}`} style={{ marginTop: '10px' }}>
                                                 <i className={`fa-solid ${isWedding ? 'fa-rings-wedding' : 'fa-clock-rotate-left'}`}></i>
                                                 <span>
                                                     <strong>{isWedding ? '3-Month Preparation Reminder' : '2-Week Preparation Reminder'}</strong>: {isWedding ? 'We recommend at least 3 months preparation time to ensure seamless execution for weddings. You are free to choose any date from today onwards.' : 'We recommend at least 2 weeks preparation time to ensure seamless execution for kids parties & birthdays. You are free to choose any date from today onwards.'}
@@ -6654,6 +6694,147 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
                             ? ReactDOM.createPortal(conflictModalContent, document.body)
                             : conflictModalContent;
+                    })()}
+
+                    {/* 5. Big Calendar Availability Popup Modal */}
+                    {isCalendarModalOpen && (() => {
+                        const calendarModalContent = (
+                            <div 
+                                className="calendar-modal-overlay" 
+                                role="dialog" 
+                                aria-modal="true" 
+                                aria-labelledby="calModalTitle"
+                                onClick={(e) => {
+                                    if (e.target.classList.contains('calendar-modal-overlay')) {
+                                        setIsCalendarModalOpen(false);
+                                    }
+                                }}
+                            >
+                                <div className="calendar-modal-card">
+                                    {/* Modal Header */}
+                                    <div className="calendar-modal-header">
+                                        <div>
+                                            <h3 id="calModalTitle" style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary)', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <i className="fa-solid fa-calendar-days"></i>
+                                                <span>Select Event Target Date</span>
+                                            </h3>
+                                            <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                <i className="fa-solid fa-shield-halved"></i> 1 Confirmed Event Per Day Policy
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="calendar-modal-close-btn"
+                                            onClick={() => setIsCalendarModalOpen(false)}
+                                            title="Close calendar"
+                                            aria-label="Close calendar"
+                                        >
+                                            <i className="fa-solid fa-xmark"></i>
+                                        </button>
+                                    </div>
+
+                                    {/* Calendar Body: Big Calendar UI */}
+                                    <div className="avail-calendar-card" style={{ marginTop: 0, marginBottom: 0, border: 'none', padding: 0, boxShadow: 'none' }}>
+                                        <div className="avail-calendar-header">
+                                            <button 
+                                                type="button" 
+                                                className="avail-nav-btn" 
+                                                onClick={handlePrevMonth}
+                                                title="Previous Month"
+                                            >
+                                                <i className="fa-solid fa-chevron-left"></i>
+                                            </button>
+                                            <div className="avail-calendar-title">
+                                                <i className="fa-solid fa-calendar-days"></i>
+                                                <span>{calendarMonthName}</span>
+                                            </div>
+                                            <button 
+                                                type="button" 
+                                                className="avail-nav-btn" 
+                                                onClick={handleNextMonth}
+                                                title="Next Month"
+                                            >
+                                                <i className="fa-solid fa-chevron-right"></i>
+                                            </button>
+                                        </div>
+
+                                        {isAvailabilityLoading ? (
+                                            <div style={{ textAlign: 'center', padding: '30px 12px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                                <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                                                Checking real-time calendar availability...
+                                            </div>
+                                        ) : availabilityError ? (
+                                            <div style={{ textAlign: 'center', padding: '14px 12px', color: '#b91c1c', background: '#fef2f2', borderRadius: '8px', fontSize: '12.5px' }}>
+                                                <div><i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '6px' }}></i>{availabilityError}</div>
+                                                <button type="button" onClick={fetchAvailability} style={{ marginTop: '8px', padding: '4px 12px', fontSize: '11.5px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                                    <i className="fa-solid fa-rotate-right" style={{ marginRight: '4px' }}></i> Retry
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="avail-weekdays">
+                                                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                                                        <div key={d} className="avail-weekday-label">{d}</div>
+                                                    ))}
+                                                </div>
+                                                <div className="avail-days-grid">
+                                                    {renderCalendarDays()}
+                                                </div>
+                                                <div className="avail-legend">
+                                                    <div className="avail-legend-item">
+                                                        <span className="avail-legend-dot available"></span>
+                                                        <span>Available</span>
+                                                    </div>
+                                                    <div className="avail-legend-item">
+                                                        <span className="avail-legend-dot booked"></span>
+                                                        <span>Fully Booked</span>
+                                                    </div>
+                                                    <div className="avail-legend-item">
+                                                        <span className="avail-legend-dot selected"></span>
+                                                        <span>Selected</span>
+                                                    </div>
+                                                    <div className="avail-legend-item">
+                                                        <span className="avail-legend-dot past"></span>
+                                                        <span>Past</span>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* Modal Footer */}
+                                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                                            {eventDate ? (
+                                                <span>Selected Date: <strong style={{ color: 'var(--primary)' }}>{formattedEventDate}</strong></span>
+                                            ) : (
+                                                <span>Click an available date to select</span>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsCalendarModalOpen(false)}
+                                            style={{
+                                                background: 'var(--primary)',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                padding: '8px 20px',
+                                                fontSize: '13px',
+                                                fontWeight: 700,
+                                                color: '#ffffff',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+
+                        return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
+                            ? ReactDOM.createPortal(calendarModalContent, document.body)
+                            : calendarModalContent;
                     })()}
 
                     {/* Success Confirmation Modal */}
