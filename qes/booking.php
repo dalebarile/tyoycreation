@@ -12,6 +12,14 @@ if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_c
 $is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
 $is_admin_logged_in = !empty($_SESSION['id']) && isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'], true);
 
+// Client MUST be logged in or signed up in order to book
+if (!$is_client_logged_in && !$is_admin_logged_in) {
+    $queryString = !empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '';
+    $redirect_url = 'login.php?redirect=' . urlencode('booking.php' . $queryString);
+    header('Location: ' . $redirect_url);
+    exit;
+}
+
 // Database-driven pricing packages
 $pricing_theme = get_packages_pricing($conn, 'theme_party');
 $pricing_wedding = get_packages_pricing($conn, 'wedding');

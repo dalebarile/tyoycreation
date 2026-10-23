@@ -242,8 +242,15 @@ if ($action === 'submit') {
         $service_requirements .= ' | ESTIMATED TOTAL: ' . $peso;
     }
 
-    $special_notes = trim($_POST['special_notes'] ?? '');
     $user_id = !empty($_SESSION['id']) ? (int)$_SESSION['id'] : null;
+    if (empty($user_id)) {
+        echo json_encode([
+            'success' => false,
+            'requires_auth' => true,
+            'message' => 'An active client account is required. Please sign in or register to submit a booking inquiry.'
+        ]);
+        exit;
+    }
 
     // Stage booking payload and dispatch verification code email
     $result = BookingVerificationHelper::stageBooking($conn, [
