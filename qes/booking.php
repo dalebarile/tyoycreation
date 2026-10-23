@@ -833,18 +833,48 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             align-items: center;
             justify-content: space-between;
             gap: 12px;
+            transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, visibility 0.28s;
+            will-change: transform, opacity;
         }
 
         @media (max-width: 960px) {
+            .booking-grid {
+                grid-template-columns: 100% !important;
+                gap: 20px;
+            }
+            .booking-right-column {
+                height: auto !important;
+                width: 100% !important;
+            }
+            /* Remove sticky positioning and nested internal scrollbar on mobile to prevent double UI & cutoff */
+            .summary-card-sidebar {
+                position: static !important;
+                top: auto !important;
+                max-height: none !important;
+                overflow-y: visible !important;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
+                margin-top: 12px;
+            }
             .mobile-sticky-total-bar {
                 display: flex;
                 padding-bottom: max(12px, env(safe-area-inset-bottom));
             }
+            /* Auto-hide sticky bar when user reaches Booking Summary, eliminating duplicate total and button overlap */
+            .mobile-sticky-total-bar.is-hidden-by-summary {
+                transform: translateY(120%);
+                opacity: 0;
+                pointer-events: none;
+                visibility: hidden;
+            }
             .booking-container {
-                padding-bottom: 100px;
+                padding-bottom: 50px;
             }
             .chatbot-widget-container {
                 bottom: calc(72px + max(12px, env(safe-area-inset-bottom))) !important;
+                transition: bottom 0.25s ease;
+            }
+            .chatbot-widget-container.summary-in-view {
+                bottom: max(16px, env(safe-area-inset-bottom)) !important;
             }
             .cookie-consent-bar {
                 bottom: calc(76px + max(10px, env(safe-area-inset-bottom))) !important;
@@ -3370,6 +3400,135 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             border-color: var(--primary) !important;
             box-shadow: 0 2px 8px rgba(24, 57, 43, 0.12) !important;
         }
+
+        /* Universal Responsive Size & Format Adjustments Across Devices */
+        @media (max-width: 768px) {
+            .form-control {
+                font-size: 16px !important; /* Prevents auto-zoom on iOS */
+            }
+            .pkg-choice-grid {
+                grid-template-columns: 1fr !important;
+                gap: 14px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .booking-container {
+                padding: 0 14px;
+                margin: -16px auto 40px auto;
+            }
+            .form-card {
+                padding: 22px 16px;
+                border-radius: 14px;
+                margin-bottom: 16px;
+            }
+            .step-header {
+                gap: 10px;
+                margin-bottom: 16px;
+                padding-bottom: 12px;
+            }
+            .step-header h2 {
+                font-size: 17px;
+            }
+            .step-num {
+                width: 30px;
+                height: 30px;
+                font-size: 13px;
+            }
+            .summary-head {
+                padding: 14px 18px;
+            }
+            .summary-head h3,
+            .summary-head .summary-head-title {
+                font-size: 15px;
+            }
+            .summary-body {
+                padding: 16px;
+            }
+            .summary-total-bar {
+                padding: 12px 14px;
+                margin-bottom: 16px;
+            }
+            .summary-total-value {
+                font-size: 22px;
+            }
+            .btn-submit-booking {
+                padding: 14px;
+                font-size: 15px;
+            }
+            .chatbot-launcher-btn {
+                width: 52px;
+                height: 52px;
+            }
+            .chatbot-launcher-btn svg {
+                width: 26px;
+                height: 26px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .booking-hero {
+                padding: 28px 14px 34px 14px !important;
+            }
+            .booking-hero h1,
+            .booking-hero .hero-main-title {
+                font-size: 25px !important;
+            }
+            .custom-date-trigger-box {
+                padding: 8px 12px !important;
+                font-size: 13px !important;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .calendar-modal-card {
+                padding: 18px 12px;
+                border-radius: 14px;
+            }
+            .avail-days-grid {
+                gap: 3px;
+            }
+            .avail-day-cell {
+                min-height: 38px;
+                font-size: 12px;
+                border-radius: 6px;
+            }
+            .avail-badge-booked {
+                font-size: 7.5px;
+                padding: 1px 2px;
+            }
+            .avail-legend {
+                gap: 8px;
+                font-size: 10.5px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .booking-container {
+                padding: 0 10px;
+            }
+            .form-card {
+                padding: 18px 12px;
+            }
+            .summary-body {
+                padding: 12px;
+            }
+            .summary-total-value {
+                font-size: 20px;
+            }
+            .custom-date-trigger-box {
+                padding: 8px 10px !important;
+            }
+            .calendar-modal-card {
+                padding: 16px 10px;
+            }
+            .avail-days-grid {
+                gap: 2px;
+            }
+            .avail-day-cell {
+                min-height: 34px;
+                font-size: 11px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -3654,6 +3813,36 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [guestCount, setGuestCount] = useState('100');
             const [eventDate, setEventDate] = useState(todayStr);
             const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+
+            // Responsive UI: Detect when Booking Summary is scrolled into view on mobile to hide sticky floating bar (eliminates duplicate total and submit button)
+            const [isSummaryInView, setIsSummaryInView] = useState(false);
+            const summaryRef = useRef(null);
+
+            useEffect(() => {
+                if (!summaryRef.current || typeof IntersectionObserver === 'undefined') return;
+                const observer = new IntersectionObserver(
+                    ([entry]) => {
+                        setIsSummaryInView(entry.isIntersecting);
+                    },
+                    {
+                        threshold: 0.05,
+                        rootMargin: '0px 0px -40px 0px'
+                    }
+                );
+                observer.observe(summaryRef.current);
+                return () => observer.disconnect();
+            }, []);
+
+            useEffect(() => {
+                const chatWidget = document.querySelector('.chatbot-widget-container');
+                if (chatWidget) {
+                    if (isSummaryInView) {
+                        chatWidget.classList.add('summary-in-view');
+                    } else {
+                        chatWidget.classList.remove('summary-in-view');
+                    }
+                }
+            }, [isSummaryInView]);
 
             const formattedEventDate = useMemo(() => {
                 if (!eventDate) return '';
@@ -5773,7 +5962,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
                             {/* Right Column: Sticky Summary & Real-time Total */}
                             <div className="booking-right-column">
-                                <div className="summary-card-sidebar">
+                                <div className="summary-card-sidebar" ref={summaryRef}>
                                     <div className="summary-head" style={{ background: 'linear-gradient(135deg, #2b392a 0%, #1f291e 100%)', color: '#ffffff' }}>
                                         <h3 className="summary-head-title" style={{ color: '#ffffff' }}>
                                             <i className="fa-solid fa-receipt" style={{ color: '#86efac' }}></i> Booking Summary
@@ -5992,8 +6181,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         </div>
                     </form>
 
-                    {/* Mobile Floating Sticky Total Bar */}
-                    <div className="mobile-sticky-total-bar">
+                    {/* Mobile Floating Sticky Total Bar (Auto-hides when Booking Summary is in view to eliminate duplicate total & submit button) */}
+                    <div className={`mobile-sticky-total-bar ${isSummaryInView ? 'is-hidden-by-summary' : ''}`}>
                         <div className="mobile-sticky-info">
                             <div className="mobile-sticky-label">
                                 <i className="fa-solid fa-receipt"></i> Live Total &bull; {selectedItemsArray.length} {selectedItemsArray.length === 1 ? 'item' : 'items'}
