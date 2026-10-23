@@ -1485,32 +1485,195 @@ if ($has_wedding) {
             background: #2b392a;
         }
 
-        /* Floating AI Chatbot styles */
+        /* Floating AI Chatbot CSS Variables & Styles */
+        :root {
+            --chat-bg: #0b1120;
+            --chat-surface: #111c35;
+            --chat-accent: #3b82f6;
+            --chat-accent-hover: #2563eb;
+            --chat-accent-light: rgba(59, 130, 246, 0.14);
+            --chat-accent-border: rgba(59, 130, 246, 0.3);
+            --chat-accent-glow: rgba(59, 130, 246, 0.55);
+            --chat-text: #ffffff;
+            --chat-muted: #94a3b8;
+        }
+
         .chatbot-widget-container {
             position: fixed;
             bottom: 24px;
             right: 24px;
             z-index: 1500;
         }
+
+        /* 1. Launcher button: Circular with glowing blue ring, dark fill, subtle glow shadow */
         .chatbot-launcher-btn {
-            width: 58px;
-            height: 58px;
+            width: 64px;
+            height: 64px;
             border-radius: 50%;
-            background: #364735;
-            color: #ffffff;
-            border: 2px solid rgba(255, 255, 255, 0.4);
-            box-shadow: 0 8px 24px rgba(54, 71, 53, 0.4);
+            background: var(--chat-bg);
+            color: var(--chat-text);
+            border: 2.5px solid var(--chat-accent);
+            box-shadow: 0 0 18px var(--chat-accent-glow), inset 0 0 10px rgba(59, 130, 246, 0.35), 0 8px 24px rgba(0, 0, 0, 0.5);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            z-index: 1502;
+            outline: none;
+            padding: 0;
         }
-        .chatbot-launcher-btn:hover {
-            transform: scale(1.08) rotate(5deg);
-            background: #2b392a;
+        .chatbot-launcher-btn:hover,
+        .chatbot-launcher-btn:focus-visible {
+            transform: scale(1.08);
+            border-color: #60a5fa;
+            box-shadow: 0 0 28px rgba(59, 130, 246, 0.85), inset 0 0 12px rgba(59, 130, 246, 0.45), 0 12px 30px rgba(0, 0, 0, 0.6);
         }
+
+        /* 2. Welcome Popup Card (Speech Bubble above Launcher) */
+        .chatbot-welcome-popup {
+            display: none;
+            position: absolute;
+            bottom: 82px;
+            right: 0;
+            width: 330px;
+            max-width: calc(100vw - 36px);
+            background: var(--chat-bg);
+            border: 1px solid var(--chat-accent-border);
+            border-radius: 24px;
+            padding: 20px 22px 18px 22px;
+            box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.7), 0 0 25px rgba(59, 130, 246, 0.15);
+            z-index: 1501;
+            color: var(--chat-text);
+            box-sizing: border-box;
+            opacity: 0;
+            transform: translateY(12px);
+            pointer-events: none;
+        }
+
+        .chatbot-welcome-popup.visible {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+            animation: chatFadeSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .chatbot-welcome-popup.hiding {
+            opacity: 0;
+            transform: translateY(8px);
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        @keyframes chatFadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Triangular Speech Bubble Tail pointing down to launcher */
+        .chatbot-welcome-tail {
+            position: absolute;
+            bottom: -9px;
+            right: 22px;
+            width: 20px;
+            height: 10px;
+            pointer-events: none;
+        }
+
+        /* Header Row */
+        .chatbot-welcome-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .chatbot-welcome-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #16233f;
+            border: 1px solid var(--chat-accent-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .chatbot-welcome-avatar-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .chatbot-welcome-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--chat-text);
+            flex: 1;
+        }
+        .chatbot-welcome-close {
+            background: transparent;
+            border: none;
+            color: var(--chat-muted);
+            font-size: 17px;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s, background 0.15s;
+        }
+        .chatbot-welcome-close:hover,
+        .chatbot-welcome-close:focus-visible {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.08);
+            outline: none;
+        }
+
+        /* Greeting & Description */
+        .chatbot-welcome-greeting {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 6px;
+            line-height: 1.35;
+        }
+        .chatbot-welcome-desc {
+            font-size: 13.5px;
+            color: var(--chat-muted);
+            line-height: 1.5;
+            margin: 0 0 14px 0;
+        }
+
+        /* Notice Pill at Bottom */
+        .chatbot-welcome-notice-pill {
+            background: var(--chat-accent-light);
+            border: 1px solid var(--chat-accent-border);
+            border-radius: 9999px;
+            padding: 8px 14px;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            color: #93c5fd;
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+        .chatbot-welcome-notice-pill i {
+            font-size: 13px;
+            flex-shrink: 0;
+            color: #60a5fa;
+        }
+
         .chatbot-window {
             display: none;
             position: fixed;
@@ -1531,12 +1694,13 @@ if ($has_wedding) {
             display: flex;
         }
         .chatbot-header {
-            background: #232f22;
+            background: #0f172a;
             color: white;
             padding: 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            border-bottom: 1px solid rgba(59, 130, 246, 0.2);
         }
         .chatbot-header-info {
             display: flex;
@@ -1547,27 +1711,28 @@ if ($has_wedding) {
             width: 34px;
             height: 34px;
             border-radius: 50%;
-            background: #364735;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: #1e293b;
+            border: 1px solid rgba(59, 130, 246, 0.4);
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 16px;
-            color: #ffffff;
+            color: #60a5fa;
+            overflow: hidden;
         }
         .chatbot-disclaimer-bar {
-            background: #f0f5f0;
-            border-bottom: 1px solid #dce8dc;
+            background: #f0f7ff;
+            border-bottom: 1px solid #dbeafe;
             padding: 7px 12px;
             font-size: 11px;
-            color: #2e4a2d;
+            color: #1e40af;
             display: flex;
             align-items: center;
             gap: 8px;
             line-height: 1.35;
         }
         .chatbot-disclaimer-bar i {
-            color: #3b5f39;
+            color: #3b82f6;
             font-size: 12px;
             flex-shrink: 0;
         }
@@ -2506,34 +2671,65 @@ if ($has_wedding) {
 
     <!-- AI Chatbot Floating Concierge Widget -->
     <div class="chatbot-widget-container">
-        <button type="button" class="chatbot-launcher-btn" onclick="toggleChatWindow()" aria-label="Open AI Event Concierge">
-            <svg class="chatbot-robot-svg" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <line x1="12" y1="2" x2="12" y2="5"></line>
-                <circle cx="12" cy="2" r="1.2" fill="currentColor"></circle>
-                <rect x="3" y="5" width="18" height="14" rx="4"></rect>
-                <circle cx="8.5" cy="11.5" r="1.5" fill="currentColor"></circle>
-                <circle cx="15.5" cy="11.5" r="1.5" fill="currentColor"></circle>
-                <path d="M9 15c.8.6 1.8 1 3 1s2.2-.4 3-1"></path>
-                <line x1="1" y1="12" x2="3" y2="12"></line>
-                <line x1="21" y1="12" x2="23" y2="12"></line>
+        <!-- 2. Welcome Popup Card (Speech Bubble above Launcher) -->
+        <div class="chatbot-welcome-popup" id="chatbotWelcomePopup" role="region" aria-label="AI Chatbot Welcome Notification">
+            <div class="chatbot-welcome-tail" aria-hidden="true">
+                <svg width="20" height="10" viewBox="0 0 20 10" style="display: block;">
+                    <path d="M0 0 L10 9 L20 0" fill="#0b1120" stroke="rgba(59, 130, 246, 0.3)" stroke-width="1.2" />
+                    <line x1="0" y1="0" x2="20" y2="0" stroke="#0b1120" stroke-width="2.5" />
+                </svg>
+            </div>
+            <div class="chatbot-welcome-header">
+                <div class="chatbot-welcome-avatar">
+                    <img src="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>" alt="Anton" class="chatbot-welcome-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <i class="fa-solid fa-robot" style="display: none; color: #60a5fa; font-size: 16px;"></i>
+                </div>
+                <div class="chatbot-welcome-title">AI Chatbot</div>
+                <button type="button" class="chatbot-welcome-close" onclick="closeChatWelcomePopup(true)" aria-label="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="chatbot-welcome-body">
+                <div class="chatbot-welcome-greeting">Hi! I'm <strong>Anton</strong>, your AI assistant.</div>
+                <p class="chatbot-welcome-desc">
+                    I can help you with questions about our event styling, kids parties, weddings, and more. Just type your message and I'll do my best to assist you!
+                </p>
+            </div>
+            <div class="chatbot-welcome-notice-pill">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>This is an AI chatbot. I'm not a real person.</span>
+            </div>
+        </div>
+
+        <!-- 1. Floating Launcher Button: Circular with glowing blue ring & robot icon -->
+        <button type="button" class="chatbot-launcher-btn" onclick="toggleChatWindow()" aria-label="Open AI chat">
+            <svg class="chatbot-robot-svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="16" y1="4.5" x2="16" y2="7.5"></line>
+                <circle cx="16" cy="3.8" r="1.5" fill="#ffffff"></circle>
+                <rect x="6" y="7.5" width="20" height="15.5" rx="5.5" stroke="#ffffff" stroke-width="2"></rect>
+                <rect x="2.5" y="11.5" width="2.5" height="7" rx="1.25" fill="#ffffff"></rect>
+                <rect x="27" y="11.5" width="2.5" height="7" rx="1.25" fill="#ffffff"></rect>
+                <path d="M10 15.5 C10.6 13.5 12.6 13.5 13.2 15.5" stroke="#ffffff" stroke-width="2.2"></path>
+                <path d="M18.8 15.5 C19.4 13.5 21.4 13.5 22 15.5" stroke="#ffffff" stroke-width="2.2"></path>
             </svg>
         </button>
 
         <div class="chatbot-window" id="chatbotWindow">
             <div class="chatbot-header">
                 <div class="chatbot-header-info">
-                    <div class="chatbot-avatar">
-                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <line x1="12" y1="2" x2="12" y2="5"></line>
-                            <circle cx="12" cy="2" r="1.2" fill="currentColor"></circle>
-                            <rect x="3" y="5" width="18" height="14" rx="4"></rect>
-                            <circle cx="8.5" cy="11.5" r="1.5" fill="currentColor"></circle>
-                            <circle cx="15.5" cy="11.5" r="1.5" fill="currentColor"></circle>
-                            <path d="M9 15c.8.6 1.8 1 3 1s2.2-.4 3-1"></path>
+                    <div class="chatbot-avatar" style="background: #0b1120; border: 1.5px solid #3b82f6; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <svg viewBox="0 0 32 32" width="20" height="20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="16" y1="4.5" x2="16" y2="7.5"></line>
+                            <circle cx="16" cy="3.8" r="1.5" fill="#ffffff"></circle>
+                            <rect x="6" y="7.5" width="20" height="15.5" rx="5.5" stroke="#ffffff" stroke-width="2"></rect>
+                            <rect x="2.5" y="11.5" width="2.5" height="7" rx="1.25" fill="#ffffff"></rect>
+                            <rect x="27" y="11.5" width="2.5" height="7" rx="1.25" fill="#ffffff"></rect>
+                            <path d="M10 15.5 C10.6 13.5 12.6 13.5 13.2 15.5" stroke="#ffffff" stroke-width="2.2"></path>
+                            <path d="M18.8 15.5 C19.4 13.5 21.4 13.5 22 15.5" stroke="#ffffff" stroke-width="2.2"></path>
                         </svg>
                     </div>
                     <div>
-                        <div style="font-weight: 700; font-size: 14px;">Event Concierge AI</div>
+                        <div style="font-weight: 700; font-size: 14px;">Anton &bull; AI Assistant</div>
                         <div style="font-size: 11px; opacity: 0.85;">Here to answer business FAQs &amp; packages</div>
                     </div>
                 </div>
@@ -2548,13 +2744,13 @@ if ($has_wedding) {
             </div>
 
             <div class="chatbot-disclaimer-bar">
-                <i class="fa-solid fa-shield-halved"></i>
-                <span>AI provides instant estimates. All bookings &amp; packages require <strong>official staff review</strong>.</span>
+                <i class="fa-solid fa-circle-info"></i>
+                <span>This is an AI chatbot. I'm not a real person &bull; Instant package &amp; styling FAQ assistance.</span>
             </div>
 
             <div class="chatbot-messages" id="chatbotMessages">
                 <div class="chat-bubble bot">
-                    Hello! Welcome to <strong><?= htmlspecialchars($business_name) ?></strong> Concierge. I can answer questions regarding our services, packages, pricing, service areas, lead times, and booking policies!
+                    Hello! I'm <strong>Anton</strong>, your AI assistant for <strong><?= htmlspecialchars($business_name) ?></strong>. I can help you with questions about our event styling, kids parties, weddings, pricing, and booking policies!
                     <div style="margin-top: 6px; font-size: 11.5px; opacity: 0.88; color: #4b5563;">
                         <em>💡 Note: Estimates are guided by AI; official reservations are verified by human staff coordinators.</em>
                     </div>
@@ -3125,8 +3321,46 @@ if ($has_wedding) {
             }
         });
 
+        // Chatbot Welcome Popup State & Controller
+        const CHATBOT_WELCOME_STORAGE_KEY = 'tyoy_chatbot_welcome_dismissed_v1';
+        const CHATBOT_WELCOME_DELAY_MS = 2000;
+
+        function showChatWelcomePopup() {
+            const popup = document.getElementById('chatbotWelcomePopup');
+            const win = document.getElementById('chatbotWindow');
+            if (!popup || (win && win.classList.contains('active'))) return;
+            try {
+                if (localStorage.getItem(CHATBOT_WELCOME_STORAGE_KEY) === '1') {
+                    return;
+                }
+            } catch(e) {}
+            popup.classList.remove('hiding');
+            popup.classList.add('visible');
+        }
+
+        function closeChatWelcomePopup(userInitiated = true) {
+            const popup = document.getElementById('chatbotWelcomePopup');
+            if (!popup) return;
+            popup.classList.add('hiding');
+            setTimeout(() => {
+                popup.classList.remove('visible', 'hiding');
+            }, 200);
+            if (userInitiated) {
+                try {
+                    localStorage.setItem(CHATBOT_WELCOME_STORAGE_KEY, '1');
+                } catch(e) {}
+            }
+        }
+
+        function initChatbotWelcomePopup() {
+            setTimeout(showChatWelcomePopup, CHATBOT_WELCOME_DELAY_MS);
+        }
+
         // Chatbot Window Controls
         function toggleChatWindow() {
+            // Dismiss welcome popup when opening or toggling chat
+            closeChatWelcomePopup(true);
+
             const win = document.getElementById('chatbotWindow');
             win.classList.toggle('active');
             if (win.classList.contains('active')) {
@@ -3135,6 +3369,20 @@ if ($has_wedding) {
                 autoResizeChatInput(input);
             }
         }
+
+        // Dismiss popup or active chat on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                const popup = document.getElementById('chatbotWelcomePopup');
+                if (popup && popup.classList.contains('visible')) {
+                    closeChatWelcomePopup(true);
+                }
+                const win = document.getElementById('chatbotWindow');
+                if (win && win.classList.contains('active')) {
+                    win.classList.remove('active');
+                }
+            }
+        });
 
         function sendQuickPrompt(text) {
             const input = document.getElementById('chatInput');
@@ -3279,6 +3527,7 @@ if ($has_wedding) {
         window.addEventListener('DOMContentLoaded', () => {
             renderSynchronizedChat();
             checkCookieConsent();
+            initChatbotWelcomePopup();
 
             // Booking Flow Controller:
             // 1. Landing Page -> Click Book

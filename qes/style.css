@@ -2635,9 +2635,34 @@ footer, .wire-footer {
         right: max(16px, var(--sar)) !important;
     }
     .chatbot-launcher-btn {
-        width: 50px !important;
-        height: 50px !important;
-        font-size: 20px !important;
+        width: 56px !important;
+        height: 56px !important;
+    }
+    .chatbot-launcher-btn .chatbot-robot-svg {
+        width: 28px !important;
+        height: 28px !important;
+    }
+    .chatbot-welcome-popup {
+        width: min(320px, calc(100vw - 32px)) !important;
+        max-width: calc(100vw - 32px) !important;
+        right: 0 !important;
+        bottom: 72px !important;
+        padding: 16px 18px 15px !important;
+        border-radius: 20px !important;
+    }
+    .chatbot-welcome-tail {
+        right: 18px !important;
+    }
+    .chatbot-welcome-greeting {
+        font-size: 15px !important;
+    }
+    .chatbot-welcome-desc {
+        font-size: 12.5px !important;
+        margin-bottom: 12px !important;
+    }
+    .chatbot-welcome-notice-pill {
+        font-size: 11px !important;
+        padding: 7px 11px !important;
     }
     .chatbot-window {
         right: max(12px, var(--sar)) !important;
