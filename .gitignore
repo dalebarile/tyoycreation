@@ -31,6 +31,7 @@ desktop.ini
 *.log
 logs/
 cache/
+qes/cache/
 
 # Playwright
 node_modules/

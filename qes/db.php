@@ -68,18 +68,31 @@ if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() 
         'samesite' => 'Lax'
     ]);
     session_cache_limiter('private_no_expire');
+
+    // Register database-backed session handler (Fix A: multi-instance serverless session sharing)
+    if (isset($conn) && is_object($conn)) {
+        try {
+            require_once __DIR__ . '/session_handler.php';
+            $sessionHandler = new QesSessionHandler($conn);
+            session_set_save_handler($sessionHandler, true);
+        } catch (\Throwable $e) {
+            error_log('[QES Session] Failed to register QesSessionHandler: ' . $e->getMessage());
+        }
+    }
+
     session_start();
 }
 
 if (!function_exists('qes_csrf_secret')) {
     function qes_csrf_secret(): string {
-        if (defined('ENCRYPTION_KEY') && !empty(ENCRYPTION_KEY)) {
-            return ENCRYPTION_KEY;
-        }
         if (defined('ENV_ENCRYPTION_KEY') && !empty(ENV_ENCRYPTION_KEY)) {
             return ENV_ENCRYPTION_KEY;
         }
-        return 'tyoy_master_qes_secret_2026_aes256_sec!';
+        if (defined('ENCRYPTION_KEY') && !empty(ENCRYPTION_KEY)) {
+            return ENCRYPTION_KEY;
+        }
+        error_log('[QES Security Alert] Missing ENV_ENCRYPTION_KEY / ENCRYPTION_KEY configuration.');
+        throw new \RuntimeException('Security encryption key is not configured.');
     }
 }
 
@@ -1242,6 +1255,15 @@ if (!function_exists('qes_restore_client_session_from_cookie')) {
         $_SESSION['phone'] = $user['phone'] ?? '';
 
         return true;
+    }
+}
+
+// Auto-restore authenticated client or admin session across serverless instances (Fix B: Defense in Depth)
+if (empty($_SESSION['id']) && isset($conn) && is_object($conn)) {
+    if (!empty($_COOKIE['tyoy_client_auth'])) {
+        qes_restore_client_session_from_cookie($conn);
+    } elseif (!empty($_COOKIE['tyoy_admin_auth'])) {
+        qes_restore_admin_session_from_cookie($conn);
     }
 }
 

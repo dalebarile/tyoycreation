@@ -72,6 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['email'] = $email;
                     $_SESSION['phone'] = $phone;
 
+                    if (function_exists('qes_set_client_auth_cookie')) {
+                        qes_set_client_auth_cookie($new_id, $hashed);
+                    }
+
                     $redirect = $_GET['redirect'] ?? 'index.php?registered=1';
                     // Security: only allow relative redirects (block absolute URLs)
                     if (preg_match('#^https?://|^//#i', $redirect) || str_contains($redirect, '://')) {

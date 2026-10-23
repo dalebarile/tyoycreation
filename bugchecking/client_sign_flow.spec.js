@@ -136,4 +136,82 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         await expect(page.locator('#tabBtnLogin')).toBeVisible();
         await expect(page.locator('#tabBtnRegister')).toBeVisible();
     });
+
+    test('Client booking flow: logged-in client submits booking without "Attention Needed" auth error', async ({ page }) => {
+        test.setTimeout(60000);
+        // 1. Go to landing page and register/login client
+        await page.goto('index.php');
+        await page.locator('nav .btn-nav-book').click();
+        const clientModal = page.locator('#clientSignModal');
+        await expect(clientModal).toHaveClass(/active/);
+
+        // Register unique client
+        await page.locator('#tabModalRegister').click();
+        await page.waitForTimeout(300);
+
+        const uniqueSuffix = Date.now();
+        const testEmail = `client_${uniqueSuffix}@example.com`;
+        await page.locator('#modal_reg_full_name').fill('Carmela Cruz');
+        await page.locator('#modal_reg_username').fill(`carmela_${uniqueSuffix}`);
+        await page.locator('#modal_reg_email').fill(testEmail);
+        await page.locator('#modal_reg_phone').fill('09181234567');
+        await page.locator('#modal_reg_password').fill('ClientPass123!');
+        await page.locator('#modal_reg_confirm_password').fill('ClientPass123!');
+        await page.locator('#modal_reg_privacy_consent').check();
+
+        const [regResponse] = await Promise.all([
+            page.waitForResponse(resp => resp.url().includes('auth_action.php?action=register') && resp.status() === 200),
+            page.locator('#modalRegSubmitBtn').click()
+        ]);
+        expect(regResponse.ok()).toBeTruthy();
+
+        // Verify logged in badge
+        const clientBadge = page.locator('.client-user-badge');
+        await expect(clientBadge).toBeVisible({ timeout: 25000 });
+
+        // Navigate directly to booking.php as logged-in client
+        await page.goto('booking.php');
+
+        // Accept privacy modal if it appears
+        const privacyAgreeBtn = page.locator('button:has-text("I Agree & Continue")');
+        if (await privacyAgreeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await privacyAgreeBtn.click();
+        }
+
+        // Wait for React booking wizard to mount
+        const clientNameInput = page.locator('#client_name_input');
+        await expect(clientNameInput).toBeVisible({ timeout: 15000 });
+
+        // Fill form fields
+        await page.locator('#event_title_input').fill('Carmela Elegant Debut');
+        await page.locator('#location_venue_input').fill('Tagaytay Midlands');
+
+        // Click Submit Booking Request
+        const submitBtn = page.locator('button.btn-submit-booking, button:has-text("Submit Booking Request")');
+        await expect(submitBtn).toBeVisible();
+        await submitBtn.click();
+
+        // In Email confirmation modal, click Send Code
+        const modalOverlay = page.locator('.email-warning-overlay');
+        await expect(modalOverlay).toBeVisible({ timeout: 8000 });
+        const sendCodeBtn = modalOverlay.locator('.btn-confirm-email-send');
+        await expect(sendCodeBtn).toBeVisible();
+        await sendCodeBtn.click();
+
+        // Crucial Assertion: Confirm NO red banner "Attention Needed: An active client account is required"
+        const errorBanner = page.locator('.booking-alert-banner, .alert-danger, [role="alert"]');
+        if (await errorBanner.isVisible({ timeout: 1500 }).catch(() => false)) {
+            const errText = await errorBanner.textContent();
+            expect(errText).not.toContain('Attention Needed');
+            expect(errText).not.toContain('active client account is required');
+        }
+
+        // Verify OTP modal opens or booking proceeds to verification
+        const verifyModal = page.locator('.verify-modal-overlay');
+        await expect(verifyModal).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('#verifyModalTitle')).toContainText('Enter Verification Code');
+
+        // Cleanup
+        await page.goto('logout.php?redirect=index.php');
+    });
 });

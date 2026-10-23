@@ -3814,6 +3814,41 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [eventDate, setEventDate] = useState(todayStr);
             const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
 
+            // Restore preserved draft on mount if user was redirected from a session expiry
+            useEffect(() => {
+                try {
+                    const saved = sessionStorage.getItem('qes_booking_saved_draft');
+                    if (saved) {
+                        const d = JSON.parse(saved);
+                        if (d && typeof d === 'object') {
+                            if (d.clientName) setClientName(d.clientName);
+                            if (d.clientEmail) setClientEmail(d.clientEmail);
+                            if (d.clientPhone) setClientPhone(d.clientPhone);
+                            if (d.clientAddress) setClientAddress(d.clientAddress);
+                            if (d.eventTitle) setEventTitle(d.eventTitle);
+                            if (d.eventDate) setEventDate(d.eventDate);
+                            if (d.eventTime) setEventTime(d.eventTime);
+                            if (d.guestCount) setGuestCount(String(d.guestCount));
+                            if (d.locationVenue) setLocationVenue(d.locationVenue);
+                            if (d.specialNotes) setSpecialNotes(d.specialNotes);
+                            sessionStorage.removeItem('qes_booking_saved_draft');
+                        }
+                    }
+                } catch (e) {}
+
+                // Verify session with whoami endpoint
+                fetch('booking_submit.php?action=whoami')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.loggedIn && data.user) {
+                            setClientName(prev => prev || data.user.full_name || '');
+                            setClientEmail(prev => prev || data.user.email || '');
+                            setClientPhone(prev => prev || data.user.phone || '');
+                        }
+                    })
+                    .catch(() => {});
+            }, []);
+
             // Responsive UI: Detect when Booking Summary is scrolled into view on mobile to hide sticky floating bar (eliminates duplicate total and submit button)
             const [isSummaryInView, setIsSummaryInView] = useState(false);
             const summaryRef = useRef(null);
@@ -5157,6 +5192,26 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         resetTurnstileWidget(mainTurnstileWidgetId);
                         if (data.is_conflict || data.conflict) {
                             triggerDoubleBookingModal(data.event_date || eventDate, data.message);
+                        } else if (res.status === 401 || data.code === 'auth_required' || data.requires_auth) {
+                            try {
+                                const draft = {
+                                    clientName, clientEmail, clientPhone, clientAddress,
+                                    eventTitle, eventType, eventDate, eventTime, guestCount,
+                                    locationVenue, specialNotes
+                                };
+                                sessionStorage.setItem('qes_booking_saved_draft', JSON.stringify(draft));
+                            } catch (e) {}
+
+                            const currentUrl = window.location.pathname + window.location.search;
+                            const loginUrl = 'login.php?redirect=' + encodeURIComponent(currentUrl);
+                            setSubmitError(
+                                <span>
+                                    {data.message || 'Your session has expired. Please sign in again.'}{' '}
+                                    <a href={loginUrl} style={{ textDecoration: 'underline', fontWeight: 700, color: '#166534', marginLeft: '6px' }}>
+                                        Sign In Here &rarr;
+                                    </a>
+                                </span>
+                            );
                         } else {
                             setSubmitError(data.message || 'Submission failed. Please check your inputs.');
                         }

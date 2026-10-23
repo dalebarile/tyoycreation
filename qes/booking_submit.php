@@ -24,6 +24,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'status') {
     exit;
 }
 
+// Lightweight GET whoami check to verify current active session state
+if ($action === 'whoami') {
+    $uid = !empty($_SESSION['id']) ? (int)$_SESSION['id'] : 0;
+    $logged = ($uid > 0 && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user'));
+    echo json_encode([
+        'success' => true,
+        'loggedIn' => $logged,
+        'user' => $logged ? [
+            'id' => $uid,
+            'username' => $_SESSION['username'] ?? '',
+            'full_name' => $_SESSION['full_name'] ?? '',
+            'email' => $_SESSION['email'] ?? '',
+            'phone' => $_SESSION['phone'] ?? ''
+        ] : null
+    ]);
+    exit;
+}
+
 // CSRF protection for all POST requests
 $csrf = $_POST['csrf_token'] ?? '';
 if (!qes_verify_csrf($csrf)) {
@@ -243,13 +261,41 @@ if ($action === 'submit') {
     }
 
     $user_id = !empty($_SESSION['id']) ? (int)$_SESSION['id'] : null;
+    if (empty($user_id) && function_exists('qes_restore_client_session_from_cookie')) {
+        qes_restore_client_session_from_cookie($conn);
+        $user_id = !empty($_SESSION['id']) ? (int)$_SESSION['id'] : null;
+    }
+
     if (empty($user_id)) {
+        http_response_code(401);
         echo json_encode([
             'success' => false,
+            'code' => 'auth_required',
             'requires_auth' => true,
-            'message' => 'An active client account is required. Please sign in or register to submit a booking inquiry.'
+            'message' => 'Your session has expired. Please sign in again.'
         ]);
         exit;
+    }
+
+    // Re-verify that user status is approved server-side
+    $status_stmt = $conn->prepare("SELECT status, role FROM users WHERE id = ? LIMIT 1");
+    if ($status_stmt) {
+        $status_stmt->bind_param("i", $user_id);
+        $status_stmt->execute();
+        $status_res = $status_stmt->get_result();
+        $u_row = $status_res ? $status_res->fetch_assoc() : null;
+        $status_stmt->close();
+
+        if (!$u_row || !in_array($u_row['status'] ?? '', ['approved', 'active'], true)) {
+            http_response_code(401);
+            echo json_encode([
+                'success' => false,
+                'code' => 'auth_required',
+                'requires_auth' => true,
+                'message' => 'An active client account is required. Please contact support or sign in again.'
+            ]);
+            exit;
+        }
     }
 
     // Stage booking payload and dispatch verification code email
