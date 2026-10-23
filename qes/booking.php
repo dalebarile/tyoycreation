@@ -9,7 +9,10 @@ $contact_email = get_setting($conn, 'contact_email', 'contact@tyoycreation.com')
 if (empty($_SESSION['id'])) {
     if (function_exists('qes_restore_client_session_from_cookie') && !empty($_COOKIE['tyoy_client_auth'])) {
         qes_restore_client_session_from_cookie($conn);
-    } elseif (function_exists('qes_restore_admin_session_from_cookie') && !empty($_COOKIE['tyoy_admin_auth'])) {
+    }
+}
+if (empty($_SESSION['id'])) {
+    if (function_exists('qes_restore_admin_session_from_cookie') && !empty($_COOKIE['tyoy_admin_auth'])) {
         qes_restore_admin_session_from_cookie($conn);
     }
 }

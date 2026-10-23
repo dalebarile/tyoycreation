@@ -29,7 +29,10 @@ $hero_bg_img = get_setting($conn, 'media_hero_bg', 'assets/tyoy_creation_banner.
 if (empty($_SESSION['id'])) {
     if (function_exists('qes_restore_client_session_from_cookie') && !empty($_COOKIE['tyoy_client_auth'])) {
         qes_restore_client_session_from_cookie($conn);
-    } elseif (function_exists('qes_restore_admin_session_from_cookie') && !empty($_COOKIE['tyoy_admin_auth'])) {
+    }
+}
+if (empty($_SESSION['id'])) {
+    if (function_exists('qes_restore_admin_session_from_cookie') && !empty($_COOKIE['tyoy_admin_auth'])) {
         qes_restore_admin_session_from_cookie($conn);
     }
 }
@@ -2825,6 +2828,8 @@ if ($has_wedding) {
 
         let pendingBookingHref = 'booking.php';
         const IS_CLIENT_LOGGED_IN = <?= json_encode($is_client_logged_in) ?>;
+        const IS_ADMIN_LOGGED_IN = <?= json_encode($is_admin_logged_in) ?>;
+        const IS_USER_LOGGED_IN = <?= json_encode($is_client_logged_in || $is_admin_logged_in) ?>;
         const GOOGLE_CLIENT_ID = <?= json_encode($google_client_id) ?>;
 
         function openClientSignModal(targetHref) {
@@ -3555,7 +3560,7 @@ if ($has_wedding) {
 
                     if (isInsidePricingModal) {
                         // Data privacy act modal is removed in real-time pricing modal per requirement
-                        if (!IS_CLIENT_LOGGED_IN) {
+                        if (!IS_USER_LOGGED_IN) {
                             e.preventDefault();
                             closePackageModal();
                             openClientSignModal(targetHref);
@@ -3567,7 +3572,7 @@ if ($has_wedding) {
                     }
 
                     // Main Landing Page Book buttons:
-                    if (!IS_CLIENT_LOGGED_IN) {
+                    if (!IS_USER_LOGGED_IN) {
                         e.preventDefault();
                         openClientSignModal(targetHref);
                         return;

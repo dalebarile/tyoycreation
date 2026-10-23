@@ -6,21 +6,24 @@ $script_dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''
 $base_href = ($script_dir === '/' || $script_dir === '.' || $script_dir === '/api') ? '/' : ($script_dir . '/');
 
 // If already logged in, redirect
-if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_cookie')) {
-    qes_restore_client_session_from_cookie($conn);
+if (empty($_SESSION['id'])) {
+    if (function_exists('qes_restore_client_session_from_cookie') && !empty($_COOKIE['tyoy_client_auth'])) {
+        qes_restore_client_session_from_cookie($conn);
+    }
+}
+if (empty($_SESSION['id'])) {
+    if (function_exists('qes_restore_admin_session_from_cookie') && !empty($_COOKIE['tyoy_admin_auth'])) {
+        qes_restore_admin_session_from_cookie($conn);
+    }
 }
 if (isset($_SESSION['id']) && !empty($_SESSION['role'])) {
-    if (in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'])) {
-        header("Location: " . $base_href . "a_home.php");
-        exit;
-    } else {
-        $dest = $_GET['redirect'] ?? 'index.php';
-        if (preg_match('#^https?://|^//#i', $dest) || str_contains($dest, '://')) {
-            $dest = 'index.php';
-        }
-        header("Location: " . $dest);
-        exit;
+    $default_dest = in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'], true) ? ($base_href . 'a_home.php') : 'index.php';
+    $dest = $_GET['redirect'] ?? $default_dest;
+    if (preg_match('#^https?://|^//#i', $dest) || str_contains($dest, '://')) {
+        $dest = $default_dest;
     }
+    header("Location: " . $dest);
+    exit;
 }
 
 $business_name = function_exists('get_setting') ? get_setting($conn, 'business_name', 'Tyoy Creation') : 'Tyoy Creation';
