@@ -281,6 +281,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 track_user_session($conn, (int)$user['id'], true);
             }
 
+            if (function_exists('qes_set_client_auth_cookie')) {
+                qes_set_client_auth_cookie((int)$user['id'], (string)($user['password'] ?? ''));
+            }
+
             echo json_encode([
                 'success' => true,
                 'message' => 'Signed in with Google successfully!',
@@ -334,6 +338,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
                 if (function_exists('track_user_session')) {
                     track_user_session($conn, $new_id, true);
+                }
+
+                if (function_exists('qes_set_client_auth_cookie')) {
+                    qes_set_client_auth_cookie($new_id, $dummy_pass);
                 }
 
                 echo json_encode([

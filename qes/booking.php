@@ -22,7 +22,7 @@ $is_admin_logged_in = !empty($_SESSION['id']) && isset($_SESSION['role']) && in_
 // Client MUST be logged in or signed up in order to book
 if (!$is_client_logged_in && !$is_admin_logged_in) {
     $queryString = !empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '';
-    $redirect_url = 'login.php?redirect=' . urlencode('booking.php' . $queryString);
+    $redirect_url = 'index.php?booking=1' . (!empty($_SERVER['QUERY_STRING']) ? '&' . $_SERVER['QUERY_STRING'] : '');
     header('Location: ' . $redirect_url);
     exit;
 }

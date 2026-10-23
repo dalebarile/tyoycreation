@@ -1218,16 +1218,18 @@ if (!function_exists('qes_restore_client_session_from_cookie')) {
         $user = $res ? $res->fetch_assoc() : null;
         $stmt->close();
 
-        if (!$user || !in_array($user['status'] ?? '', ['approved', 'active'], true) || ($user['role'] ?? '') !== 'user') {
+        $user_role = $user['role'] ?? 'user';
+        if (!$user || !in_array($user['status'] ?? '', ['approved', 'active'], true) || ($user_role !== 'user' && $user_role !== 'client' && !empty($user['role']))) {
             qes_clear_client_auth_cookie();
             return false;
         }
 
         $secret = qes_csrf_secret();
+        $user_pw = (string)($user['password'] ?? '');
         if ($expiry > 0) {
-            $expected = hash_hmac('sha256', $userId . '|client|' . $expiry . '|' . $user['password'], $secret);
+            $expected = hash_hmac('sha256', $userId . '|client|' . $expiry . '|' . $user_pw, $secret);
         } else {
-            $expected = hash_hmac('sha256', $userId . '|client|' . $user['password'], $secret);
+            $expected = hash_hmac('sha256', $userId . '|client|' . $user_pw, $secret);
         }
 
         if (!hash_equals($expected, $sig)) {

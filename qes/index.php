@@ -2819,9 +2819,9 @@ if ($has_wedding) {
         }
 
         let pendingBookingHref = 'booking.php';
-        const IS_CLIENT_LOGGED_IN = <?= json_encode($is_client_logged_in) ?>;
-        const IS_ADMIN_LOGGED_IN = <?= json_encode($is_admin_logged_in) ?>;
-        const IS_USER_LOGGED_IN = <?= json_encode($is_client_logged_in || $is_admin_logged_in) ?>;
+        let IS_CLIENT_LOGGED_IN = <?= json_encode($is_client_logged_in) ?>;
+        let IS_ADMIN_LOGGED_IN = <?= json_encode($is_admin_logged_in) ?>;
+        let IS_USER_LOGGED_IN = <?= json_encode($is_client_logged_in || $is_admin_logged_in) ?>;
         const GOOGLE_CLIENT_ID = <?= json_encode($google_client_id) ?>;
 
         function openClientSignModal(targetHref) {
@@ -2933,6 +2933,9 @@ if ($has_wedding) {
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting to Google...';
             }
+            try {
+                sessionStorage.setItem('tyoy_pending_booking', pendingBookingHref || 'booking.php');
+            } catch(e){}
             const redirectUrl = window.location.origin + window.location.pathname;
             window.location.href = `${SUPABASE_AUTH_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
         }
@@ -2998,11 +3001,21 @@ if ($has_wedding) {
                 }
 
                 if (data && data.success) {
-                    showModalAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Loading your portal...', 'success');
-                    if (typeof startQesProgress === 'function') startQesProgress();
-                    setTimeout(() => {
-                        window.location.href = window.location.pathname + window.location.search;
-                    }, 80);
+                    IS_USER_LOGGED_IN = true;
+                    IS_CLIENT_LOGGED_IN = true;
+                    closeClientSignModal();
+                    let target = 'booking.php';
+                    try {
+                        target = sessionStorage.getItem('tyoy_pending_booking') || 'booking.php';
+                        sessionStorage.removeItem('tyoy_pending_booking');
+                    } catch(e){}
+                    try { history.replaceState(null, '', window.location.pathname); } catch(e){}
+                    if (target.includes('booking.php')) {
+                        // Process flow: landing page -> book -> Google OAuth -> signed* -> data privacy act -> booking page
+                        openIndexPrivacyModal(target);
+                    } else {
+                        window.location.reload();
+                    }
                 } else {
                     isIndexOAuthVerifying = false;
                     showModalAlert((data && data.message) ? data.message : 'Google sign-in could not be completed. Please try again.');
@@ -3044,16 +3057,16 @@ if ($has_wedding) {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
-                    showModalAlert('Login successful! Returning to landing page...', 'success');
-                    if (typeof startQesProgress === 'function') startQesProgress();
-                    setTimeout(() => {
-                        if (pendingBookingHref && pendingBookingHref !== 'index.php' && !pendingBookingHref.startsWith('index.php')) {
-                            window.location.href = pendingBookingHref;
-                        } else {
-                            window.location.reload();
-                        }
-                    }, 80);
+                    IS_USER_LOGGED_IN = true;
+                    IS_CLIENT_LOGGED_IN = true;
+                    closeClientSignModal();
+                    const dest = pendingBookingHref || 'booking.php';
+                    if (dest.includes('booking.php')) {
+                        // Process flow: landing page -> book -> sign in -> signed* -> data privacy act -> booking page
+                        openIndexPrivacyModal(dest);
+                    } else {
+                        window.location.reload();
+                    }
                 } else {
                     showModalAlert(data.message || 'Invalid username/email or password.');
                     btn.disabled = false;
@@ -3096,11 +3109,16 @@ if ($has_wedding) {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
-                    showModalAlert('Account registered successfully! Returning to landing page...', 'success');
-                    setTimeout(() => {
+                    IS_USER_LOGGED_IN = true;
+                    IS_CLIENT_LOGGED_IN = true;
+                    closeClientSignModal();
+                    const dest = pendingBookingHref || 'booking.php';
+                    if (dest.includes('booking.php')) {
+                        // Process flow: landing page -> book -> register -> signed* -> data privacy act -> booking page
+                        openIndexPrivacyModal(dest);
+                    } else {
                         window.location.reload();
-                    }, 150);
+                    }
                 } else {
                     showModalAlert(data.message || 'Registration failed. Please check your details.');
                     btn.disabled = false;
@@ -3135,6 +3153,7 @@ if ($has_wedding) {
                 sessionStorage.setItem('tyoy_privacy_agreed', '1');
             } catch (e) {}
             closeIndexPrivacyModal();
+            if (typeof startQesProgress === 'function') startQesProgress();
             window.location.href = pendingBookingHref || 'booking.php';
         }
 
@@ -3575,49 +3594,52 @@ if ($has_wedding) {
             checkCookieConsent();
             initChatbotWelcomePopup();
 
+            // Check URL parameters for seamless booking flow transitions
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('show_privacy') === '1') {
+                const target = urlParams.get('target') || 'booking.php';
+                openIndexPrivacyModal(target);
+                try { history.replaceState(null, '', window.location.pathname); } catch(e){}
+            } else if (urlParams.get('booking') === '1') {
+                const target = urlParams.get('target') || 'booking.php';
+                if (IS_USER_LOGGED_IN) {
+                    openIndexPrivacyModal(target);
+                } else {
+                    openClientSignModal(target);
+                }
+                try { history.replaceState(null, '', window.location.pathname); } catch(e){}
+            }
+
             // Booking Flow Controller:
             // 1. Landing Page -> Click Book
-            // 2. If NOT logged in -> Opens Log In / Sign Up or Connect Google modal -> upon success redirects back to Landing Page
-            // 3. Back to Landing Page (now logged in) -> Click Book -> Opens Philippine Data Privacy Act (RA 10173) modal
-            // 4. Client accepts Privacy Act -> Navigates to booking form to start filling in event specifications
-            // 5. Real-Time Pricing Modals (Birthday / Wedding packages): Privacy Act modal removed; direct access preserved
+            // 2. If already signed in -> allow proceed directly to Data Privacy Act (or booking page if already agreed)
+            // 3. If NOT signed in -> Opens Log In / Sign Up or Connect Google modal -> once signed* -> Data Privacy Act -> booking page
             document.querySelectorAll('a[href^="booking.php"]').forEach(link => {
                 link.addEventListener('click', (e) => {
                     const targetHref = link.getAttribute('href') || 'booking.php';
 
-                    // Check if clicked inside the real-time pricing modals (Birthday/Wedding Inclusions)
-                    const isInsidePricingModal = !!link.closest('#birthdayPackageModal, #weddingPackageModal, .package-view-modal');
+                    // If user is ALREADY signed in: remove/skip sign-in modal completely
+                    if (IS_USER_LOGGED_IN) {
+                        const hasAgreedPrivacy = (() => {
+                            try { return sessionStorage.getItem('tyoy_privacy_agreed') === '1'; } catch(err) { return false; }
+                        })();
 
-                    if (isInsidePricingModal) {
-                        // Data privacy act modal is removed in real-time pricing modal per requirement
-                        if (!IS_USER_LOGGED_IN) {
+                        if (!hasAgreedPrivacy) {
                             e.preventDefault();
-                            closePackageModal();
-                            openClientSignModal(targetHref);
+                            openIndexPrivacyModal(targetHref);
                             return;
                         }
-                        // Logged in: allow seamless navigation without privacy act modal
-                        try { sessionStorage.setItem('tyoy_privacy_agreed', '1'); } catch(err){}
+                        // Already agreed: allow direct navigation to booking page
                         return;
                     }
 
-                    // Main Landing Page Book buttons:
-                    if (!IS_USER_LOGGED_IN) {
-                        e.preventDefault();
-                        openClientSignModal(targetHref);
-                        return;
+                    // Not signed in: open Client Sign In / Google connect modal
+                    e.preventDefault();
+                    const isInsidePricingModal = !!link.closest('#birthdayPackageModal, #weddingPackageModal, .package-view-modal');
+                    if (isInsidePricingModal) {
+                        closePackageModal();
                     }
-
-                    // Logged in user on landing page: enforce Data Privacy Act gate modal before booking
-                    const hasAgreedPrivacy = (() => {
-                        try { return sessionStorage.getItem('tyoy_privacy_agreed') === '1'; } catch(err) { return false; }
-                    })();
-
-                    if (!hasAgreedPrivacy) {
-                        e.preventDefault();
-                        openIndexPrivacyModal(targetHref);
-                        return;
-                    }
+                    openClientSignModal(targetHref);
                 });
             });
         });

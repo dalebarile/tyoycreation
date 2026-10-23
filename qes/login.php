@@ -16,11 +16,16 @@ if (empty($_SESSION['id'])) {
         qes_restore_admin_session_from_cookie($conn);
     }
 }
-if (isset($_SESSION['id']) && !empty($_SESSION['role'])) {
-    $default_dest = in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'], true) ? ($base_href . 'a_home.php') : 'index.php';
+if (!empty($_SESSION['id'])) {
+    $role = $_SESSION['role'] ?? 'user';
+    $default_dest = in_array($role, ['admin', 'super_admin', 'main_admin'], true) ? ($base_href . 'a_home.php') : 'index.php';
     $dest = $_GET['redirect'] ?? $default_dest;
     if (preg_match('#^https?://|^//#i', $dest) || str_contains($dest, '://')) {
         $dest = $default_dest;
+    }
+    if (stripos($dest, 'booking.php') !== false) {
+        header("Location: index.php?show_privacy=1&target=" . urlencode($dest));
+        exit;
     }
     header("Location: " . $dest);
     exit;
@@ -687,15 +692,14 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                 }
 
                 if (data && data.success) {
-                    if (REDIRECT_TARGET === 'index.php') {
-                        try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
-                    } else {
-                        sessionStorage.setItem('tyoy_privacy_agreed', '1');
+                    let nextUrl = REDIRECT_TARGET;
+                    if (nextUrl.includes('booking.php')) {
+                        nextUrl = 'index.php?show_privacy=1&target=' + encodeURIComponent(nextUrl);
                     }
                     showAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Redirecting...', 'success');
                     if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
-                        window.location.href = REDIRECT_TARGET;
+                        window.location.href = nextUrl;
                     }, 80);
                 } else {
                     isLoginOAuthVerifying = false;
@@ -741,15 +745,14 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                 });
                 const data = await res.json();
                 if (data.success) {
-                    if (REDIRECT_TARGET === 'index.php') {
-                        try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
-                    } else {
-                        sessionStorage.setItem('tyoy_privacy_agreed', '1');
+                    let nextUrl = REDIRECT_TARGET;
+                    if (nextUrl.includes('booking.php')) {
+                        nextUrl = 'index.php?show_privacy=1&target=' + encodeURIComponent(nextUrl);
                     }
                     showAlert('Login successful! Redirecting...', 'success');
                     if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
-                        window.location.href = REDIRECT_TARGET;
+                        window.location.href = nextUrl;
                     }, 80);
                 } else {
                     showAlert(data.message || 'Invalid username/email or password.');
