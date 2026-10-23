@@ -7511,6 +7511,39 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             }, 6);
         }
 
+        function getSmartClientFallback(userMsg) {
+            const m = (userMsg || '').toLowerCase().trim();
+            const isTl = /\b(po|opo|kamusta|kumusta|ano|anong|magkano|paano|saan|meron|kailan|kelan|kasal|binyag|petsa)\b/i.test(m);
+
+            if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|kamusta|kumusta)\b/i.test(m)) {
+                return isTl
+                    ? "Kumusta po! Ako si Anton, ang AI concierge ng Tyoy Creation. Nandito po ako upang gabayan kayo sa aming event packages, live pricing, date availability, at pag-book. Anong okasyon po ang inyong pinaplano?"
+                    : "Hello! I'm Anton, the AI assistant for Tyoy Creation. I can help you with event packages, live pricing, date availability, and booking guidance. What celebration are you planning?";
+            }
+
+            if (/\b(date|dates|availab|open|slot|schedule|petsa|calendar|kailan|kelan)\b/i.test(m)) {
+                return isTl
+                    ? "🗓️ **Date Availability:** Upang makita ang live calendar ng mga available na petsa, maaari niyo pong buksan ang aming **'Book Now'** form sa website. Ipinapatupad po namin ang *One Confirmed Event Per Day* policy. Nais niyo po bang mag-inquire para sa partikular na petsa?"
+                    : "🗓️ **Date Availability:** You can check our live calendar anytime by clicking the **'Book Now'** button on our website. We maintain a strict *One Confirmed Event Per Day* policy. Would you like to inquire about a specific celebration date?";
+            }
+
+            if (/\b(package|packages|price|prices|rate|rates|cost|magkano|presyo|bayad|wedding|kasal|party|debut)\b/i.test(m)) {
+                return isTl
+                    ? "💍🎈 **Packages at Presyo:** Mayroon kaming kumpletong packages para sa Kasal (Weddings), Kids Parties, Debut, at Catering add-ons. I-click ang **'Book Now'** upang makita ang buong price breakdown at makabuo ng inyong instant quotation!"
+                    : "💍🎈 **Packages & Pricing:** We offer complete styling packages for Weddings, Kids Parties, Debut, and Catering add-ons. Click the **'Book Now'** button on our website to explore our interactive package builder and live pricing!";
+            }
+
+            if (/\b(book|reserve|paano|how)\b/i.test(m)) {
+                return isTl
+                    ? "🎉 **Paano Mag-book:** Pindutin lamang ang **'Book Now'** button sa aming website upang piliin ang inyong event type, petsa, venue, at styling inclusions. Makikipag-ugnayan ang aming coordinator sa loob ng 24–48 oras pagkatapos ng inyong submission!"
+                    : "🎉 **How to Book:** Simply click the **'Book Now'** button on our website to choose your celebration type, date, venue, and styling packages. Our team coordinator will reach out within 24–48 hours for staff verification!";
+            }
+
+            return isTl
+                ? "Salamat po sa inyong mensahe! Nandito po si Anton upang tumulong sa packages, presyo, date availability, at gabay sa pag-book. Paano po kita matutulungan sa inyong okasyon ngayon?"
+                : "Thank you for messaging! I'm Anton, here to help with our event styling packages, services, date availability, booking tracking, or guiding you on our website booking form. How can I assist you today?";
+        }
+
         async function sendChatMessage(e) {
             if (e && e.preventDefault) e.preventDefault();
             const input = document.getElementById('chatInput');
@@ -7539,7 +7572,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
             const abortCtrl = new AbortController();
-            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 4200);
+            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 12000);
 
             try {
                 const res = await fetch('chatbot.php', {
@@ -7565,7 +7598,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 } else if (data && data.message) {
                     replyText = data.message;
                 } else {
-                    replyText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
+                    replyText = getSmartClientFallback(msg);
                 }
 
                 // SAKA LANG LALABAS kapag nag-offline ang chatbot / API quota reached
@@ -7581,7 +7614,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 });
             } catch (err) {
                 clearTimeout(timeoutHandle);
-                const fallbackText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
+                const fallbackText = getSmartClientFallback(msg);
                 streamBotReply(botDiv, fallbackText, () => {
                     saveMessageToStorage('bot', fallbackText);
                 });

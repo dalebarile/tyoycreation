@@ -286,6 +286,7 @@ function qes_mask_name(string $name): string {
     return implode(' ', $masked);
 }
 
+try {
 $global_daily_used = getGlobalDailyApiCount($conn);
 $global_daily_remaining = max(0, $GLOBAL_DAILY_LIMIT - $global_daily_used);
 
@@ -415,26 +416,56 @@ if (!is_array($booked_dates)) {
 $booked_str = !empty($booked_dates) ? implode("; ", $booked_dates) : "No confirmed events yet in the upcoming months.";
 $current_date_str = date('Y-m-d (l, F j, Y)');
 
-// Business Info from Settings
-$ai_b_name    = get_setting($conn, 'business_name', 'Tyoy Creation');
-$ai_b_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS INTO Unforgettable Events');
-$ai_b_email   = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
-$ai_b_phone   = get_setting($conn, 'contact_phone', '0956 035 3731');
-$ai_b_address = get_setting($conn, 'business_address', 'San Jose del Monte, Bulacan');
-$ai_b_story   = get_setting($conn, 'about_story', "Tyoy Creation specializes in bespoke floral design, wedding coordination, and creative balloon styling.");
+// Business Info from Settings (Cached in session or QesCache to eliminate redundant DB calls)
+$biz_info = class_exists('QesCache') ? QesCache::get('chatbot_biz_info') : ($_SESSION['chatbot_biz_info'] ?? null);
+if (!is_array($biz_info)) {
+    $ai_b_name    = get_setting($conn, 'business_name', 'Tyoy Creation');
+    $ai_b_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS INTO Unforgettable Events');
+    $ai_b_email   = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
+    $ai_b_phone   = get_setting($conn, 'contact_phone', '0956 035 3731');
+    $ai_b_address = get_setting($conn, 'business_address', 'San Jose del Monte, Bulacan');
+    $ai_b_story   = get_setting($conn, 'about_story', "Tyoy Creation specializes in bespoke floral design, wedding coordination, and creative balloon styling.");
 
-$biz_info = [
-    'name'    => $ai_b_name,
-    'tagline' => $ai_b_tagline,
-    'email'   => $ai_b_email,
-    'phone'   => $ai_b_phone,
-    'address' => $ai_b_address,
-    'story'   => $ai_b_story
-];
+    $biz_info = [
+        'name'    => $ai_b_name,
+        'tagline' => $ai_b_tagline,
+        'email'   => $ai_b_email,
+        'phone'   => $ai_b_phone,
+        'address' => $ai_b_address,
+        'story'   => $ai_b_story
+    ];
+    if (class_exists('QesCache')) {
+        QesCache::set('chatbot_biz_info', $biz_info, 600);
+    }
+    $_SESSION['chatbot_biz_info'] = $biz_info;
+} else {
+    $ai_b_name    = $biz_info['name'] ?? 'Tyoy Creation';
+    $ai_b_tagline = $biz_info['tagline'] ?? 'TURNING YOUR MOMENTS INTO Unforgettable Events';
+    $ai_b_email   = $biz_info['email'] ?? 'contact@tyoycreation.com';
+    $ai_b_phone   = $biz_info['phone'] ?? '0956 035 3731';
+    $ai_b_address = $biz_info['address'] ?? 'San Jose del Monte, Bulacan';
+    $ai_b_story   = $biz_info['story'] ?? 'Tyoy Creation specializes in bespoke floral design, wedding coordination, and creative balloon styling.';
+}
 
-// Fetch live packages and pricing catalogs from system
-$theme_pricing = get_packages_pricing($conn, 'theme_party');
-$wedding_pricing = get_packages_pricing($conn, 'wedding');
+// Fetch live packages and pricing catalogs from system (Cached in session or QesCache)
+$wedding_pricing = class_exists('QesCache') ? QesCache::get('chatbot_wedding_pricing') : ($_SESSION['chatbot_wedding_pricing'] ?? null);
+if (!is_array($wedding_pricing)) {
+    $wedding_pricing = get_packages_pricing($conn, 'wedding');
+    if (class_exists('QesCache')) {
+        QesCache::set('chatbot_wedding_pricing', $wedding_pricing, 600);
+    }
+    $_SESSION['chatbot_wedding_pricing'] = $wedding_pricing;
+}
+
+$theme_pricing = class_exists('QesCache') ? QesCache::get('chatbot_theme_pricing') : ($_SESSION['chatbot_theme_pricing'] ?? null);
+if (!is_array($theme_pricing)) {
+    $theme_pricing = get_packages_pricing($conn, 'theme_party');
+    if (class_exists('QesCache')) {
+        QesCache::set('chatbot_theme_pricing', $theme_pricing, 600);
+    }
+    $_SESSION['chatbot_theme_pricing'] = $theme_pricing;
+}
+
 $pricing_brief = "";
 if (!empty($wedding_pricing) && is_array($wedding_pricing)) {
     $pricing_brief .= "\nLIVE WEDDING PACKAGES & SERVICE INCLUSIONS:\n";
@@ -644,6 +675,55 @@ if (empty($raw_reply) && (
             . "• 🏢 **Corporate & Special Events:** **2 Weeks Preparation Reminder**.\n\n"
             . "📌 **Flexible Booking:** There are no lock-out restrictions—you are free to choose any date starting from today onwards.\n\n"
             . "👉 Would you like to check date availability or get started with our **'Book Now'** form?";
+    }
+}
+
+// ─── FAST-PATH CHECK 4B: CALENDAR AVAILABILITY & RESERVED DATES ───────────
+if (empty($raw_reply) && (
+    strpos($lower_msg, 'available date') !== false ||
+    strpos($lower_msg, 'available dates') !== false ||
+    strpos($lower_msg, 'what are the available') !== false ||
+    strpos($lower_msg, 'what are available') !== false ||
+    strpos($lower_msg, 'kailan available') !== false ||
+    strpos($lower_msg, 'bakanteng petsa') !== false ||
+    strpos($lower_msg, 'mga available na petsa') !== false ||
+    strpos($lower_msg, 'open date') !== false ||
+    strpos($lower_msg, 'open dates') !== false ||
+    strpos($lower_msg, 'reserved date') !== false ||
+    strpos($lower_msg, 'reserved dates') !== false ||
+    strpos($lower_msg, 'calendar availability') !== false ||
+    strpos($lower_msg, 'schedule availability') !== false ||
+    (strpos($lower_msg, 'date') !== false && strpos($lower_msg, 'availab') !== false) ||
+    (strpos($lower_msg, 'petsa') !== false && strpos($lower_msg, 'pwede') !== false)
+)) {
+    if (qes_detect_tagalog($message)) {
+        $booked_list = !empty($booked_dates)
+            ? "• " . implode("\n• ", $booked_dates) . "\n\n"
+            : "Lahat ng darating na petsa ay kasalukuyang bukas para sa inquiry!\n\n";
+        $raw_reply = "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
+            . "Ipinapatupad sa **{$ai_b_name}** ang **isang kumpirmadong okasyon bawat araw** (One Confirmed Event Per Day Policy) upang masiguro ang 100% dedikasyon ng aming senior styling crew at kagamitan.\n\n"
+            . "Kasalukuyang may nakareserbang okasyon sa mga sumusunod na petsa:\n"
+            . $booked_list
+            . "⏳ **Inirerekomendang Oras ng Paghahanda:**\n"
+            . "• 💍 **Kasal (Weddings):** 3 Buwang Preparation Reminder\n"
+            . "• 🎈 **Kids Party / Iba pang Events:** 2 Linggong Preparation Reminder\n\n"
+            . "*(Paalala: Malaya kayong makakapili ng anumang petsa mula sa araw na ito simula sa aming 'Book Now' form)*\n\n"
+            . "📋 **Staff Review Notice:** Sinisiyasat ng aming coordinator ang bawat booking sa loob ng 24–48 oras upang mai-lock ang inyong slot.\n\n"
+            . "👉 Nais niyo po bang mag-inquire para sa partikular na petsa o simulan ang booking sa **'Book Now'**?";
+    } else {
+        $booked_list = !empty($booked_dates)
+            ? "• " . implode("\n• ", $booked_dates) . "\n\n"
+            : "All upcoming dates are currently open for booking inquiry!\n\n";
+        $raw_reply = "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
+            . "At **{$ai_b_name}**, we maintain a strict **one confirmed celebration per calendar day** rule to guarantee full equipment allocation and dedicated crew attention.\n\n"
+            . "Currently reserved celebration dates:\n"
+            . $booked_list
+            . "⏳ **Recommended Preparation Reminders:**\n"
+            . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
+            . "• 🎈 **Kids Party / Other Events:** 2 Weeks Preparation Reminder\n\n"
+            . "*(Note: Clients have free will to select any date from today onwards)*\n\n"
+            . "📋 **Staff Review Notice:** Because slot availability is dynamic, dates are officially secured once our coordinators complete Staff Review and your deposit is confirmed.\n\n"
+            . "👉 Would you like to check a specific date (e.g. *\"Is January 1, 2027 available?\"*) or start your inquiry via **'Book Now'**?";
     }
 }
 
@@ -1243,3 +1323,22 @@ $output = [
 ob_clean();
 echo json_encode($output, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
 exit;
+
+} catch (\Throwable $topLevelErr) {
+    error_log('[Chatbot Fatal Catch] ' . $topLevelErr->getMessage() . ' in ' . $topLevelErr->getFile() . ':' . $topLevelErr->getLine());
+    $is_tl = isset($message) ? qes_detect_tagalog($message) : false;
+    $fallback_msg = $is_tl
+        ? "Magandang araw po! Nandito ako upang tumulong sa inyong event packages, presyo, date availability, at gabay sa pag-book sa aming website. Paano po kita matutulungan ngayon?"
+        : "Hello! I am Anton, your AI assistant for Tyoy Creation. I can help with packages, pricing, date availability, and online booking guidance. How may I assist you today?";
+    ob_clean();
+    echo json_encode([
+        'reply' => $fallback_msg,
+        'response' => $fallback_msg,
+        'chat_count' => (int)($_SESSION['chat_count'] ?? 1),
+        'remaining_chats' => max(0, $USER_SESSION_LIMIT - (int)($_SESSION['chat_count'] ?? 1)),
+        'max_chats' => $USER_SESSION_LIMIT,
+        'limit_reached' => false,
+        'error_caught' => true
+    ], JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
+    exit;
+}
