@@ -39,10 +39,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $flash_error = "Package or item label cannot be empty.";
         } else {
             $res = add_package_item($conn, $family, $cat_key, $label, $price);
+            if (!$res['success']) {
+                usleep(150000);
+                $res = add_package_item($conn, $family, $cat_key, $label, $price);
+            }
             if ($res['success']) {
                 $flash_success = "Package/Item '{$label}' has been added successfully! Changes are immediately live.";
             } else {
-                $flash_error = $res['message'] ?? "Failed to add item.";
+                $err_detail = !empty($conn->error) ? " (" . htmlspecialchars(substr($conn->error, 0, 100)) . ")" : "";
+                $flash_error = ($res['message'] ?? "Failed to add item.") . $err_detail;
             }
         }
     } elseif ($action === 'update_item') {
@@ -58,10 +63,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $flash_error = "Package or item label cannot be empty.";
         } else {
             $res = update_package_item($conn, $family, $cat_key, $item_id, $label, $price, $target_cat);
+            if (!$res['success']) {
+                usleep(150000);
+                $res = update_package_item($conn, $family, $cat_key, $item_id, $label, $price, $target_cat);
+            }
             if ($res['success']) {
                 $flash_success = "Package/Item '{$label}' has been updated successfully!";
             } else {
-                $flash_error = $res['message'] ?? "Failed to update item.";
+                $err_detail = !empty($conn->error) ? " (" . htmlspecialchars(substr($conn->error, 0, 100)) . ")" : "";
+                $flash_error = ($res['message'] ?? "Failed to update item.") . $err_detail;
             }
         }
     } elseif ($action === 'delete_item') {
@@ -73,10 +83,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $flash_error = "Invalid item identifier.";
         } else {
             $res = delete_package_item($conn, $family, $cat_key, $item_id);
+            if (!$res['success']) {
+                usleep(150000);
+                $res = delete_package_item($conn, $family, $cat_key, $item_id);
+            }
             if ($res['success']) {
                 $flash_success = "Package/Item '{$item_name}' was deleted successfully.";
             } else {
-                $flash_error = $res['message'] ?? "Failed to delete item.";
+                $err_detail = !empty($conn->error) ? " (" . htmlspecialchars(substr($conn->error, 0, 100)) . ")" : "";
+                $flash_error = ($res['message'] ?? "Failed to delete item.") . $err_detail;
             }
         }
     } elseif ($action === 'add_category') {
@@ -88,10 +103,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $flash_error = "Category title cannot be empty.";
         } else {
             $res = add_package_category($conn, $family, $title, $type, $icon);
+            if (!$res['success']) {
+                usleep(150000);
+                $res = add_package_category($conn, $family, $title, $type, $icon);
+            }
             if ($res['success']) {
                 $flash_success = "New category '{$title}' created successfully!";
             } else {
-                $flash_error = $res['message'] ?? "Failed to create category.";
+                $err_detail = !empty($conn->error) ? " (" . htmlspecialchars(substr($conn->error, 0, 100)) . ")" : "";
+                $flash_error = ($res['message'] ?? "Failed to create category.") . $err_detail;
             }
         }
     } elseif ($action === 'delete_category') {
@@ -102,10 +122,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $flash_error = "Invalid category identifier.";
         } else {
             $res = delete_package_category($conn, $family, $cat_key);
+            if (!$res['success']) {
+                usleep(150000);
+                $res = delete_package_category($conn, $family, $cat_key);
+            }
             if ($res['success']) {
                 $flash_success = "Category '{$cat_name}' and all its items were deleted.";
             } else {
-                $flash_error = $res['message'] ?? "Failed to delete category.";
+                $err_detail = !empty($conn->error) ? " (" . htmlspecialchars(substr($conn->error, 0, 100)) . ")" : "";
+                $flash_error = ($res['message'] ?? "Failed to delete category.") . $err_detail;
             }
         }
     } elseif ($action === 'reset_defaults') {
@@ -883,11 +908,18 @@ $current_family_item_count = ($active_family === 'wedding') ? $wedding_item_coun
                                     <td>
                                         <div class="action-btns-wrap">
                                             <button type="button" class="btn-action-edit" 
-                                                    onclick="openEditItemModal('<?= htmlspecialchars(addslashes($cat_key)) ?>', '<?= htmlspecialchars(addslashes($item['id'])) ?>', '<?= htmlspecialchars(addslashes($item['label'])) ?>', <?= $price ?>)">
+                                                    data-cat="<?= htmlspecialchars($cat_key, ENT_QUOTES, 'UTF-8') ?>" 
+                                                    data-id="<?= htmlspecialchars($item['id'] ?? '', ENT_QUOTES, 'UTF-8') ?>" 
+                                                    data-label="<?= htmlspecialchars($item['label'] ?? '', ENT_QUOTES, 'UTF-8') ?>" 
+                                                    data-price="<?= $price ?>"
+                                                    onclick="openEditItemModalFromBtn(this)">
                                                 <i class="fa-solid fa-pen-to-square"></i> Edit
                                             </button>
                                             <button type="button" class="btn-action-delete" 
-                                                    onclick="confirmDeleteItem('<?= htmlspecialchars(addslashes($cat_key)) ?>', '<?= htmlspecialchars(addslashes($item['id'])) ?>', '<?= htmlspecialchars(addslashes($item['label'])) ?>')">
+                                                    data-cat="<?= htmlspecialchars($cat_key, ENT_QUOTES, 'UTF-8') ?>" 
+                                                    data-id="<?= htmlspecialchars($item['id'] ?? '', ENT_QUOTES, 'UTF-8') ?>" 
+                                                    data-label="<?= htmlspecialchars($item['label'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                                                    onclick="confirmDeleteItemFromBtn(this)">
                                                 <i class="fa-solid fa-trash"></i> Delete
                                             </button>
                                         </div>
@@ -1164,6 +1196,21 @@ $current_family_item_count = ($active_family === 'wedding') ? $wedding_item_coun
 
         function openAddCatModal() {
             openModal('addCatModal');
+        }
+
+        function openEditItemModalFromBtn(btn) {
+            const cat = btn.getAttribute('data-cat') || '';
+            const id = btn.getAttribute('data-id') || '';
+            const label = btn.getAttribute('data-label') || '';
+            const price = parseInt(btn.getAttribute('data-price') || '0', 10);
+            openEditItemModal(cat, id, label, price);
+        }
+
+        function confirmDeleteItemFromBtn(btn) {
+            const cat = btn.getAttribute('data-cat') || '';
+            const id = btn.getAttribute('data-id') || '';
+            const label = btn.getAttribute('data-label') || '';
+            confirmDeleteItem(cat, id, label);
         }
 
         function openEditItemModal(catKey, itemId, label, price) {

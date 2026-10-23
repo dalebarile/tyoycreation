@@ -72,7 +72,9 @@ class SmokeTest extends TestCase
             $baseDir . '/booking_verification_helper.php',
             $baseDir . '/notification_helper.php',
             $baseDir . '/src/ChatbotBusinessKnowledge.php',
-            $baseDir . '/a_manual_booking.php'
+            $baseDir . '/a_manual_booking.php',
+            $baseDir . '/a_sitemanager.php',
+            $baseDir . '/a_packages.php'
         ];
 
         $phpBinary = defined('PHP_BINARY') && !empty(PHP_BINARY) ? PHP_BINARY : 'php';
@@ -84,6 +86,20 @@ class SmokeTest extends TestCase
             $msg = implode("\n", $output);
             $this->assertSame(0, $exitCode, "Syntax error detected in {$file}:\n{$msg}");
         }
+    }
+
+    public function test_site_manager_and_packages_control_robustness(): void
+    {
+        $baseDir = dirname(__DIR__, 2);
+        $siteManagerContent = file_get_contents($baseDir . '/a_sitemanager.php');
+        $this->assertStringContainsString("set_setting(\$conn, \$k, \$v);", $siteManagerContent);
+        $this->assertStringContainsString("set_setting(\$conn, 'portfolio_items'", $siteManagerContent);
+        $this->assertStringNotContainsString("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?", $siteManagerContent);
+
+        $packagesContent = file_get_contents($baseDir . '/a_packages.php');
+        $this->assertStringContainsString("data-cat=", $packagesContent);
+        $this->assertStringContainsString("openEditItemModalFromBtn", $packagesContent);
+        $this->assertStringContainsString("confirmDeleteItemFromBtn", $packagesContent);
     }
 
     public function test_speed_engine_and_preconnects_present(): void

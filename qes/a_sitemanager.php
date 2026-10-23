@@ -53,10 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vision_statement' => trim($_POST['vision_statement'] ?? '')
         ];
         foreach ($fields as $k => $v) {
-            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-            $stmt->bind_param("sss", $k, $v, $v);
-            $stmt->execute();
-            $stmt->close();
+            set_setting($conn, $k, $v);
         }
         $msg_success = "Business profile and statements updated successfully!";
     } elseif ($action === 'save_templates') {
@@ -67,10 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'reminder_template'  => trim($_POST['reminder_template'] ?? '')
         ];
         foreach ($fields as $k => $v) {
-            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-            $stmt->bind_param("sss", $k, $v, $v);
-            $stmt->execute();
-            $stmt->close();
+            set_setting($conn, $k, $v);
         }
         $msg_success = "Automated email notification templates updated successfully!";
     } elseif ($action === 'save_media') {
@@ -80,30 +74,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hero_bg = trim($_POST['media_hero_bg'] ?? '');
         $hero_bg = handle_image_upload('media_hero_bg_file', $hero_bg);
         if (!empty($hero_bg)) {
-            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('media_hero_bg', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-            $stmt->bind_param("ss", $hero_bg, $hero_bg);
-            $stmt->execute();
-            $stmt->close();
+            set_setting($conn, 'media_hero_bg', $hero_bg);
         }
 
         // Kids Party Service Image
         $svc_kids = trim($_POST['media_svc_kids'] ?? '');
         $svc_kids = handle_image_upload('media_svc_kids_file', $svc_kids);
         if (!empty($svc_kids)) {
-            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('media_svc_kids', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-            $stmt->bind_param("ss", $svc_kids, $svc_kids);
-            $stmt->execute();
-            $stmt->close();
+            set_setting($conn, 'media_svc_kids', $svc_kids);
         }
 
         // Wedding Service Image
         $svc_wed = trim($_POST['media_svc_wedding'] ?? '');
         $svc_wed = handle_image_upload('media_svc_wedding_file', $svc_wed);
         if (!empty($svc_wed)) {
-            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('media_svc_wedding', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-            $stmt->bind_param("ss", $svc_wed, $svc_wed);
-            $stmt->execute();
-            $stmt->close();
+            set_setting($conn, 'media_svc_wedding', $svc_wed);
         }
 
         $msg_success = "Landing page section images updated successfully!";
@@ -135,10 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $json = json_encode($items, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('portfolio_items', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-        $stmt->bind_param("ss", $json, $json);
-        $stmt->execute();
-        $stmt->close();
+        set_setting($conn, 'portfolio_items', $json);
 
         $msg_success = "Portfolio photos and details updated successfully!";
     }
@@ -333,6 +315,13 @@ foreach ($wedding_packages_data as $c) {
                 <div style="background: #d1fae5; color: #065f46; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600;">
                     <i class="fa-solid fa-circle-check"></i>
                     <span><?= htmlspecialchars($msg_success) ?></span>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($msg_error)): ?>
+                <div style="background: #fee2e2; color: #991b1b; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span><?= htmlspecialchars($msg_error) ?></span>
                 </div>
             <?php endif; ?>
 
