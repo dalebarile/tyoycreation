@@ -408,8 +408,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $ch = curl_init("{$supabase_url}/auth/v1/user");
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_ENCODING, '');
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
             curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
             curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [

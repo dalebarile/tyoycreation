@@ -592,15 +592,25 @@ class SupabaseConnection {
         $isUpsert = false;
 
         // Route A: Structured parameterized INSERT
-        if (!empty($params) && !empty($paramSql) && preg_match('/^\s*INSERT\s+INTO\s+(\w+)\s*\((.+?)\)\s*VALUES\s*\([?\s,]+\)(.*)$/is', $paramSql, $matches)) {
+        if (!empty($params) && !empty($paramSql) && preg_match('/^\s*INSERT\s+INTO\s+(\w+)\s*\((.+?)\)\s*VALUES\s*\((.+?)\)(.*)$/is', $paramSql, $matches)) {
             $table = $matches[1];
             $cols = array_map('trim', explode(',', $matches[2]));
-            $trailing = $matches[3] ?? '';
+            $valItems = array_map('trim', explode(',', $matches[3]));
+            $trailing = $matches[4] ?? '';
             if (stripos($trailing, 'ON CONFLICT') !== false || stripos($trailing, 'ON DUPLICATE KEY') !== false) {
                 $isUpsert = true;
             }
+            $pIdx = 0;
             foreach ($cols as $idx => $col) {
-                $data[$col] = array_key_exists($idx, $params) ? $params[$idx] : null;
+                $item = $valItems[$idx] ?? '?';
+                if (stripos($item, 'NOW') !== false || stripos($item, 'CURRENT_TIMESTAMP') !== false) {
+                    $data[$col] = date('c');
+                } elseif (strcasecmp($item, 'NULL') === 0) {
+                    $data[$col] = null;
+                } else {
+                    $data[$col] = array_key_exists($pIdx, $params) ? $params[$pIdx] : null;
+                    $pIdx++;
+                }
             }
             $insertMatched = true;
         }
@@ -656,7 +666,7 @@ class SupabaseConnection {
                     $data[$col] = true;
                 } elseif (strcasecmp($valRaw, 'FALSE') === 0) {
                     $data[$col] = false;
-                } elseif (stripos($valRaw, 'NOW()') !== false || stripos($valRaw, 'CURRENT_TIMESTAMP') !== false) {
+                } elseif (stripos($valRaw, 'NOW') !== false || stripos($valRaw, 'CURRENT_TIMESTAMP') !== false) {
                     $data[$col] = date('c');
                 } else {
                     $data[$col] = trim($valRaw, "'");

@@ -67,19 +67,6 @@ if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() 
         'httponly' => true,
         'samesite' => 'Lax'
     ]);
-    session_cache_limiter('private_no_expire');
-
-    // Register database-backed session handler (Fix A: multi-instance serverless session sharing)
-    if (isset($conn) && is_object($conn)) {
-        try {
-            require_once __DIR__ . '/session_handler.php';
-            $sessionHandler = new QesSessionHandler($conn);
-            session_set_save_handler($sessionHandler, true);
-        } catch (\Throwable $e) {
-            error_log('[QES Session] Failed to register QesSessionHandler: ' . $e->getMessage());
-        }
-    }
-
     session_start();
 }
 

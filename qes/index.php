@@ -1939,15 +1939,7 @@ if ($has_wedding) {
                 <a href="#services" onclick="togglePublicMobileNav(false)">Services</a>
                 <a href="#portfolio" onclick="togglePublicMobileNav(false)">Portfolio</a>
                 <a href="#contact" onclick="togglePublicMobileNav(false)">Contact</a>
-                <?php if ($is_admin_logged_in): ?>
-                    <a href="a_home.php" class="client-user-badge" title="Go to Admin Portal">
-                        <i class="fa-solid fa-shield-halved" style="color: #285440; font-size: 14px;"></i>
-                        Admin Portal
-                    </a>
-                    <a href="logout.php?redirect=index.php" class="client-logout-nav" title="Sign Out">
-                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
-                    </a>
-                <?php elseif ($is_client_logged_in): ?>
+                <?php if ($is_client_logged_in): ?>
                     <span class="client-user-badge">
                         <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
                         <?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?>

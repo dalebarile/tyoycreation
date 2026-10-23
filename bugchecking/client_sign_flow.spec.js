@@ -40,9 +40,9 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         await expect(clientModal.locator('#modal_reg_phone')).toBeVisible();
         await expect(clientModal.locator('#modal_reg_password')).toBeVisible();
 
-        // Verify guest continue button is available
+        // Verify guest continue button is removed (clients must sign up or log in to book)
         const guestBtn = clientModal.locator('button', { hasText: 'Continue as Guest' });
-        await expect(guestBtn).toBeVisible();
+        await expect(guestBtn).not.toBeVisible();
     });
 
     test('Flow verification: landing page -> book -> register/login -> back to landing page -> book -> data privacy act modal -> booking form', async ({ page }) => {
@@ -186,6 +186,30 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         await page.locator('#event_title_input').fill('Carmela Elegant Debut');
         await page.locator('#location_venue_input').fill('Tagaytay Midlands');
 
+        // Ensure selected date is available (pick next available date if today is reserved)
+        const dateTrigger = page.locator('.btn-select-date-trigger');
+        if (await dateTrigger.isVisible().catch(() => false)) {
+            await dateTrigger.click();
+            await page.waitForTimeout(300);
+            const availableDay = page.locator('.avail-day-cell.available').first();
+            if (await availableDay.isVisible().catch(() => false)) {
+                await availableDay.click();
+                await page.waitForTimeout(300);
+            } else {
+                // If current month has no available dates, advance month
+                const nextMonthBtn = page.locator('.avail-calendar-header .avail-nav-btn').last();
+                if (await nextMonthBtn.isVisible().catch(() => false)) {
+                    await nextMonthBtn.click();
+                    await page.waitForTimeout(500);
+                    const nextAvailable = page.locator('.avail-day-cell.available').first();
+                    if (await nextAvailable.isVisible().catch(() => false)) {
+                        await nextAvailable.click();
+                        await page.waitForTimeout(300);
+                    }
+                }
+            }
+        }
+
         // Click Submit Booking Request
         const submitBtn = page.locator('button.btn-submit-booking, button:has-text("Submit Booking Request")');
         await expect(submitBtn).toBeVisible();
@@ -196,7 +220,13 @@ test.describe('Client Sign-In & Booking Modal Flow', () => {
         await expect(modalOverlay).toBeVisible({ timeout: 8000 });
         const sendCodeBtn = modalOverlay.locator('.btn-confirm-email-send');
         await expect(sendCodeBtn).toBeVisible();
-        await sendCodeBtn.click();
+
+        const [submitResponse] = await Promise.all([
+            page.waitForResponse(resp => resp.url().includes('booking_submit.php') && resp.request().method() === 'POST'),
+            sendCodeBtn.click()
+        ]);
+        const submitJson = await submitResponse.json();
+        console.log('SUBMIT_RESPONSE_STATUS:', submitResponse.status(), 'BODY:', JSON.stringify(submitJson));
 
         // Crucial Assertion: Confirm NO red banner "Attention Needed: An active client account is required"
         const errorBanner = page.locator('.booking-alert-banner, .alert-danger, [role="alert"]');

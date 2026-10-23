@@ -3550,15 +3550,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 <a href="index.php#services" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Services</a>
                 <a href="index.php#portfolio" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Portfolio</a>
                 <a href="index.php#contact" class="nav-link-btn" style="color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 500; opacity: 0.9;" onclick="toggleBookingMobileNav(false)">Contact</a>
-                <?php if ($is_admin_logged_in): ?>
-                    <a href="a_home.php" class="client-user-badge" title="Go to Admin Portal">
-                        <i class="fa-solid fa-shield-halved" style="color: #285440; font-size: 14px;"></i>
-                        Admin Portal
-                    </a>
-                    <a href="logout.php?redirect=booking.php" class="client-logout-nav" title="Sign Out">
-                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
-                    </a>
-                <?php elseif ($is_client_logged_in): ?>
+                <?php if ($is_client_logged_in): ?>
                     <span class="client-user-badge">
                         <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
                         <?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User') ?>
