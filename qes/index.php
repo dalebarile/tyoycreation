@@ -3456,6 +3456,18 @@ if ($has_wedding) {
             const m = (userMsg || '').toLowerCase().trim();
             const isTl = /\b(po|opo|kamusta|kumusta|ano|anong|magkano|paano|saan|meron|kailan|kelan|kasal|binyag|petsa)\b/i.test(m);
 
+            if (/\b(tangina|putangina|gago|gaga|tarantado|ulol|bwisit|buwisit|punyeta|leche|fuck|shit|bitch|asshole|bastard|idiot|stupid|pakyu)\b/i.test(m)) {
+                return isTl
+                    ? "Hindi ko po maunawaan ang inyong ginamit na pananalita. Mangyaring maging pormal at magalang po tayo (please be formal) upang maayos ko po kayong matulungan sa inyong event styling inquiry."
+                    : "I can't understand your language or inappropriate words. Please be formal and respectful so I can assist you with your event styling and booking inquiries.";
+            }
+
+            if (/\b(limit|limits|limitation|limitations|scope|boundary|boundaries|kaya mong gawin|di mo kaya|hindi mo kaya)\b/i.test(m)) {
+                return isTl
+                    ? "🤖 **Sakop at mga Limitasyon ni Anton:**\n\n✨ **Kaya kong gawin:** Magpaliwanag ng packages at presyo (Kasal, Kids Party, Debut), mag-check ng date availability, magturo kung paano mag-book sa website, at mag-track ng booking gamit ang Reference Number.\n\n⚠️ **Hindi ko kayang gawin:** Hindi po ako direktang nagbu-book o tumatanggap ng bayad sa chat (lahat ay sa website 'Book Now' form), hindi naglalabas ng private data alinsunod sa RA 10173, at hindi coordinator na tao.\n\n👉 Paano po kita matutulungan sa inyong okasyon ngayon?"
+                    : "🤖 **Anton's Scope & Limitations:**\n\n✨ **What I CAN do:** Explain event packages and live pricing (Weddings, Kids Parties, Debut), check date availability, guide you through our website booking form, and track booking status via Reference Number.\n\n⚠️ **What I CANNOT do:** Cannot directly book or process payments in chat (use our 'Book Now' form), cannot reveal private customer info under RA 10173, and cannot sign contracts without staff review.\n\n👉 How may I assist you with your celebration today?";
+            }
+
             if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|kamusta|kumusta)\b/i.test(m)) {
                 return isTl
                     ? "Kumusta po! Ako si Anton, ang AI concierge ng Tyoy Creation. Nandito po ako upang gabayan kayo sa aming event packages, live pricing, date availability, at pag-book. Anong okasyon po ang inyong pinaplano?"
@@ -3513,7 +3525,7 @@ if ($has_wedding) {
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
             const abortCtrl = new AbortController();
-            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 12000);
+            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 4000); // 4-second responsive SLA
 
             try {
                 const res = await fetch('chatbot.php', {

@@ -220,6 +220,61 @@ function qes_get_unknown_info_response(string $msg = '', string $b_name = 'Tyoy 
     return "I don't have that info yet. Please contact our team directly at {$contact_str} so they can assist you.";
 }
 
+// Bad words / profanity / vulgar language detection
+function qes_is_bad_words(string $msg): bool {
+    return (bool)preg_match('/\b(putang\s*ina|tang\s*ina|puta|punyeta|leche|gago|gaga|tarantado|tarantada|ulol|bwisit|buwisit|hudas|kupal|hayop\s*ka|inutil|pakyu|pakshet|tite|titeng|burat|bayag|kantot|kantutan|jakol|tamod|pekpek|puke|kiki|bobo|tanga|engot|sira\s*ulo|fuck|fucking|fucker|motherfucker|shit|bullshit|bitch|bitches|asshole|bastard|dick|pussy|cunt|slut|whore|stfu|dumbass|moron)\b/i', $msg);
+}
+
+function qes_get_bad_words_response(string $msg = ''): string {
+    if (qes_detect_tagalog($msg)) {
+        return "Hindi ko po maunawaan ang inyong ginamit na pananalita. Mangyaring maging pormal at magalang po tayo (please be formal) upang maayos ko po kayong matulungan sa inyong event styling at booking inquiry sa Tyoy Creation.";
+    }
+    return "I can't understand your language or inappropriate words. Please be formal and respectful so I can assist you with your event styling and booking inquiries for Tyoy Creation.";
+}
+
+// Scope and limitations detection
+function qes_is_scope_and_limitations_query(string $msg): bool {
+    return (bool)preg_match('/\b(limit|limits|limitation|limitations|scope|scopes|boundary|boundaries|what\s+are\s+your\s+limitations|what\s+are\s+your\s+limits|ano\s+ang\s+limitations?\s+mo|anong\s+limits?\s+mo|ano\s+ang\s+limitasyon\s+mo|what\s+is\s+your\s+scope|what\s+can\s+you\s+do\s+and\s+(?:what\s+)?can(?:\'?t|not)|what\s+can\s+you\s+not\s+do|anong\s+di\s+mo\s+kaya|anong\s+hindi\s+mo\s+kayang\s+gawin|ano\s+ang\s+sakop\s+mo|sakop\s+at\s+limitasyon|kakayahan\s+at\s+limitasyon)\b/i', $msg);
+}
+
+function qes_get_scope_and_limitations_response(string $msg = '', string $b_name = 'Tyoy Creation'): string {
+    if (qes_detect_tagalog($msg)) {
+        return "🤖 **Sakop at mga Limitasyon ni Anton ({$b_name} AI Assistant):**\n\n"
+            . "✨ **Ang mga KAYA kong Gawin (Scope / Kakayahan):**\n"
+            . "• 💍 **Event Packages at Styling:** Magpaliwanag ng kumpletong Wedding packages, Kids Party themes, Debut, Corporate events, at styling inclusions (bulaklak, themed balloon arches, catering, sound & lights, food carts).\n"
+            . "• 💰 **Presyo at Live Quotations:** Magbigay ng tumpak na pricing estimates mula sa aming live database.\n"
+            . "• 🗓️ **Calendar Availability:** Real-time check ng mga bakante o nakareserbang petsa.\n"
+            . "• 📝 **Gabay sa Pag-book:** Ituro hakbang-hakbang kung paano gamitin ang aming 4-step online booking form sa website.\n"
+            . "• 🔍 **Status Tracking:** Hanapin ang inyong booking status gamit ang Reference Number (hal. `EV-2026-XXXX`).\n"
+            . "• 📍 **Impormasyon ng Negosyo:** Ibahagi ang service areas (Bulacan, Metro Manila, at mga kalapit na probinsya), operating hours, at preparation reminders (3 buwan sa kasal, 2 linggo sa party).\n\n"
+            . "⚠️ **Ang mga HINDI ko Kayang Gawin (Limitations):**\n"
+            . "• ❌ **Hindi Direktang Makapag-book sa Chat:** Lahat ng opisyal na booking ay isinusumite sa pamamagitan ng **'Book Now'** form sa website para sa inyong email verification.\n"
+            . "• ❌ **Hindi Tumatanggap ng Bayad:** Hindi po ako nagpoproseso ng GCash, bank transfer, o cash sa chat. Ang bayad ay inaayos kasama ng aming human coordinator.\n"
+            . "• ❌ **Hindi Pumipirma ng Kontrata:** Ang bawat booking ay dumadaan sa opisyal na **Staff Review** ng coordinator sa loob ng 24–48 oras.\n"
+            . "• ❌ **Hindi Naglalabas ng Private Info:** Protektado ang data alinsunod sa Data Privacy Act (RA 10173); hindi kailanman ibubunyag ang info ng ibang kliyente.\n"
+            . "• ❌ **Hindi Sumasagot sa mga Walang Kaugnayan sa Event:** Hindi po ako gumagawa ng coding, homework, o personal na usapan.\n"
+            . "• ❌ **Ako ay isang AI Chatbot:** Isa po akong automated assistant at hindi totoong tao.\n\n"
+            . "👉 Paano po kita matutulungan sa inyong okasyon ngayon? Nais niyo po bang tingnan ang aming packages o mag-check ng petsa?";
+    }
+
+    return "🤖 **Anton's Scope & Limitations ({$b_name} AI Assistant):**\n\n"
+        . "✨ **What I CAN Do (My Scope):**\n"
+        . "• 💍 **Event Packages & Styling:** Explain complete Wedding packages, Kids Party themes, Debut, Corporate events, and styling inclusions (floral backdrops, balloon art, catering, sound & lights, food carts).\n"
+        . "• 💰 **Live Pricing & Quotations:** Provide accurate price estimates and package breakdowns from our live database.\n"
+        . "• 🗓️ **Calendar & Date Availability:** Real-time lookup of reserved celebration dates to help you check schedule feasibility.\n"
+        . "• 📝 **Booking Guidance:** Guide you step-by-step through our 4-step online booking wizard on the website.\n"
+        . "• 🔍 **Status Tracking:** Look up your live booking status using your Reference Number (e.g., `EV-2026-XXXX`).\n"
+        . "• 📍 **Business Information:** Share our coverage areas (Bulacan, Metro Manila, Rizal, Cavite, Laguna), operating hours, preparation reminders (3 months for weddings, 2 weeks for parties), and contact details.\n\n"
+        . "⚠️ **What I CANNOT Do (My Limitations):**\n"
+        . "• ❌ **Cannot Book Directly in Chat:** All bookings must be submitted through our website's **'Book Now'** form for security and automated email verification.\n"
+        . "• ❌ **Cannot Accept Payments:** I cannot accept, process, or verify cash, GCash, bank transfers, or downpayments in chat. Payments are arranged with our coordinators after review.\n"
+        . "• ❌ **Cannot Sign Contracts or Finalize Approvals:** All inquiries require mandatory human **Staff Review** by an official coordinator within 24–48 hours before being officially confirmed.\n"
+        . "• ❌ **Cannot Disclose Client Personal Data:** Under the Philippine Data Privacy Act (RA 10173), I strictly protect customer confidentiality and will never reveal names, contact numbers, or personal details of other clients.\n"
+        . "• ❌ **Cannot Answer Off-Topic or Personal Requests:** I cannot solve homework, write code, give medical/legal advice, or engage in casual chitchat unrelated to Tyoy Creation.\n"
+        . "• ❌ **I am an AI Chatbot:** I am an artificial intelligence assistant, not a human coordinator.\n\n"
+        . "👉 May I help you explore our event packages, check date availability, or guide you on how to book?";
+}
+
 // Data Privacy / PII probe detection
 function qes_is_privacy_violation_attempt(string $msg): bool {
     return (bool)preg_match('/\b(other\s+client|other\s+clients|ibang\s+client|list\s+of\s+clients|client\s+list|names\s+of\s+clients|client\s+details|customer\s+info|who\s+booked|sino\s+ang\s+nag-?book|sino\s+nag-?book|who\s+is\s+the\s+client|client\s+phone|client\s+email|phone\s+number\s+of|email\s+of|database\s+records|users\s+table|all\s+bookings|show\s+me\s+all\s+bookings|admin\s+password|passwords)\b/i', $msg);
@@ -617,6 +672,16 @@ $lower_msg = strtolower($message);
 // ─── FAST-PATH CHECK 1: DATA PRIVACY PROBE ─────────────────────────────────
 if (empty($raw_reply) && qes_is_privacy_violation_attempt($message)) {
     $raw_reply = qes_get_privacy_refusal($message);
+}
+
+// ─── FAST-PATH CHECK 1B: BAD WORDS & PROFANITY FILTER (PLEASE BE FORMAL) ───
+if (empty($raw_reply) && qes_is_bad_words($message)) {
+    $raw_reply = qes_get_bad_words_response($message);
+}
+
+// ─── FAST-PATH CHECK 1C: SCOPE & LIMITATIONS INTELLIGENCE ───────────────────
+if (empty($raw_reply) && qes_is_scope_and_limitations_query($message)) {
+    $raw_reply = qes_get_scope_and_limitations_response($message, $ai_b_name);
 }
 
 // ─── FAST-PATH CHECK 2: GREETING ───────────────────────────────────────────
@@ -1137,12 +1202,12 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
         'gemini-3.1-flash-lite'
     ]));
     $gemini_loop_start = microtime(true);
-    $total_timeout_budget = 3.6; // Sub-4s SLA budget
+    $total_timeout_budget = 2.8; // Guaranteed sub-4s SLA budget for responsive replies
 
     foreach ($models_to_try as $model_name) {
         $elapsed = microtime(true) - $gemini_loop_start;
         $remaining_budget = $total_timeout_budget - $elapsed;
-        if ($remaining_budget < 0.6) {
+        if ($remaining_budget < 0.5) {
             // Drop immediately to local knowledge engine if budget cannot sustain another round-trip
             break;
         }
@@ -1152,8 +1217,8 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_name}:generateContent";
         $ch = curl_init($url);
 
-        $timeout_ms = (int)round(min(3200, $remaining_budget * 1000));
-        $connect_timeout_ms = min(1500, (int)round($remaining_budget * 500));
+        $timeout_ms = (int)round(min(2400, $remaining_budget * 1000));
+        $connect_timeout_ms = min(1000, (int)round($remaining_budget * 400));
 
         $curl_options = [
             CURLOPT_RETURNTRANSFER => true,
