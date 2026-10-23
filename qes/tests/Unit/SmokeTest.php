@@ -66,6 +66,9 @@ class SmokeTest extends TestCase
             $baseDir . '/booking.php',
             $baseDir . '/db.php',
             $baseDir . '/index.php',
+            $baseDir . '/loginadmin.php',
+            $baseDir . '/login.php',
+            $baseDir . '/admin_sidebar.php',
             $baseDir . '/booking_verification_helper.php',
             $baseDir . '/notification_helper.php',
             $baseDir . '/src/ChatbotBusinessKnowledge.php',
@@ -81,5 +84,22 @@ class SmokeTest extends TestCase
             $msg = implode("\n", $output);
             $this->assertSame(0, $exitCode, "Syntax error detected in {$file}:\n{$msg}");
         }
+    }
+
+    public function test_speed_engine_and_preconnects_present(): void
+    {
+        $baseDir = dirname(__DIR__, 2);
+        
+        $loginAdminContent = file_get_contents($baseDir . '/loginadmin.php');
+        $this->assertStringContainsString('rel="preconnect" href="https://fonts.googleapis.com"', $loginAdminContent);
+        $this->assertStringContainsString('assets/app_speed.js', $loginAdminContent);
+
+        $appSpeedContent = file_get_contents($baseDir . '/assets/app_speed.js');
+        $this->assertStringContainsString('a_events.php?status=pending', $appSpeedContent);
+        $this->assertStringContainsString('a_events.php?status=bookings', $appSpeedContent);
+        $this->assertStringContainsString('startQesProgress', $appSpeedContent);
+
+        $indexContent = file_get_contents($baseDir . '/index.php');
+        $this->assertStringContainsString('startQesProgress', $indexContent);
     }
 }

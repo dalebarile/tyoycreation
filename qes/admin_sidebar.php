@@ -27,8 +27,24 @@ if (isset($status_counts['pending'])) {
 $current_page = basename($_SERVER['PHP_SELF']);
 $current_status = $_GET['status'] ?? '';
 ?>
-<!-- FontAwesome CDN for clean icons -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- Non-blocking icon and font pre-warm -->
+<script>
+(function() {
+    if (!document.querySelector('link[href*="fonts.googleapis.com"]')) {
+        const pc1 = document.createElement('link'); pc1.rel = 'preconnect'; pc1.href = 'https://fonts.googleapis.com';
+        const pc2 = document.createElement('link'); pc2.rel = 'preconnect'; pc2.href = 'https://fonts.gstatic.com'; pc2.crossOrigin = 'anonymous';
+        document.head.appendChild(pc1);
+        document.head.appendChild(pc2);
+    }
+    if (!document.querySelector('link[href*="font-awesome"]')) {
+        const fa = document.createElement('link');
+        fa.rel = 'stylesheet';
+        fa.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css';
+        document.head.appendChild(fa);
+    }
+})();
+</script>
+<noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></noscript>
 
 <aside class="admin-sidebar" id="adminSidebar">
     <div class="sidebar-brand" style="gap: 10px; align-items: center; justify-content: space-between; display: flex; padding: 16px 20px;">

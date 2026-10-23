@@ -2758,9 +2758,10 @@ if ($has_wedding) {
 
                 if (data && data.success) {
                     showModalAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Loading your portal...', 'success');
+                    if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
-                        window.location.reload();
-                    }, 100);
+                        window.location.href = window.location.pathname + window.location.search;
+                    }, 80);
                 } else {
                     isIndexOAuthVerifying = false;
                     showModalAlert((data && data.message) ? data.message : 'Google sign-in could not be completed. Please try again.');
@@ -2804,9 +2805,10 @@ if ($has_wedding) {
                 if (data.success) {
                     try { sessionStorage.removeItem('tyoy_privacy_agreed'); } catch(e){}
                     showModalAlert('Login successful! Returning to landing page...', 'success');
+                    if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
-                        window.location.reload();
-                    }, 150);
+                        window.location.href = window.location.pathname + window.location.search;
+                    }, 80);
                 } else {
                     showModalAlert(data.message || 'Invalid username/email or password.');
                     btn.disabled = false;

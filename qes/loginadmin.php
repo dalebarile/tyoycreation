@@ -112,9 +112,13 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://challenges.cloudflare.com">
     <link rel="dns-prefetch" href="https://challenges.cloudflare.com">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="preload" as="image" href="assets/tyoy_logo_cropped.png?v=<?= filemtime(__DIR__ . '/assets/tyoy_logo_cropped.png') ?>">
+    <link rel="preload" as="image" href="assets/tyoy_creation_banner.jpg">
     <?php if (qes_is_turnstile_enabled($conn)): ?>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <?php endif; ?>
@@ -1150,6 +1154,15 @@ $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
                 }, 1000);
             }
         })();
+
+        // Smooth visual feedback on admin login submission
+        document.getElementById('adminLoginForm')?.addEventListener('submit', function() {
+            const btn = document.getElementById('loginSubmitBtn');
+            if (btn && !btn.disabled) {
+                btn.style.opacity = '0.9';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right: 6px;"></i> Signing in...';
+            }
+        });
     </script>
     <script src="assets/app_speed.js?v=<?= filemtime(__DIR__ . '/assets/app_speed.js') ?>"></script>
 </body>

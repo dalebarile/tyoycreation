@@ -690,9 +690,10 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                         sessionStorage.setItem('tyoy_privacy_agreed', '1');
                     }
                     showAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Redirecting...', 'success');
+                    if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
                         window.location.href = REDIRECT_TARGET;
-                    }, 100);
+                    }, 80);
                 } else {
                     isLoginOAuthVerifying = false;
                     showAlert((data && data.message) ? data.message : 'Google sign-in could not be completed. Please try again.');
@@ -743,9 +744,10 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                         sessionStorage.setItem('tyoy_privacy_agreed', '1');
                     }
                     showAlert('Login successful! Redirecting...', 'success');
+                    if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
                         window.location.href = REDIRECT_TARGET;
-                    }, 500);
+                    }, 80);
                 } else {
                     showAlert(data.message || 'Invalid username/email or password.');
                     btn.disabled = false;

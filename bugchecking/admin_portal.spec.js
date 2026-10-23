@@ -45,4 +45,16 @@ test.describe('Admin Authentication & Security QA', () => {
     // Expect URL redirect to loginadmin.php
     await expect(page).toHaveURL(/loginadmin\.php/);
   });
+
+  test('Login page loads speed engine and optimizes resource connections', async ({ page }) => {
+    await page.goto('loginadmin.php');
+
+    // Verify speed engine script exists
+    const speedScript = page.locator('script[src*="app_speed.js"]');
+    await expect(speedScript).toBeAttached();
+
+    // Verify preconnect tags exist
+    const preconnects = page.locator('link[rel="preconnect"]');
+    expect(await preconnects.count()).toBeGreaterThanOrEqual(1);
+  });
 });

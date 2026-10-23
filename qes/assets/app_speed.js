@@ -82,26 +82,45 @@
         }, 0);
     });
 
+    // Immediate visual feedback on form submit (e.g. login, filters)
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        if (!form || form.target === '_blank') return;
+        setTimeout(() => {
+            if (!e.defaultPrevented) {
+                startProgress();
+            }
+        }, 0);
+    });
+
+    // Expose progress controls globally for interactive actions & modals
+    window.startQesProgress = startProgress;
+    window.completeQesProgress = completeProgress;
+
     // Smart background hover/touch prefetching & Speculation Rules prerender
     const prefetchedUrls = new Set();
 
     // 1. Speculation Rules API for zero-latency page transitions in supported browsers (Chrome, Edge)
     try {
         if (HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
-            const isAdmin = window.location.pathname.includes('a_') || window.location.pathname.includes('admin');
+            const isAdmin = window.location.pathname.includes('a_') || window.location.pathname.includes('admin') || window.location.pathname.includes('loginadmin');
             const targetUrls = isAdmin ? [
                 'a_home.php',
-                'a_events.php',
+                'a_events.php?status=pending',
+                'a_events.php?status=bookings',
+                'a_events.php?status=all',
                 'a_calendar.php',
-                'a_packages.php',
                 'a_clients.php',
+                'a_manual_booking.php',
+                'a_packages.php',
                 'a_settings.php',
                 'a_notifications.php',
                 'a_sitemanager.php'
             ] : [
                 'index.php',
                 'booking.php',
-                'login.php'
+                'login.php',
+                'loginadmin.php'
             ];
 
             const specScript = document.createElement('script');
@@ -168,12 +187,16 @@
         }
     }, { passive: true });
 
-    // Idle pre-warm for primary navigation links
+    // Idle pre-warm for primary navigation links (paced sequentially to avoid request congestion)
     const scheduleIdle = window.requestIdleCallback || function(cb) { setTimeout(cb, 1200); };
     scheduleIdle(function() {
-        const navLinks = document.querySelectorAll('.admin-nav-item, .admin-sidebar a, .public-nav a');
-        navLinks.forEach(function(l) {
-            prefetchUrl(l);
-        });
+        const navLinks = Array.from(document.querySelectorAll('.admin-nav-item, .admin-sidebar a, .public-nav a'));
+        let idx = 0;
+        function prefetchNext() {
+            if (idx >= navLinks.length) return;
+            prefetchUrl(navLinks[idx++]);
+            setTimeout(prefetchNext, 180);
+        }
+        prefetchNext();
     });
 })();
