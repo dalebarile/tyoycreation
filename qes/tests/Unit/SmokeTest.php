@@ -132,4 +132,22 @@ class SmokeTest extends TestCase
         $this->assertStringContainsString('scrollbar-width: thin', $bookingContent);
         $this->assertStringContainsString('rel="preconnect" href="https://fonts.googleapis.com"', $bookingContent);
     }
+
+    public function test_chatbot_system_prompt_and_standard_responses(): void
+    {
+        $baseDir = dirname(__DIR__, 2);
+        $chatbotContent = file_get_contents($baseDir . '/chatbot.php');
+
+        // Verify Anton role and system prompt specification
+        $this->assertStringContainsString('You are Anton, the AI assistant of {$ai_b_name}', $chatbotContent);
+        $this->assertStringContainsString('WHAT YOU CAN ANSWER (IN SCOPE):', $chatbotContent);
+        $this->assertStringContainsString('WHAT YOU CANNOT ANSWER (OUT OF SCOPE):', $chatbotContent);
+        $this->assertStringContainsString('STANDARD RESPONSES', $chatbotContent);
+
+        // Verify exact standard responses
+        $this->assertStringContainsString("Sorry, I'm an AI assistant for {\$ai_b_name}, so I can only help with our event packages, styling, pricing, and bookings. Is there anything about your event I can help you with?", $chatbotContent);
+        $this->assertStringContainsString("I'm here to help with your event styling and planning needs. Would you like to know about our wedding packages or party styling?", $chatbotContent);
+        $this->assertStringContainsString("I'm Anton, an AI chatbot of {\$ai_b_name}. I can help with packages, pricing, availability, and booking. What event are you planning?", $chatbotContent);
+        $this->assertStringContainsString("I don't have that info yet. Please contact our team directly at", $chatbotContent);
+    }
 }
