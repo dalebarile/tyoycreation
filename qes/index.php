@@ -3411,15 +3411,15 @@ if ($has_wedding) {
             if (!targetElement) return;
             const container = document.getElementById('chatbotMessages');
             
-            // Fast direct render for very short messages
-            if (!fullText || fullText.length < 50) {
+            // Fast direct render for messages under 160 characters
+            if (!fullText || fullText.length < 160) {
                 targetElement.innerHTML = formatChatMessage(fullText || '');
                 if (container) container.scrollTop = container.scrollHeight;
                 if (typeof onDone === 'function') onDone();
                 return;
             }
 
-            // Progressive word/token streaming for silky-smooth readability
+            // High-velocity progressive streaming (finishes in <0.08s)
             const words = fullText.split(/(\s+)/);
             let index = 0;
             let displayed = '';
@@ -3427,9 +3427,8 @@ if ($has_wedding) {
 
             const interval = setInterval(() => {
                 if (index < words.length) {
-                    // 2 to 3 word tokens per frame for brisk, natural 60fps reading stream
-                    const chunk = words.slice(index, index + 3).join('');
-                    index += 3;
+                    const chunk = words.slice(index, index + 16).join('');
+                    index += 16;
                     displayed += chunk;
                     targetElement.innerHTML = formatChatMessage(displayed) + '<span class="typing-cursor"></span>';
                     if (container) container.scrollTop = container.scrollHeight;
@@ -3439,7 +3438,7 @@ if ($has_wedding) {
                     if (container) container.scrollTop = container.scrollHeight;
                     if (typeof onDone === 'function') onDone();
                 }
-            }, 14);
+            }, 6);
         }
 
         async function sendChatMessage(e) {
@@ -3469,12 +3468,17 @@ if ($has_wedding) {
             chatMessages.appendChild(botDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
+            const abortCtrl = new AbortController();
+            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 2500);
+
             try {
                 const res = await fetch('chatbot.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: msg })
+                    body: JSON.stringify({ message: msg }),
+                    signal: abortCtrl.signal
                 });
+                clearTimeout(timeoutHandle);
                 const rawText = await res.text();
                 let data = null;
                 try {
@@ -3506,6 +3510,7 @@ if ($has_wedding) {
                     saveMessageToStorage('bot', replyText);
                 });
             } catch (err) {
+                clearTimeout(timeoutHandle);
                 const fallbackText = "Thank you for messaging Tyoy Creation Concierge! I can answer questions about our event styling packages, services, date availability, check booking status with your reference number, or guide you on how to book your celebration on our website. How can I help you today?";
                 streamBotReply(botDiv, fallbackText, () => {
                     saveMessageToStorage('bot', fallbackText);

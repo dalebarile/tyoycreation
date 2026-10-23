@@ -389,14 +389,21 @@ if (!isset($_SESSION['chat_history']) || !is_array($_SESSION['chat_history'])) {
     $_SESSION['chat_history'] = [];
 }
 
-// 1. Gather live upcoming approved and completed dates to prevent booking conflicts
+// 1. Gather live upcoming approved and completed dates to prevent booking conflicts (Cached for 3 mins)
 // PRIVACY SAFE: Only date and event category are exposed. NO client names, venues, or contact info!
-$booked_dates = [];
-$res = $conn->query("SELECT DATE(event_start) as dt, event_type FROM bookings WHERE (status = 'approved' OR status = 'completed') AND event_start >= CURDATE() ORDER BY event_start ASC");
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        $booked_dates[] = "{$row['dt']} ({$row['event_type']})";
+$booked_dates = class_exists('QesCache') ? QesCache::get('chatbot_booked_dates') : ($_SESSION['chatbot_booked_dates'] ?? null);
+if (!is_array($booked_dates)) {
+    $booked_dates = [];
+    $res = $conn->query("SELECT DATE(event_start) as dt, event_type FROM bookings WHERE (status = 'approved' OR status = 'completed') AND event_start >= CURDATE() ORDER BY event_start ASC");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $booked_dates[] = "{$row['dt']} ({$row['event_type']})";
+        }
     }
+    if (class_exists('QesCache')) {
+        QesCache::set('chatbot_booked_dates', $booked_dates, 180);
+    }
+    $_SESSION['chatbot_booked_dates'] = $booked_dates;
 }
 $booked_str = !empty($booked_dates) ? implode("; ", $booked_dates) : "No confirmed events yet in the upcoming months.";
 $current_date_str = date('Y-m-d (l, F j, Y)');
@@ -1001,8 +1008,8 @@ if (empty($raw_reply)) {
 
 // 3. Update Conversation History in Session
 $_SESSION['chat_history'][] = ['role' => 'user', 'content' => $message];
-if (count($_SESSION['chat_history']) > 10) {
-    $_SESSION['chat_history'] = array_slice($_SESSION['chat_history'], -10);
+if (count($_SESSION['chat_history']) > 6) {
+    $_SESSION['chat_history'] = array_slice($_SESSION['chat_history'], -6);
 }
 
 // Format conversation history for Gemini API
@@ -1014,7 +1021,7 @@ foreach ($_SESSION['chat_history'] as $item) {
 
 $prompt_with_context = $system_prompt . "\n\nConversation So Far:\n" . $history_text . "\nAssistant:";
 
-// 4. Query Google Gemini API with Multi-Model Failover (Soft-gated by daily quota)
+// 4. Query Google Gemini API with High-Speed Flash-Lite Model (Strict <=4s SLA)
 if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
     $api_key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : GEMINI_KEY;
 
@@ -1028,16 +1035,24 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
         ],
         'generationConfig' => [
             'temperature'     => 0.7,
-            'maxOutputTokens' => 500
+            'maxOutputTokens' => 160
         ]
     ];
     $payload_json = json_encode($payload);
 
-    // Multi-model resilience: try high-speed primary model, then auto-failover if 503 or 404
+    // Multi-model resilience prioritizing ultra-fast flash-lite
     $preferred_model = defined('GEMINI_MODEL') && !empty(GEMINI_MODEL) ? GEMINI_MODEL : 'gemini-3.5-flash-lite';
-    $models_to_try = array_unique([$preferred_model, 'gemini-3.5-flash-lite', 'gemini-3.5-flash']);
+    $models_to_try = array_values(array_unique([$preferred_model, 'gemini-3.5-flash-lite']));
+    $gemini_loop_start = microtime(true);
 
     foreach ($models_to_try as $model_name) {
+        $elapsed = microtime(true) - $gemini_loop_start;
+        $remaining_budget = 1.6 - $elapsed;
+        if ($remaining_budget < 0.5) {
+            // Ultra-fast failover: under 0.5s remaining on 1.6s budget, drop immediately to local knowledge engine
+            break;
+        }
+
         // API key is sent via header (x-goog-api-key), NOT the URL, so it never
         // appears in Referer/access logs or error traces.
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_name}:generateContent";
@@ -1051,8 +1066,9 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
                 'Content-Type: application/json',
                 'x-goog-api-key: ' . $api_key,
             ],
-            CURLOPT_TIMEOUT        => 5,
-            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_TIMEOUT_MS     => (int)round(min(1500, $remaining_budget * 1000)),
+            CURLOPT_CONNECTTIMEOUT_MS => 600,
+            CURLOPT_NOSIGNAL       => 1,
             CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4, // Prevent IPv6 timeout
             // SECURITY: Always verify the server's TLS certificate and hostname.
             // Never disable these — doing so allows man-in-the-middle interception
