@@ -7547,7 +7547,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
             const abortCtrl = new AbortController();
-            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 2500);
+            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 4200);
 
             try {
                 const res = await fetch('chatbot.php', {

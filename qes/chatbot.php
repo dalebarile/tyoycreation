@@ -25,7 +25,7 @@ $USER_SESSION_LIMIT = 30;   // Fair-share limit per individual browser session
 function getGlobalDailyApiCount($conn) {
     try {
         $today = date('Y-m-d');
-        $stored_date = get_setting($conn, 'gemini_daily_api_date', $today);
+        $stored_date = get_setting($conn, 'gemini_daily_api_date', '');
         if ($stored_date !== $today) {
             set_setting($conn, 'gemini_daily_api_date', $today);
             set_setting($conn, 'gemini_daily_api_count', '0');
@@ -39,7 +39,14 @@ function getGlobalDailyApiCount($conn) {
 
 function incrementGlobalDailyApiCount($conn) {
     try {
-        $current = getGlobalDailyApiCount($conn);
+        $today = date('Y-m-d');
+        $stored_date = get_setting($conn, 'gemini_daily_api_date', '');
+        if ($stored_date !== $today) {
+            set_setting($conn, 'gemini_daily_api_date', $today);
+            set_setting($conn, 'gemini_daily_api_count', '1');
+            return;
+        }
+        $current = (int)get_setting($conn, 'gemini_daily_api_count', 0);
         set_setting($conn, 'gemini_daily_api_count', (string)($current + 1));
     } catch (\Throwable $e) {
         $_SESSION['gemini_fallback_count'] = ((int)($_SESSION['gemini_fallback_count'] ?? 0)) + 1;
@@ -1040,16 +1047,23 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
     ];
     $payload_json = json_encode($payload);
 
-    // Multi-model resilience prioritizing ultra-fast flash-lite
+    // Multi-model resilience prioritizing ultra-fast flash-lite with high-availability fallbacks
     $preferred_model = defined('GEMINI_MODEL') && !empty(GEMINI_MODEL) ? GEMINI_MODEL : 'gemini-3.5-flash-lite';
-    $models_to_try = array_values(array_unique([$preferred_model, 'gemini-3.5-flash-lite']));
+    $models_to_try = array_values(array_unique([
+        $preferred_model,
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-flash-lite-latest',
+        'gemini-3.1-flash-lite'
+    ]));
     $gemini_loop_start = microtime(true);
+    $total_timeout_budget = 3.6; // Sub-4s SLA budget
 
     foreach ($models_to_try as $model_name) {
         $elapsed = microtime(true) - $gemini_loop_start;
-        $remaining_budget = 1.6 - $elapsed;
-        if ($remaining_budget < 0.5) {
-            // Ultra-fast failover: under 0.5s remaining on 1.6s budget, drop immediately to local knowledge engine
+        $remaining_budget = $total_timeout_budget - $elapsed;
+        if ($remaining_budget < 0.6) {
+            // Drop immediately to local knowledge engine if budget cannot sustain another round-trip
             break;
         }
 
@@ -1057,6 +1071,9 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
         // appears in Referer/access logs or error traces.
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_name}:generateContent";
         $ch = curl_init($url);
+
+        $timeout_ms = (int)round(min(3200, $remaining_budget * 1000));
+        $connect_timeout_ms = min(1500, (int)round($remaining_budget * 500));
 
         $curl_options = [
             CURLOPT_RETURNTRANSFER => true,
@@ -1066,8 +1083,8 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
                 'Content-Type: application/json',
                 'x-goog-api-key: ' . $api_key,
             ],
-            CURLOPT_TIMEOUT_MS     => (int)round(min(1500, $remaining_budget * 1000)),
-            CURLOPT_CONNECTTIMEOUT_MS => 600,
+            CURLOPT_TIMEOUT_MS     => $timeout_ms,
+            CURLOPT_CONNECTTIMEOUT_MS => $connect_timeout_ms,
             CURLOPT_NOSIGNAL       => 1,
             CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4, // Prevent IPv6 timeout
             // SECURITY: Always verify the server's TLS certificate and hostname.
@@ -1121,11 +1138,8 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
                 incrementGlobalDailyApiCount($conn);
                 break; // Succeeded!
             }
-        } elseif ($http_code === 429) {
-            // Google quota/rate limit exhausted: break out so Local Business Knowledge Engine answers!
-            break;
         }
-        // If 503 or 404, loop tries next model in $models_to_try
+        // If 429, 503, 404, or timeout, loop continues to the next model in $models_to_try
     }
 }
 

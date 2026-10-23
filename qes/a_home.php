@@ -101,7 +101,7 @@ if ($total_clients === 0) {
 // ─── Gemini Free Tier API Quota ───────────────────────────────────────────────
 $GLOBAL_DAILY_LIMIT = 1400;
 $today = date('Y-m-d');
-$stored_date = get_setting($conn, 'gemini_daily_api_date', $today);
+$stored_date = get_setting($conn, 'gemini_daily_api_date', '');
 if ($stored_date !== $today) {
     $ai_daily_used = 0;
 } else {

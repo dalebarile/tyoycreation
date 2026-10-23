@@ -574,11 +574,13 @@ if (!function_exists('qes_file_rate_limit_check')) {
         }
 
         $remaining = max(0, $max_attempts - (int)($data['attempts'] ?? 0));
+        $is_allowed = ((int)($data['attempts'] ?? 0) < $max_attempts);
+        $retry_after = $is_allowed ? 0 : max(1, $decay_seconds - ($now - (int)($data['first_attempt'] ?? $now)));
         return [
-            'allowed' => ((int)($data['attempts'] ?? 0) < $max_attempts),
-            'retry_after' => 0,
+            'allowed' => $is_allowed,
+            'retry_after' => $retry_after,
             'remaining' => $remaining,
-            'message' => ''
+            'message' => $is_allowed ? '' : 'Too many failed attempts.'
         ];
     }
 }
