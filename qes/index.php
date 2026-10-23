@@ -30,6 +30,7 @@ if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_c
     qes_restore_client_session_from_cookie($conn);
 }
 $is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
+$is_admin_logged_in = !empty($_SESSION['id']) && isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'], true);
 $google_client_id = defined('ENV_GOOGLE_CLIENT_ID') ? ENV_GOOGLE_CLIENT_ID : (function_exists('get_setting') ? get_setting($conn, 'google_client_id', '') : '');
 
 // Live Pricing Packages from Database
@@ -179,24 +180,77 @@ if ($has_wedding) {
 
         .btn-nav-book {
             background: #ffffff !important;
-            color: var(--primary) !important;
+            color: #18392b !important;
             font-weight: 700 !important;
             font-size: 13px !important;
-            padding: 9px 22px !important;
+            padding: 7px 18px !important;
             border-radius: 9999px !important;
+            border: none !important;
             text-decoration: none !important;
             display: inline-flex !important;
             align-items: center !important;
             gap: 6px !important;
-            box-shadow: 0 3px 10px rgba(24, 57, 43, 0.18) !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
             transition: all 0.2s ease !important;
+            cursor: pointer;
         }
 
         .btn-nav-book:hover {
-            background: var(--primary-light) !important;
-            color: var(--primary-hover) !important;
+            background: #f0fdf4 !important;
+            color: #10261c !important;
             transform: translateY(-1px);
-            box-shadow: 0 5px 14px rgba(24, 57, 43, 0.25) !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+        }
+
+        .btn-nav-client-signin {
+            text-decoration: none !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            color: #ffffff !important;
+            padding: 6px 14px !important;
+            border: 1.5px solid rgba(255, 255, 255, 0.75) !important;
+            border-radius: 9999px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            transition: all 0.2s ease !important;
+            cursor: pointer;
+        }
+
+        .btn-nav-client-signin:hover {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border-color: #ffffff !important;
+            color: #ffffff !important;
+            transform: translateY(-1px);
+        }
+
+        .client-user-badge {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 7px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            color: #18392b !important;
+            padding: 6px 14px !important;
+            background: #ffffff !important;
+            border-radius: 9999px !important;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18) !important;
+            text-decoration: none;
+        }
+
+        .client-logout-nav {
+            font-size: 13px !important;
+            color: #cbd5e1 !important;
+            text-decoration: none !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            font-weight: 500 !important;
+            transition: color 0.2s ease !important;
+        }
+
+        .client-logout-nav:hover {
+            color: #ffffff !important;
         }
 
         /* Mobile Nav Toggle & Backdrop */
@@ -1710,22 +1764,28 @@ if ($has_wedding) {
                 <a href="#services" onclick="togglePublicMobileNav(false)">Services</a>
                 <a href="#portfolio" onclick="togglePublicMobileNav(false)">Portfolio</a>
                 <a href="#contact" onclick="togglePublicMobileNav(false)">Contact</a>
-                <?php if ($is_client_logged_in): ?>
-                    <span class="client-user-badge" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #18392b; padding: 6px 12px; background: #eaf2ec; border-radius: 9999px;">
+                <?php if ($is_admin_logged_in): ?>
+                    <a href="a_home.php" class="client-user-badge" title="Go to Admin Portal">
+                        <i class="fa-solid fa-shield-halved" style="color: #285440; font-size: 14px;"></i>
+                        Admin Portal
+                    </a>
+                    <a href="logout.php?redirect=index.php" class="client-logout-nav" title="Sign Out">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                    </a>
+                <?php elseif ($is_client_logged_in): ?>
+                    <span class="client-user-badge">
                         <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
                         <?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?>
                     </span>
-                    <a href="logout.php?redirect=index.php" class="client-logout-nav" style="font-size: 13px; color: #cbd5e1; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='#cbd5e1'" title="Sign Out">
+                    <a href="logout.php?redirect=index.php" class="client-logout-nav" title="Sign Out">
                         <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
                     </a>
                 <?php else: ?>
-                    <a href="login.php?redirect=index.php" class="btn-nav-client-signin" onclick="event.preventDefault(); openClientSignModal('index.php');" style="text-decoration: none; font-weight: 600; font-size: 13px; color: #18392b; padding: 6px 14px; border: 1.5px solid #18392b; border-radius: 9999px; transition: all 0.2s ease;">
+                    <a href="login.php?redirect=index.php" class="btn-nav-client-signin" onclick="event.preventDefault(); openClientSignModal('index.php');">
                         <i class="fa-solid fa-user"></i> Sign In
                     </a>
                 <?php endif; ?>
-                <a href="booking.php" class="btn-nav-book">
-                    <i class="fa-solid fa-calendar-plus"></i> Book Now
-                </a>
+                <a href="booking.php" class="btn-nav-book">Book Now</a>
             </div>
         </div>
     </nav>
