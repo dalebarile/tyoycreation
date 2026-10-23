@@ -20,7 +20,7 @@ if (($now_ts - ($_SESSION['last_rejected_purge_at'] ?? 0)) > 86400) {
 }
 
 // Status counts for navigation tabs (Requirement 5: Unified Bookings tab)
-$status_counts = ['all' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'bookings' => 0];
+$status_counts = ['all' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'completed' => 0, 'cancelled' => 0, 'bookings' => 0];
 $c_res = $conn->query("SELECT status, COUNT(*) as cnt FROM bookings GROUP BY status");
 if ($c_res) {
     while ($r = $c_res->fetch_assoc()) {
@@ -32,7 +32,7 @@ if ($c_res) {
         $status_counts['all'] += $cnt;
     }
 }
-$status_counts['bookings'] = $status_counts['approved'] + $status_counts['rejected'];
+$status_counts['bookings'] = $status_counts['approved'] + $status_counts['rejected'] + ($status_counts['completed'] ?? 0) + ($status_counts['cancelled'] ?? 0);
 
 
 // Handle Actions (POST)
@@ -54,6 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = update_booking_status($conn, $booking_id, 'reject', $reason);
             $alert_message = $result['message'];
             $alert_type = 'warning';
+        } elseif ($action === 'cancel' && $booking_id > 0) {
+            $reason = trim($_POST['cancellation_reason'] ?? 'Booking was cancelled.');
+            $result = update_booking_status($conn, $booking_id, 'cancel', $reason);
+            $alert_message = $result['message'];
+            $alert_type = $result['success'] ? 'success' : 'warning';
         } elseif ($action === 'delete_rejected' && $booking_id > 0) {
             // Only allow permanent deletion of rejected bookings
             $stmt = $conn->prepare("DELETE FROM bookings WHERE id = ? AND status = 'rejected'");
@@ -86,10 +91,18 @@ if ($status_filter === 'bookings') {
         $where_clauses[] = "status = ?";
         $params[] = 'rejected';
         $types .= "s";
+    } elseif ($sub_filter === 'completed') {
+        $where_clauses[] = "status = ?";
+        $params[] = 'completed';
+        $types .= "s";
+    } elseif ($sub_filter === 'cancelled') {
+        $where_clauses[] = "status = ?";
+        $params[] = 'cancelled';
+        $types .= "s";
     } else {
-        $where_clauses[] = "status IN ('approved', 'rejected')";
+        $where_clauses[] = "status IN ('approved', 'rejected', 'completed', 'cancelled')";
     }
-} elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'approved', 'rejected'])) {
+} elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'approved', 'rejected', 'completed', 'cancelled'])) {
     $where_clauses[] = "status = ?";
     $params[] = $status_filter;
     $types .= "s";

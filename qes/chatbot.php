@@ -391,16 +391,16 @@ if (!isset($_SESSION['chat_history']) || !is_array($_SESSION['chat_history'])) {
     $_SESSION['chat_history'] = [];
 }
 
-// 1. Gather live upcoming approved dates to prevent booking conflicts
+// 1. Gather live upcoming approved and completed dates to prevent booking conflicts
 // PRIVACY SAFE: Only date and event category are exposed. NO client names, venues, or contact info!
 $booked_dates = [];
-$res = $conn->query("SELECT DATE(event_start) as dt, event_type FROM bookings WHERE status = 'approved' AND event_start >= CURDATE() ORDER BY event_start ASC LIMIT 20");
+$res = $conn->query("SELECT DATE(event_start) as dt, event_type FROM bookings WHERE (status = 'approved' OR status = 'completed') AND event_start >= CURDATE() ORDER BY event_start ASC");
 if ($res) {
     while ($row = $res->fetch_assoc()) {
         $booked_dates[] = "{$row['dt']} ({$row['event_type']})";
     }
 }
-$booked_str = !empty($booked_dates) ? implode("; ", $booked_dates) : "No approved events yet in the upcoming months.";
+$booked_str = !empty($booked_dates) ? implode("; ", $booked_dates) : "No confirmed events yet in the upcoming months.";
 $current_date_str = date('Y-m-d (l, F j, Y)');
 
 // Business Info from Settings

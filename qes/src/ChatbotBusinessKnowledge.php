@@ -402,21 +402,38 @@ class ChatbotBusinessKnowledge {
                 . "👉 Add photo & video coverage directly when booking on our website!";
         }
 
-        // ── 15. CALENDAR AVAILABILITY & BOOKED DATES ───────────────────────────
-        if (preg_match('/\b(availab[a-z]*|available|availability|open\s*dates?|petsa|may\s*slot\s*pa|booked\s*dates?|kailan\s*available|calendar|schedule\s*check)\b/i', $lower)) {
+        // ── 15. CALENDAR AVAILABILITY & SPECIFIC DATE LOOKUP ───────────────────
+        $has_avail_intent = (bool)preg_match('/\b(availab[a-z]*|available|availability|open\s*dates?|petsa|may\s*slot\s*pa|booked\s*dates?|kailan\s*available|calendar|schedule\s*check|can\s+i\s+book|pwede\s+(?:ba\s+)?(?:mag-?book|i-?book)|is\s+[a-z0-9,\s]+\s+available)\b/i', $lower);
+
+        // Check for specific date queries (e.g. "January 1, 2027", "Feb 14, 2027", "tomorrow", etc.)
+        $parsed_date = self::extractDateFromMessage($msg);
+        if ($parsed_date !== null && ($has_avail_intent || preg_match('/\b(book|reserve|wedding|birthday|party|event|debut)\b/i', $lower))) {
+            return self::resolveSpecificDateQuery($conn, $parsed_date, $msg, $is_tagalog, $b_name, $b_email);
+        }
+
+        // Check for "next month" or specific month query (e.g. "Which dates are available next month?", "available in November 2026")
+        if (preg_match('/\b(next\s*month|sunod\s*na\s*buwan)\b/i', $lower) || (preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})?\b/i', $lower) && $has_avail_intent)) {
+            $month_result = self::resolveMonthAvailabilityQuery($conn, $msg, $is_tagalog, $b_name);
+            if ($month_result !== null) {
+                return $month_result;
+            }
+        }
+
+        if ($has_avail_intent) {
             $booked_list = !empty($booked_dates)
                 ? "• " . implode("\n• ", $booked_dates) . "\n\n"
                 : "All upcoming dates are currently open for booking inquiry!\n\n";
 
             return "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
-                . "Here are our currently approved celebration dates:\n"
+                . "Tyoy Creation maintains a strict **one confirmed celebration per calendar day** rule to guarantee full equipment and crew dedication.\n\n"
+                . "Currently reserved celebration dates:\n"
                 . $booked_list
                 . "⏳ **Recommended Preparation Reminders:**\n"
                 . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
                 . "• 🎈 **Kids Party / Other Events:** 2 Weeks Preparation Reminder\n\n"
                 . "*(Note: Clients have free will to select any date from today onwards)*\n\n"
                 . "📋 **Staff Review Notice:** Because slot availability is dynamic, dates are officially secured once our coordinators complete Staff Review and your deposit is confirmed.\n\n"
-                . "👉 Would you like to check a specific date or start your inquiry via **'Book Now'**?";
+                . "👉 Would you like to check a specific date (e.g. *\"Is January 1, 2027 available?\"*) or start your inquiry via **'Book Now'**?";
         }
 
         // ── 15. GENERAL PACKAGES & PRICING OVERVIEW ───────────────────────────
@@ -442,5 +459,234 @@ class ChatbotBusinessKnowledge {
         }
 
         return null;
+    }
+
+    /**
+     * Extracts a calendar date string (YYYY-MM-DD) from user text if present.
+     */
+    public static function extractDateFromMessage(string $msg): ?string {
+        $lower = strtolower(trim($msg));
+
+        // 1. "tomorrow" / "bukas"
+        if (preg_match('/\b(tomorrow|bukas)\b/i', $lower)) {
+            return date('Y-m-d', strtotime('+1 day'));
+        }
+
+        // 2. YYYY-MM-DD
+        if (preg_match('/\b(20\d{2})[- \/.](0?[1-9]|1[0-2])[- \/.](0?[1-9]|[12]\d|3[01])\b/', $msg, $m)) {
+            $y = (int)$m[1];
+            $mo = (int)$m[2];
+            $d = (int)$m[3];
+            if (checkdate($mo, $d, $y)) {
+                return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+            }
+        }
+
+        // 3. Month Name + Day + optional Year (e.g. "January 1, 2027", "Feb 14", "October 23, 2026")
+        $monthPattern = '(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)';
+        if (preg_match('/\b' . $monthPattern . '\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?\b/i', $msg, $m)) {
+            $monthStr = $m[1];
+            $day = (int)$m[2];
+            $year = !empty($m[3]) ? (int)$m[3] : (int)date('Y');
+            $ts = strtotime("{$monthStr} {$day}, {$year}");
+            if ($ts !== false) {
+                if (empty($m[3]) && $ts < strtotime('today')) {
+                    $year++;
+                    $ts = strtotime("{$monthStr} {$day}, {$year}");
+                }
+                return date('Y-m-d', $ts);
+            }
+        }
+
+        // 4. Day + "of" + Month Name + optional Year (e.g. "1st of January 2027", "14th of February")
+        if (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?' . $monthPattern . '\.?(?:,?\s*(\d{4}))?\b/i', $msg, $m)) {
+            $day = (int)$m[1];
+            $monthStr = $m[2];
+            $year = !empty($m[3]) ? (int)$m[3] : (int)date('Y');
+            $ts = strtotime("{$monthStr} {$day}, {$year}");
+            if ($ts !== false) {
+                if (empty($m[3]) && $ts < strtotime('today')) {
+                    $year++;
+                    $ts = strtotime("{$monthStr} {$day}, {$year}");
+                }
+                return date('Y-m-d', $ts);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Queries database availability for a specific requested date and formats a factual reply.
+     */
+    public static function resolveSpecificDateQuery($conn, string $targetDate, string $msg, bool $is_tagalog, string $b_name, string $b_email): string {
+        $date_ts = strtotime($targetDate);
+        $friendly_date = date('F j, Y', $date_ts);
+        $today = date('Y-m-d');
+
+        // Check if database is unavailable
+        if (!$conn || (isset($conn->connect_error) && !empty($conn->connect_error))) {
+            if ($is_tagalog) {
+                return "⚠️ **Pansamantalang Hindi Ma-verify ang Availability:**\n\n"
+                    . "Hindi namin kasalukuyang makumpirma ang availability para sa **{$friendly_date}** dahil sa pansamantalang isyu sa database connection. Mangyaring sumubok muli sa ilang sandali o mag-email sa aming team sa {$b_email}.";
+            }
+            return "⚠️ **Availability Temporarily Unavailable:**\n\n"
+                . "We are currently unable to verify schedule availability for **{$friendly_date}** due to a temporary database connection issue. Please try again shortly or contact our team directly at {$b_email}.";
+        }
+
+        // Check if date is in the past
+        if ($targetDate < $today) {
+            if ($is_tagalog) {
+                return "⏳ **Nakalipas Na Petsa:**\n\n"
+                    . "Ang **{$friendly_date}** ay nakalipas na. Hindi po kami tumatanggap ng booking para sa mga nakalipas na petsa. Mangyaring pumili ng petsa simula ngayong araw pataas.";
+            }
+            return "⏳ **Past Date:**\n\n"
+                . "**{$friendly_date}** is already in the past. We only accept booking inquiries for today onwards. Please select an upcoming date!";
+        }
+
+        // Check database conflict using shared function
+        $conflict = check_booking_conflict($conn, $targetDate);
+
+        if (!empty($conflict['conflict'])) {
+            // Already booked! Look for verified alternative dates nearby (e.g. +1, +2, +7 days)
+            $alt_dates = [];
+            for ($offset = 1; $offset <= 7; $offset++) {
+                $cand = date('Y-m-d', strtotime("{$targetDate} +{$offset} days"));
+                $chk = check_booking_conflict($conn, $cand);
+                if (empty($chk['conflict'])) {
+                    $alt_dates[] = date('F j, Y', strtotime($cand));
+                    if (count($alt_dates) >= 2) break;
+                }
+            }
+
+            if ($is_tagalog) {
+                $reply = "🔴 **Fully Booked:** Ang **{$friendly_date}** ay may nakalaan na pong kumpirmadong okasyon.\n\n"
+                    . "Mahigpit na ipinapatupad sa **{$b_name}** ang **isang kumpirmadong okasyon bawat araw** (One Confirmed Event Per Day Policy) upang masiguro ang 100% dedikasyon ng aming senior styling crew at kagamitan.\n\n";
+
+                if (!empty($alt_dates)) {
+                    $reply .= "✨ **Mga kalapit na petsang bakante (Available Alternatives):**\n"
+                        . "• " . implode("\n• ", $alt_dates) . "\n\n";
+                }
+
+                $reply .= "👉 Nais niyo po bang pumili ng ibang petsa? Maaari niyo ring buksan ang aming **'Book Now'** form sa website upang makita ang aming live calendar!";
+                return $reply;
+            }
+
+            $reply = "🔴 **Fully Booked:** **{$friendly_date}** is already fully booked and reserved.\n\n"
+                . "At **{$b_name}**, we strictly maintain a **one confirmed event per calendar day policy** to guarantee full equipment allocation and dedicated crew attention for every celebration.\n\n";
+
+            if (!empty($alt_dates)) {
+                $reply .= "✨ **Verified Available Alternative Dates Nearby:**\n"
+                    . "• " . implode("\n• ", $alt_dates) . "\n\n";
+            }
+
+            $reply .= "👉 Would you like to select an alternate date? You can also check our interactive live calendar via the **'Book Now'** button on our website!";
+            return $reply;
+        }
+
+        // Available!
+        $is_wedding = (bool)preg_match('/\b(wedding|kasal)\b/i', $msg);
+        $lead_reminder = $is_wedding 
+            ? "💍 **Weddings:** Inirerekomenda ang 3 buwang paghahanda para sa floral procurement at coordination."
+            : "🎈 **Preparation Reminder:** Inirerekomenda ang 2 linggong pasabi para sa flawless execution.";
+
+        if ($is_tagalog) {
+            return "🟢 **Magandang Balita! Available ang {$friendly_date}!**\n\n"
+                . "Wala pa pong kumpirmadong okasyon sa aming Master Calendar para sa petsang ito.\n\n"
+                . "📋 **Mahalagang Paalala:**\n"
+                . "• Pinapayagan ang maramihang pending inquiries para sa iisang petsa, ngunit **isang booking lamang ang opisyal na ma-a-aprubahan** kapag natapos ang Staff Review at naibigay ang downpayment.\n"
+                . "• {$lead_reminder}\n\n"
+                . "👉 Upang maipareserba ang petsang ito bago makuha ng iba, i-click ang **'Book Now'** button sa aming website at isumite ang inyong inquiry!";
+        }
+
+        $lead_reminder_en = $is_wedding 
+            ? "💍 **Weddings:** We recommend a 3-month preparation window for floral styling & full coordination."
+            : "🎈 **Preparation Reminder:** We recommend at least 2 weeks advance notice for seamless styling execution.";
+
+        return "🟢 **Great News! {$friendly_date} is currently available!**\n\n"
+            . "There are currently no confirmed celebrations booked on our Master Calendar for this calendar date.\n\n"
+            . "📋 **Booking & Staff Review Notice:**\n"
+            . "• Multiple pending inquiries are permitted on available dates, but **only one booking can become officially approved** following Staff Review and deposit confirmation.\n"
+            . "• {$lead_reminder_en}\n\n"
+            . "👉 Ready to reserve this date before another client secures it? Click the **'Book Now'** button at the top of our website to submit your inquiry!";
+    }
+
+    /**
+     * Resolves general month availability queries (e.g. "Which dates are available next month?").
+     */
+    public static function resolveMonthAvailabilityQuery($conn, string $msg, bool $is_tagalog, string $b_name): ?string {
+        $lower = strtolower($msg);
+        $targetYearMonth = null;
+        $monthName = '';
+
+        if (preg_match('/\b(next\s*month|sunod\s*na\s*buwan)\b/i', $lower)) {
+            $targetYearMonth = date('Y-m', strtotime('+1 month'));
+            $monthName = date('F Y', strtotime('+1 month'));
+        } elseif (preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})?\b/i', $lower, $m)) {
+            $mStr = $m[1];
+            $y = !empty($m[2]) ? (int)$m[2] : (int)date('Y');
+            $ts = strtotime("{$mStr} 1, {$y}");
+            if ($ts !== false) {
+                if (empty($m[2]) && $ts < strtotime('first day of this month')) {
+                    $y++;
+                    $ts = strtotime("{$mStr} 1, {$y}");
+                }
+                $targetYearMonth = date('Y-m', $ts);
+                $monthName = date('F Y', $ts);
+            }
+        }
+
+        if (!$targetYearMonth) {
+            return null;
+        }
+
+        // Fetch all booked dates for this month
+        $sql = "SELECT DISTINCT DATE(event_start) as dt 
+                FROM bookings 
+                WHERE (status = 'approved' OR status = 'completed') 
+                  AND DATE(event_start) LIKE ? 
+                ORDER BY event_start ASC";
+
+        $booked_in_month = [];
+        if ($conn && (!isset($conn->connect_error) || empty($conn->connect_error))) {
+            $stmt = $conn->prepare($sql);
+            if ($stmt) {
+                $like = $targetYearMonth . '-%';
+                $stmt->bind_param("s", $like);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                if ($res) {
+                    while ($r = $res->fetch_assoc()) {
+                        $d = substr(trim((string)$r['dt']), 0, 10);
+                        $booked_in_month[] = date('F j, Y', strtotime($d));
+                    }
+                }
+                $stmt->close();
+            }
+        }
+
+        if ($is_tagalog) {
+            $out = "🗓️ **Availability para sa {$monthName}:**\n\n";
+            if (!empty($booked_in_month)) {
+                $out .= "Ang mga sumusunod na petsa ay **Fully Booked** na:\n"
+                    . "• " . implode("\n• ", $booked_in_month) . "\n\n"
+                    . "✅ **Lahat ng iba pang araw sa {$monthName} ay kasalukuyang BAKANTE (Available)** para sa booking inquiries!\n\n";
+            } else {
+                $out .= "✅ **Lahat ng petsa sa buwan ng {$monthName} ay kasalukuyang BAKANTE (Available)** para sa inyong okasyon!\n\n";
+            }
+            $out .= "👉 Nais niyo po bang pumili ng petsa? I-click ang **'Book Now'** button sa aming website upang magsumite ng inquiry!";
+            return $out;
+        }
+
+        $out = "🗓️ **Schedule Availability for {$monthName}:**\n\n";
+        if (!empty($booked_in_month)) {
+            $out .= "The following dates are already **Fully Booked**:\n"
+                . "• " . implode("\n• ", $booked_in_month) . "\n\n"
+                . "✅ **All other calendar dates in {$monthName} are currently OPEN** for booking inquiries!\n\n";
+        } else {
+            $out .= "✅ **All dates in {$monthName} are currently OPEN** for celebration inquiries!\n\n";
+        }
+        $out .= "👉 To check a specific day or reserve your date, click the **'Book Now'** button on our website!";
+        return $out;
     }
 }

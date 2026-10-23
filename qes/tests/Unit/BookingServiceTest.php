@@ -247,5 +247,107 @@ class BookingServiceTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertStringContainsString('REJECTED', $result['message']);
     }
+
+    public function test_conflict_check_blocks_different_times_on_same_calendar_date(): void
+    {
+        // Existing approved event is in morning: 09:00 to 12:00
+        $this->conn->addQueryResult("WHERE (status = 'approved' OR status = 'completed')", [
+            [
+                'id' => 50,
+                'reference_no' => 'EV-2027-0050',
+                'event_title' => 'Morning Workshop',
+                'event_type' => 'Corporate Events',
+                'event_start' => '2027-08-20 09:00:00',
+                'event_end' => '2027-08-20 12:00:00',
+                'location_venue' => 'Grand Ballroom',
+                'status' => 'approved'
+            ]
+        ]);
+
+        // New request is in the evening: 18:00 to 22:00 (non-overlapping hours, but same calendar day)
+        $conflict = check_booking_conflict($this->conn, '2027-08-20 18:00:00', '2027-08-20 22:00:00');
+
+        $this->assertTrue($conflict['conflict']);
+        $this->assertNotNull($conflict['conflicting_event']);
+        $this->assertStringContainsString('Schedule Conflict', $conflict['message']);
+        $this->assertStringContainsString('only one confirmed event per calendar day', $conflict['message']);
+    }
+
+    public function test_conflict_check_blocks_when_existing_is_completed(): void
+    {
+        // Existing event is marked completed
+        $this->conn->addQueryResult("WHERE (status = 'approved' OR status = 'completed')", [
+            [
+                'id' => 51,
+                'reference_no' => 'EV-2027-0051',
+                'event_title' => 'Completed Anniversary',
+                'event_type' => 'Weddings',
+                'event_start' => '2027-09-10 14:00:00',
+                'event_end' => '2027-09-10 19:00:00',
+                'location_venue' => 'Garden Plaza',
+                'status' => 'completed'
+            ]
+        ]);
+
+        $conflict = check_booking_conflict($this->conn, '2027-09-10 10:00:00');
+
+        $this->assertTrue($conflict['conflict']);
+        $this->assertSame('completed', $conflict['conflicting_event']['status']);
+        $this->assertStringContainsString('Schedule Conflict', $conflict['message']);
+    }
+
+    public function test_update_booking_status_cancels_and_records_reason(): void
+    {
+        $this->conn->addQueryResult("SELECT id, reference_no, event_title, event_type, event_start, event_end, status FROM bookings WHERE id = ?", [
+            [
+                'id' => 103,
+                'reference_no' => 'EV-2027-1003',
+                'event_title' => 'Cancelled Reception',
+                'event_type' => 'Weddings',
+                'event_start' => '2027-10-12 15:00:00',
+                'event_end' => '2027-10-12 20:00:00',
+                'status' => 'approved'
+            ]
+        ]);
+
+        $result = update_booking_status($this->conn, 103, 'cancel', 'Client requested event cancellation', false);
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('CANCELLED', $result['message']);
+    }
+
+    public function test_update_booking_status_fails_approval_when_conflict_exists(): void
+    {
+        $this->conn->addQueryResult("SELECT id, reference_no, event_title, event_type, event_start, event_end, status FROM bookings WHERE id = ?", [
+            [
+                'id' => 104,
+                'reference_no' => 'EV-2027-1004',
+                'event_title' => 'Pending Debut Inquiry',
+                'event_type' => 'Theme Party',
+                'event_start' => '2027-11-05 16:00:00',
+                'event_end' => '2027-11-05 21:00:00',
+                'status' => 'pending'
+            ]
+        ]);
+
+        // There is already an approved event on 2027-11-05
+        $this->conn->addQueryResult("WHERE (status = 'approved' OR status = 'completed')", [
+            [
+                'id' => 99,
+                'reference_no' => 'EV-2027-0099',
+                'event_title' => 'Already Confirmed Gala',
+                'event_type' => 'Corporate Events',
+                'event_start' => '2027-11-05 08:00:00',
+                'event_end' => '2027-11-05 12:00:00',
+                'location_venue' => 'Manila Grand Hotel',
+                'status' => 'approved'
+            ]
+        ]);
+
+        $result = update_booking_status($this->conn, 104, 'approve', null, false);
+        $this->assertFalse($result['success']);
+        $this->assertTrue($result['conflict'] ?? false);
+        $this->assertStringContainsString('Schedule Conflict', $result['message']);
+    }
 }
+
 

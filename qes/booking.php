@@ -2887,6 +2887,167 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             gap: 8px;
             margin-top: 10px;
         }
+
+        /* Live Availability Calendar Styles */
+        .avail-calendar-card {
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+        .avail-calendar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .avail-calendar-title {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .avail-nav-btn {
+            background: #f1f5f3;
+            border: 1px solid #dbe5de;
+            color: var(--primary);
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.15s ease;
+        }
+        .avail-nav-btn:hover:not(:disabled) {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+        }
+        .avail-nav-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .avail-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+        .avail-weekday-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            padding: 4px 0;
+        }
+        .avail-days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+        }
+        .avail-day-cell {
+            position: relative;
+            aspect-ratio: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            background: #f8faf9;
+            color: var(--text-main);
+            padding: 2px;
+            min-height: 42px;
+        }
+        .avail-day-cell.empty {
+            background: transparent;
+            border: none;
+            cursor: default;
+        }
+        .avail-day-cell.available {
+            background: #ffffff;
+            border-color: #d1fae5;
+            color: #065f46;
+        }
+        .avail-day-cell.available:hover {
+            background: #eaf2ec;
+            border-color: var(--primary);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(24, 57, 43, 0.15);
+        }
+        .avail-day-cell.selected {
+            background: var(--primary) !important;
+            color: #ffffff !important;
+            border-color: var(--primary-dark) !important;
+            font-weight: 800;
+            box-shadow: 0 3px 8px rgba(24, 57, 43, 0.35);
+        }
+        .avail-day-cell.booked {
+            background: #fef2f2 !important;
+            color: #991b1b !important;
+            border-color: #fecaca !important;
+            cursor: not-allowed !important;
+            opacity: 0.9;
+        }
+        .avail-day-cell.past {
+            background: #f1f5f3 !important;
+            color: #94a3b8 !important;
+            cursor: not-allowed !important;
+            opacity: 0.55;
+        }
+        .avail-badge-booked {
+            font-size: 8.5px;
+            font-weight: 800;
+            line-height: 1;
+            margin-top: 2px;
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 1px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .avail-legend {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-subtle);
+            font-size: 11.5px;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }
+        .avail-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .avail-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .avail-legend-dot.available { background: #10b981; }
+        .avail-legend-dot.booked { background: #ef4444; }
+        .avail-legend-dot.selected { background: var(--primary); }
+        .avail-legend-dot.past { background: #cbd5e1; }
     </style>
 </head>
 <body>
@@ -3315,6 +3476,107 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 friendlyTime: '',
                 message: ''
             });
+
+            // Live Database-Driven Availability State (One confirmed event per day)
+            const [bookedDates, setBookedDates] = useState([]);
+            const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(true);
+            const [availabilityError, setAvailabilityError] = useState('');
+            const [calendarViewMonth, setCalendarViewMonth] = useState(() => {
+                const d = new Date();
+                return new Date(d.getFullYear(), d.getMonth(), 1);
+            });
+
+            // Fetch live availability from database
+            const fetchAvailability = async () => {
+                setIsAvailabilityLoading(true);
+                setAvailabilityError('');
+                try {
+                    const res = await fetch('booking_availability.php');
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.booked_dates)) {
+                        setBookedDates(data.booked_dates);
+                    } else {
+                        setAvailabilityError(data.message || 'Unable to retrieve availability schedule.');
+                    }
+                } catch (e) {
+                    setAvailabilityError('Unable to connect to availability service. Please check your connection.');
+                } finally {
+                    setIsAvailabilityLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchAvailability();
+            }, []);
+
+            const calendarMonthName = useMemo(() => {
+                return calendarViewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            }, [calendarViewMonth]);
+
+            const handlePrevMonth = () => {
+                setCalendarViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+            };
+
+            const handleNextMonth = () => {
+                setCalendarViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+            };
+
+            const renderCalendarDays = () => {
+                const year = calendarViewMonth.getFullYear();
+                const month = calendarViewMonth.getMonth();
+                const firstDayIndex = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const todayStr = minDateStr;
+
+                const cells = [];
+                for (let i = 0; i < firstDayIndex; i++) {
+                    cells.push(<div key={`empty-${i}`} className="avail-day-cell empty"></div>);
+                }
+
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isPast = dStr < todayStr;
+                    const isBooked = bookedDates.includes(dStr);
+                    const isSelected = (eventDate === dStr);
+
+                    let cellClass = 'avail-day-cell';
+                    if (isSelected) {
+                        cellClass += ' selected';
+                    } else if (isPast) {
+                        cellClass += ' past';
+                    } else if (isBooked) {
+                        cellClass += ' booked';
+                    } else {
+                        cellClass += ' available';
+                    }
+
+                    const handleDayClick = () => {
+                        if (isPast) return;
+                        if (isBooked) {
+                            const formatted = new Date(dStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                            setErrors(prev => ({ ...prev, eventDate: `${formatted} is already fully booked. Please select another date.` }));
+                            return;
+                        }
+                        setEventDate(dStr);
+                        setErrors(prev => ({ ...prev, eventDate: null }));
+                    };
+
+                    cells.push(
+                        <div 
+                            key={dStr} 
+                            className={cellClass}
+                            onClick={handleDayClick}
+                            title={isBooked ? `${dStr} is already fully booked` : (isPast ? `${dStr} is in the past` : `Click to select ${dStr}`)}
+                        >
+                            <span>{day}</span>
+                            {isBooked && !isPast && (
+                                <span className="avail-badge-booked">Booked</span>
+                            )}
+                        </div>
+                    );
+                }
+                return cells;
+            };
 
             // Two-Step Verification State
             const [verifyModal, setVerifyModal] = useState({
@@ -4072,6 +4334,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 }
                 if (!eventDate || eventDate < minDateStr) {
                     errs.eventDate = 'Event date cannot be in the past. Please select today or a future date.';
+                } else if (bookedDates.includes(eventDate)) {
+                    const formatted = new Date(eventDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                    errs.eventDate = `${formatted} is already fully booked. Please select another date.`;
                 }
                 const num = parseInt(guestCount, 10);
                 if (guestCount === '' || isNaN(num) || num < 1) {
@@ -4770,8 +5035,14 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     </div>
 
                                     <div className="form-row-2">
-                                        <div className="form-group">
-                                            <label>Event Target Date <span className="required">*</span></label>
+                                        <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                                                <span>Event Target Date <span className="required">*</span></span>
+                                                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary)' }}>
+                                                    <i className="fa-solid fa-calendar-check" style={{ marginRight: '4px' }}></i>
+                                                    1 Confirmed Event Per Day Policy
+                                                </span>
+                                            </label>
                                             <input 
                                                 type="date" 
                                                 id="event_date_input"
@@ -4783,12 +5054,85 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                     setEventDate(val);
                                                     if (val && val < minDateStr) {
                                                         setErrors(prev => ({ ...prev, eventDate: 'Event date cannot be in the past. Please select today or a future date.' }));
+                                                    } else if (val && bookedDates.includes(val)) {
+                                                        const formatted = new Date(val + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                                                        setErrors(prev => ({ ...prev, eventDate: `${formatted} is already fully booked. Please select another date.` }));
                                                     } else {
                                                         setErrors(prev => ({ ...prev, eventDate: null }));
                                                     }
                                                 }}
                                                 required
                                             />
+
+                                            {/* Live Database-Driven Availability Calendar */}
+                                            <div className="avail-calendar-card">
+                                                <div className="avail-calendar-header">
+                                                    <button 
+                                                        type="button" 
+                                                        className="avail-nav-btn" 
+                                                        onClick={handlePrevMonth}
+                                                        title="Previous Month"
+                                                    >
+                                                        <i className="fa-solid fa-chevron-left"></i>
+                                                    </button>
+                                                    <div className="avail-calendar-title">
+                                                        <i className="fa-solid fa-calendar-days"></i>
+                                                        <span>{calendarMonthName}</span>
+                                                    </div>
+                                                    <button 
+                                                        type="button" 
+                                                        className="avail-nav-btn" 
+                                                        onClick={handleNextMonth}
+                                                        title="Next Month"
+                                                    >
+                                                        <i className="fa-solid fa-chevron-right"></i>
+                                                    </button>
+                                                </div>
+
+                                                {isAvailabilityLoading ? (
+                                                    <div style={{ textAlign: 'center', padding: '20px 12px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                                        <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                                                        Checking real-time calendar availability...
+                                                    </div>
+                                                ) : availabilityError ? (
+                                                    <div style={{ textAlign: 'center', padding: '14px 12px', color: '#b91c1c', background: '#fef2f2', borderRadius: '8px', fontSize: '12.5px' }}>
+                                                        <div><i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '6px' }}></i>{availabilityError}</div>
+                                                        <button type="button" onClick={fetchAvailability} style={{ marginTop: '8px', padding: '4px 12px', fontSize: '11.5px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                                            <i className="fa-solid fa-rotate-right" style={{ marginRight: '4px' }}></i> Retry
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="avail-weekdays">
+                                                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                                                                <div key={d} className="avail-weekday-label">{d}</div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="avail-days-grid">
+                                                            {renderCalendarDays()}
+                                                        </div>
+                                                        <div className="avail-legend">
+                                                            <div className="avail-legend-item">
+                                                                <span className="avail-legend-dot available"></span>
+                                                                <span>Available</span>
+                                                            </div>
+                                                            <div className="avail-legend-item">
+                                                                <span className="avail-legend-dot booked"></span>
+                                                                <span>Fully Booked</span>
+                                                            </div>
+                                                            <div className="avail-legend-item">
+                                                                <span className="avail-legend-dot selected"></span>
+                                                                <span>Selected</span>
+                                                            </div>
+                                                            <div className="avail-legend-item">
+                                                                <span className="avail-legend-dot past"></span>
+                                                                <span>Past</span>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+
                                             <div className={`lead-time-notice ${isWedding ? 'wedding-notice' : 'kids-notice'}`}>
                                                 <i className={`fa-solid ${isWedding ? 'fa-rings-wedding' : 'fa-clock-rotate-left'}`}></i>
                                                 <span>
@@ -4796,7 +5140,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 </span>
                                             </div>
                                             {errors.eventDate && (
-                                                <div className="date-error-badge" style={{ display: 'flex' }}>
+                                                <div className="date-error-badge" style={{ display: 'flex', marginTop: '8px' }}>
                                                     <i className="fa-solid fa-triangle-exclamation"></i>
                                                     <span>{errors.eventDate}</span>
                                                 </div>

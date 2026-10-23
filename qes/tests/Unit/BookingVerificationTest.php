@@ -451,9 +451,9 @@ class BookingVerificationTest extends TestCase
         // Preload conflicting celebration in FakeConnection
         $conflictSql = "SELECT id, reference_no, event_title, event_type, event_start, event_end, location_venue, status 
                 FROM bookings 
-                WHERE status = 'approved' 
+                WHERE (status = 'approved' OR status = 'completed') 
                   AND id != ? 
-                  AND (event_start < ? AND event_end > ?) 
+                  AND DATE(event_start) = ? 
                 ORDER BY event_start ASC 
                 LIMIT 1";
 

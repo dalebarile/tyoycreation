@@ -1735,34 +1735,47 @@ if (!function_exists('validate_event_booking_date')) {
 
 if (!function_exists('check_booking_conflict')) {
     /**
-     * Checks if a given event time range overlaps with an existing approved event.
-     * Overlap rule: (event_start < target_end AND event_end > target_start)
-     * Same date alone is NOT a conflict; only overlapping times are a conflict.
+     * Checks if a given calendar date has an existing approved or completed event.
+     * PRIMARY BUSINESS RULE: ONLY ONE CONFIRMED EVENT IS ALLOWED PER CALENDAR DAY.
+     * All dates are interpreted using the Asia/Manila timezone.
+     * Same date alone IS a conflict regardless of start/end times or venue.
+     * Status rules:
+     * - Pending: Does not reserve the date (multiple pending allowed).
+     * - Approved / Completed: Reserves the entire calendar date.
+     * - Rejected / Cancelled: Releases the date.
      *
      * @param mysqli|SupabaseConnection $conn
-     * @param string $event_start Target event start datetime
-     * @param string $event_end Target event end datetime
+     * @param string $event_start Target event start datetime or calendar date string
+     * @param string|null $event_end Target event end datetime (kept for backward-compatibility)
      * @param int|null $exclude_booking_id Optional booking ID to exclude from conflict check
      * @return array ['conflict' => bool, 'conflicting_event' => array|null, 'message' => string]
      */
-    function check_booking_conflict($conn, $event_start, $event_end, $exclude_booking_id = null) {
+    function check_booking_conflict($conn, $event_start, $event_end = null, $exclude_booking_id = null) {
         $exclude_id = !empty($exclude_booking_id) ? (int)$exclude_booking_id : 0;
-        
-        // Normalize datetime strings to standard 'YYYY-MM-DD HH:MM:SS' without timezone offsets (+00 / +08)
-        $norm_start = substr(trim((string)$event_start), 0, 19);
-        $norm_end   = substr(trim((string)$event_end), 0, 19);
-        if (strlen($norm_start) < 19) {
-            $norm_start = date('Y-m-d H:i:s', strtotime($event_start));
-        }
-        if (strlen($norm_end) < 19) {
-            $norm_end = date('Y-m-d H:i:s', strtotime($event_end));
+
+        // Normalize input to Asia/Manila calendar date 'YYYY-MM-DD'
+        $raw_date_str = trim((string)$event_start);
+        $date_ts = strtotime(substr($raw_date_str, 0, 10));
+        if ($date_ts === false) {
+            $date_ts = strtotime($raw_date_str);
         }
 
+        if ($date_ts === false || (int)date('Y', $date_ts) < 2000) {
+            return [
+                'conflict' => true,
+                'conflicting_event' => null,
+                'message' => 'Invalid event date provided. Please select a valid calendar date.'
+            ];
+        }
+
+        $calendar_date = date('Y-m-d', $date_ts);
+
+        // Check if ANY approved or completed booking occupies this calendar date
         $sql = "SELECT id, reference_no, event_title, event_type, event_start, event_end, location_venue, status 
                 FROM bookings 
-                WHERE status = 'approved' 
+                WHERE (status = 'approved' OR status = 'completed') 
                   AND id != ? 
-                  AND (event_start < ? AND event_end > ?) 
+                  AND DATE(event_start) = ? 
                 ORDER BY event_start ASC 
                 LIMIT 1";
 
@@ -1770,7 +1783,7 @@ if (!function_exists('check_booking_conflict')) {
         if (!$stmt) {
             // FAIL CLOSED: If we can't query the database, assume conflict
             // to prevent double-booking. Never silently allow a booking
-            // when we can't verify there's no overlap.
+            // when we can't verify there's no conflict.
             error_log('[QES Booking] CRITICAL: check_booking_conflict query preparation failed: ' . $conn->error);
             return [
                 'conflict' => true,
@@ -1779,7 +1792,7 @@ if (!function_exists('check_booking_conflict')) {
             ];
         }
 
-        $stmt->bind_param("iss", $exclude_id, $norm_end, $norm_start);
+        $stmt->bind_param("is", $exclude_id, $calendar_date);
         $stmt->execute();
         $result = $stmt->get_result();
 
@@ -1787,18 +1800,13 @@ if (!function_exists('check_booking_conflict')) {
             $conflict = $result->fetch_assoc();
             $stmt->close();
 
-            $c_raw_start = substr(trim((string)$conflict['event_start']), 0, 19);
-            $c_raw_end   = substr(trim((string)$conflict['event_end']), 0, 19);
-            $c_start_ts  = strtotime($c_raw_start);
-            $c_end_ts    = strtotime($c_raw_end);
-            $c_start_str = date('M j, Y g:i A', $c_start_ts);
-            $c_end_str   = (date('Y-m-d', $c_start_ts) === date('Y-m-d', $c_end_ts)) 
-                ? date('g:i A', $c_end_ts) 
-                : date('M j, Y g:i A', $c_end_ts);
+            $c_raw_start = substr(trim((string)$conflict['event_start']), 0, 10);
+            $formatted_date = date('F j, Y', strtotime($c_raw_start ?: $calendar_date));
 
-            $msg = "Schedule Conflict: Cannot approve this booking because its date and time overlap with an existing approved event \"" . 
-                   $conflict['event_title'] . "\" (Ref: " . $conflict['reference_no'] . ") scheduled on " . 
-                   $c_start_str . " – " . $c_end_str . ".";
+            $msg = "Schedule Conflict: {$formatted_date} is already fully booked and reserved for \"" . 
+                   htmlspecialchars($conflict['event_title']) . "\" (Ref: " . $conflict['reference_no'] . "). " .
+                   "Tyoy Creation permits only one confirmed event per calendar day to ensure full crew dedication. " .
+                   "Please select another date.";
 
             return [
                 'conflict' => true,
@@ -2066,23 +2074,72 @@ if (!function_exists('update_booking_status')) {
         $action = strtolower(trim($action));
 
         if ($action === 'approve') {
-            // Server-side Conflict Check
+            // Server-side Conflict Check (Full calendar date)
             $conflict = check_booking_conflict($conn, $target['event_start'], $target['event_end'], $booking_id);
             if ($conflict['conflict']) {
                 return ['success' => false, 'message' => $conflict['message'], 'conflict' => true, 'booking' => $target];
             }
 
-            $up = $conn->prepare("UPDATE bookings SET status = 'approved', rejection_reason = NULL WHERE id = ?");
-            if (!$up) {
-                error_log('[QES Booking] approve prepare failed: ' . $conn->error);
-                return ['success' => false, 'message' => 'A database error occurred. Please try again shortly.', 'booking' => $target];
+            // Atomic approval guarded by transaction and uniqueness check
+            if (method_exists($conn, 'begin_transaction')) {
+                $conn->begin_transaction();
             }
-            $up->bind_param("i", $booking_id);
-            $saved = $up->execute();
-            $up->close();
 
-            if (!$saved) {
-                return ['success' => false, 'message' => "Failed to approve booking #{$booking_id}.", 'booking' => $target];
+            try {
+                // Double check immediately prior to state change to avoid race condition
+                $recheck = check_booking_conflict($conn, $target['event_start'], $target['event_end'], $booking_id);
+                if ($recheck['conflict']) {
+                    if (method_exists($conn, 'rollback')) {
+                        $conn->rollback();
+                    }
+                    return ['success' => false, 'message' => $recheck['message'], 'conflict' => true, 'booking' => $target];
+                }
+
+                $up = $conn->prepare("UPDATE bookings SET status = 'approved', rejection_reason = NULL WHERE id = ?");
+                if (!$up) {
+                    if (method_exists($conn, 'rollback')) {
+                        $conn->rollback();
+                    }
+                    error_log('[QES Booking] approve prepare failed: ' . $conn->error);
+                    return ['success' => false, 'message' => 'A database error occurred. Please try again shortly.', 'booking' => $target];
+                }
+                $up->bind_param("i", $booking_id);
+                $saved = $up->execute();
+                $up_err = $up->error;
+                $up->close();
+
+                if (!$saved) {
+                    if (method_exists($conn, 'rollback')) {
+                        $conn->rollback();
+                    }
+                    if (stripos($up_err, 'duplicate') !== false || stripos($up_err, 'unique') !== false || stripos($up_err, 'uq_bookings') !== false) {
+                        return [
+                            'success' => false,
+                            'conflict' => true,
+                            'message' => 'Schedule Conflict: Another booking was just approved for this date. Only one confirmed event is allowed per calendar day.',
+                            'booking' => $target
+                        ];
+                    }
+                    return ['success' => false, 'message' => "Failed to approve booking #{$booking_id}.", 'booking' => $target];
+                }
+
+                if (method_exists($conn, 'commit')) {
+                    $conn->commit();
+                }
+            } catch (\Throwable $e) {
+                if (method_exists($conn, 'rollback')) {
+                    $conn->rollback();
+                }
+                if (stripos($e->getMessage(), 'duplicate') !== false || stripos($e->getMessage(), 'unique') !== false) {
+                    return [
+                        'success' => false,
+                        'conflict' => true,
+                        'message' => 'Schedule Conflict: Another booking was just approved for this date. Only one confirmed event is allowed per calendar day.',
+                        'booking' => $target
+                    ];
+                }
+                error_log('[QES Booking] approve transaction error: ' . $e->getMessage());
+                return ['success' => false, 'message' => 'A database error occurred during approval. Please try again.', 'booking' => $target];
             }
 
             if ($send_notice) {
@@ -2126,6 +2183,26 @@ if (!function_exists('update_booking_status')) {
             return [
                 'success' => true,
                 'message' => "Booking #{$booking_id} has been REJECTED. Rejection notice was dispatched to the client.",
+                'booking' => $target
+            ];
+        } elseif ($action === 'cancel') {
+            $reason_clean = !empty($reason) ? trim($reason) : 'Booking was cancelled.';
+            $up = $conn->prepare("UPDATE bookings SET status = 'cancelled', rejection_reason = ? WHERE id = ?");
+            if (!$up) {
+                error_log('[QES Booking] cancel prepare failed: ' . $conn->error);
+                return ['success' => false, 'message' => 'A database error occurred. Please try again shortly.', 'booking' => $target];
+            }
+            $up->bind_param("si", $reason_clean, $booking_id);
+            $saved = $up->execute();
+            $up->close();
+
+            if (!$saved) {
+                return ['success' => false, 'message' => "Failed to cancel booking #{$booking_id}.", 'booking' => $target];
+            }
+
+            return [
+                'success' => true,
+                'message' => "Booking #{$booking_id} has been CANCELLED and the date has been released.",
                 'booking' => $target
             ];
         }
