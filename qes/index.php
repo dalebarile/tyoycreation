@@ -26,8 +26,12 @@ $business_tagline = get_setting($conn, 'business_tagline', 'TURNING YOUR MOMENTS
 $contact_phone = get_setting($conn, 'contact_phone', '0956 035 3731');
 $contact_email = get_setting($conn, 'contact_email', 'contact@tyoycreation.com');
 $hero_bg_img = get_setting($conn, 'media_hero_bg', 'assets/tyoy_creation_banner.jpg');
-if (empty($_SESSION['id']) && function_exists('qes_restore_client_session_from_cookie')) {
-    qes_restore_client_session_from_cookie($conn);
+if (empty($_SESSION['id'])) {
+    if (function_exists('qes_restore_client_session_from_cookie') && !empty($_COOKIE['tyoy_client_auth'])) {
+        qes_restore_client_session_from_cookie($conn);
+    } elseif (function_exists('qes_restore_admin_session_from_cookie') && !empty($_COOKIE['tyoy_admin_auth'])) {
+        qes_restore_admin_session_from_cookie($conn);
+    }
 }
 $is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
 $is_admin_logged_in = !empty($_SESSION['id']) && isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'], true);
@@ -3047,7 +3051,11 @@ if ($has_wedding) {
                     showModalAlert('Login successful! Returning to landing page...', 'success');
                     if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
-                        window.location.href = window.location.pathname + window.location.search;
+                        if (pendingBookingHref && pendingBookingHref !== 'index.php' && !pendingBookingHref.startsWith('index.php')) {
+                            window.location.href = pendingBookingHref;
+                        } else {
+                            window.location.reload();
+                        }
                     }, 80);
                 } else {
                     showModalAlert(data.message || 'Invalid username/email or password.');

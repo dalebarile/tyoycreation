@@ -84,6 +84,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && !$is_locked) {
 
                 // Set signed admin auth cookie for serverless session persistence
                 qes_set_admin_auth_cookie((int)$user['id'], $user['password']);
+                if (function_exists('qes_clear_client_auth_cookie')) {
+                    qes_clear_client_auth_cookie();
+                }
 
                 header("Location: " . $base_href . "a_home.php");
                 exit;

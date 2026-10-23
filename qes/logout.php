@@ -2,6 +2,14 @@
 require_once __DIR__ . '/db.php';
 
 $uid = (int)($_SESSION['id'] ?? 0);
+if ($uid <= 0 && isset($conn) && is_object($conn)) {
+    if (!empty($_COOKIE['tyoy_admin_auth']) && function_exists('qes_restore_admin_session_from_cookie')) {
+        qes_restore_admin_session_from_cookie($conn);
+    } elseif (!empty($_COOKIE['tyoy_client_auth']) && function_exists('qes_restore_client_session_from_cookie')) {
+        qes_restore_client_session_from_cookie($conn);
+    }
+    $uid = (int)($_SESSION['id'] ?? 0);
+}
 $sess_id = session_id();
 
 if ($uid > 0 && isset($conn) && is_object($conn)) {
@@ -24,7 +32,7 @@ if ($uid > 0 && isset($conn) && is_object($conn)) {
     }
 }
 
-$is_client = (isset($_SESSION['role']) && $_SESSION['role'] === 'user');
+$is_client = (isset($_SESSION['role']) && $_SESSION['role'] === 'user') || (!empty($_COOKIE['tyoy_client_auth']) && empty($_COOKIE['tyoy_admin_auth']));
 
 $_SESSION = [];
 if (function_exists('qes_clear_admin_auth_cookie')) {
