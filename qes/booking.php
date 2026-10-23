@@ -3279,6 +3279,16 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 typoWarning: null
             });
 
+            // Schedule Conflict & Double-Booking Reminder Modal State
+            const [conflictModal, setConflictModal] = useState({
+                isOpen: false,
+                eventDate: '',
+                eventTime: '',
+                friendlyDate: '',
+                friendlyTime: '',
+                message: ''
+            });
+
             // Two-Step Verification State
             const [verifyModal, setVerifyModal] = useState({
                 isOpen: false,
@@ -3312,7 +3322,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     specialNotes.trim() ||
                     Object.keys(selectedItems).length > 0 ||
                     verifyModal.isOpen ||
-                    emailWarningModal.isOpen
+                    emailWarningModal.isOpen ||
+                    conflictModal.isOpen
                 );
             }, [
                 confirmedBooking,
@@ -3326,7 +3337,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 specialNotes,
                 selectedItems,
                 verifyModal.isOpen,
-                emailWarningModal.isOpen
+                emailWarningModal.isOpen,
+                conflictModal.isOpen
             ]);
 
             // Exit trigger helper
@@ -3462,7 +3474,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             // Lock body scroll when any modal is open
             useEffect(() => {
-                const isAnyModalOpen = verifyModal.isOpen || emailWarningModal.isOpen || exitWarningModal.isOpen || !!confirmedBooking;
+                const isAnyModalOpen = verifyModal.isOpen || emailWarningModal.isOpen || exitWarningModal.isOpen || conflictModal.isOpen || !!confirmedBooking;
                 if (isAnyModalOpen) {
                     const originalOverflow = document.body.style.overflow;
                     document.body.style.overflow = 'hidden';
@@ -3470,7 +3482,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         document.body.style.overflow = originalOverflow;
                     };
                 }
-            }, [verifyModal.isOpen, emailWarningModal.isOpen, exitWarningModal.isOpen, !!confirmedBooking]);
+            }, [verifyModal.isOpen, emailWarningModal.isOpen, exitWarningModal.isOpen, conflictModal.isOpen, !!confirmedBooking]);
 
             // Cloudflare Turnstile Manager
             const renderTurnstileWidget = (containerSelector, widgetRef) => {
@@ -4108,6 +4120,25 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 });
             };
 
+            // Resolve schedule conflict by dismissing reminder and focusing event date input
+            const handleResolveConflictChangeDate = () => {
+                setConflictModal({
+                    isOpen: false,
+                    eventDate: '',
+                    eventTime: '',
+                    friendlyDate: '',
+                    friendlyTime: '',
+                    message: ''
+                });
+                setTimeout(() => {
+                    const dateInput = document.getElementById('event_date_input');
+                    if (dateInput) {
+                        dateInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        dateInput.focus();
+                    }
+                }, 100);
+            };
+
             const handleProceedWithEmail = () => {
                 setEmailWarningModal({ isOpen: false, email: '', typoWarning: null });
                 executeBookingSubmit();
@@ -4204,7 +4235,18 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         }
                     } else {
                         resetTurnstileWidget(mainTurnstileWidgetId);
-                        setSubmitError(data.message || 'Submission failed. Please check your inputs.');
+                        if (data.is_conflict || data.conflict) {
+                            setConflictModal({
+                                isOpen: true,
+                                eventDate: data.event_date || eventDate,
+                                eventTime: data.event_time || eventTime,
+                                friendlyDate: data.friendly_date || eventDate,
+                                friendlyTime: data.friendly_time || eventTime,
+                                message: data.message || 'The selected date and time overlaps with an existing confirmed celebration.'
+                            });
+                        } else {
+                            setSubmitError(data.message || 'Submission failed. Please check your inputs.');
+                        }
                     }
                 } catch (err) {
                     resetTurnstileWidget(mainTurnstileWidgetId);
@@ -4261,11 +4303,23 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         });
                     } else {
                         resetTurnstileWidget(modalTurnstileWidgetId);
-                        setVerifyModal(prev => ({
-                            ...prev,
-                            isLoading: false,
-                            error: data.message || 'The verification code entered is incorrect or expired.'
-                        }));
+                        if (data.is_conflict || data.conflict) {
+                            setVerifyModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
+                            setConflictModal({
+                                isOpen: true,
+                                eventDate: data.event_date || eventDate,
+                                eventTime: data.event_time || eventTime,
+                                friendlyDate: data.friendly_date || eventDate,
+                                friendlyTime: data.friendly_time || eventTime,
+                                message: data.message || 'The selected date and time overlaps with an existing confirmed celebration.'
+                            });
+                        } else {
+                            setVerifyModal(prev => ({
+                                ...prev,
+                                isLoading: false,
+                                error: data.message || 'The verification code entered is incorrect or expired.'
+                            }));
+                        }
                     }
                 } catch (err) {
                     resetTurnstileWidget(modalTurnstileWidgetId);
@@ -5784,6 +5838,72 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
                             ? ReactDOM.createPortal(exitModalContent, document.body)
                             : exitModalContent;
+                    })()}
+
+                    {/* 4. Schedule Conflict & Double-Booking Reminder Modal */}
+                    {conflictModal.isOpen && (() => {
+                        const conflictModalContent = (
+                            <div className="exit-warning-overlay" role="dialog" aria-modal="true" aria-labelledby="conflictReminderTitle" style={{ zIndex: 9999999 }}>
+                                <div className="exit-warning-card" style={{ maxWidth: '480px' }}>
+                                    <button
+                                        type="button"
+                                        className="verify-modal-close-btn"
+                                        title="Close reminder and change date"
+                                        aria-label="Close conflict reminder"
+                                        onClick={handleResolveConflictChangeDate}
+                                    >
+                                        <i className="fa-solid fa-xmark"></i>
+                                    </button>
+
+                                    <div className="exit-warning-icon" style={{ background: '#fef3c7', color: '#d97706' }}>
+                                        <i className="fa-solid fa-calendar-xmark"></i>
+                                    </div>
+
+                                    <h3 id="conflictReminderTitle" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
+                                        Schedule Conflict Detected
+                                    </h3>
+
+                                    <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.45, margin: '0 0 14px 0' }}>
+                                        We are unable to reserve this slot because our calendar already has a confirmed celebration booked for this schedule.
+                                    </p>
+
+                                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', borderRadius: '10px', padding: '12px 14px', textAlign: 'left', marginBottom: '16px', fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+                                        <div style={{ fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: '#78350f' }}>
+                                            <i className="fa-solid fa-circle-exclamation" style={{ color: '#d97706' }}></i>
+                                            <span>Unavailable Event Schedule:</span>
+                                        </div>
+                                        <div style={{ marginBottom: '4px' }}>
+                                            <strong>Requested Date:</strong> {conflictModal.friendlyDate || conflictModal.eventDate}
+                                        </div>
+                                        {conflictModal.friendlyTime && (
+                                            <div style={{ marginBottom: '6px' }}>
+                                                <strong>Time Window:</strong> {conflictModal.friendlyTime}
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '6px', borderTop: '1px dashed #fcd34d', paddingTop: '6px' }}>
+                                            <i className="fa-solid fa-circle-info" style={{ marginRight: '4px' }}></i>
+                                            To ensure the highest styling excellence and dedicated crew focus, Tyoy Creation limits concurrent events to guarantee full crew dedication. Please select a different date or schedule for your event.
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                                        <button
+                                            type="button"
+                                            className="btn-stay-booking"
+                                            onClick={handleResolveConflictChangeDate}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                                        >
+                                            <i className="fa-solid fa-calendar-days"></i>
+                                            <span>Change Event Date / Time</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+
+                        return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
+                            ? ReactDOM.createPortal(conflictModalContent, document.body)
+                            : conflictModalContent;
                     })()}
 
                     {/* Success Confirmation Modal */}

@@ -442,4 +442,64 @@ class BookingVerificationTest extends TestCase
             unset($GLOBALS['TEST_MOCK_EMAIL_FAILURE']);
         }
     }
+
+    public function test_stage_booking_detects_schedule_conflict_and_halts_staging(): void
+    {
+        $targetDate = '2026-11-20';
+        $targetTime = '14:00';
+
+        // Preload conflicting celebration in FakeConnection
+        $conflictSql = "SELECT id, reference_no, event_title, event_type, event_start, event_end, location_venue, status 
+                FROM bookings 
+                WHERE status = 'approved' 
+                  AND id != ? 
+                  AND (event_start < ? AND event_end > ?) 
+                ORDER BY event_start ASC 
+                LIMIT 1";
+
+        $this->conn->addQueryResult($conflictSql, [[
+            'id'             => 99,
+            'reference_no'   => 'EV-2026-CONFIDENTIAL',
+            'event_title'    => 'Confidential Private Wedding',
+            'event_type'     => 'Weddings',
+            'event_start'    => '2026-11-20 14:00:00',
+            'event_end'      => '2026-11-20 19:00:00',
+            'location_venue' => 'Manila Hotel',
+            'status'         => 'approved'
+        ]]);
+
+        $params = [
+            'client_name'          => 'Clara Bautista',
+            'client_email'         => 'clara@example.com',
+            'client_phone'         => '09171234567',
+            'client_address'       => 'Makati City',
+            'event_title'          => 'Clara Debut Celebration',
+            'event_type'           => 'Kids Party',
+            'event_date'           => $targetDate,
+            'event_time'           => $targetTime,
+            'guest_count'          => 75,
+            'location_venue'       => 'Makati Sports Club',
+            'service_requirements' => 'Floral Arch & Stage Decor'
+        ];
+
+        $res = BookingVerificationHelper::stageBooking($this->conn, $params);
+
+        // 1. Must halt staging and return conflict flag
+        $this->assertFalse($res['success']);
+        $this->assertTrue($res['conflict']);
+        $this->assertTrue($res['is_conflict']);
+        $this->assertSame('schedule_overlap', $res['conflict_type']);
+        $this->assertSame($targetDate, $res['event_date']);
+        $this->assertSame($targetTime, $res['event_time']);
+        $this->assertSame('November 20, 2026', $res['friendly_date']);
+        $this->assertStringContainsString('Schedule Conflict', $res['message']);
+
+        // 2. Data Privacy Act (RA 10173): Conflict message must NEVER expose conflicting party details
+        $this->assertStringNotContainsString('Confidential Private Wedding', $res['message']);
+        $this->assertStringNotContainsString('EV-2026-CONFIDENTIAL', $res['message']);
+
+        // 3. OTP verification session MUST NOT be staged when double-booking is detected
+        $this->assertArrayNotHasKey('pending_booking_verification', $_SESSION);
+    }
 }
+

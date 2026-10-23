@@ -185,7 +185,30 @@ class BookingVerificationHelper {
             }
         }
 
-        // 7. Generate secure 6-digit OTP code & verification token
+        // 7. Schedule Conflict & Overlapping Detection (prevents double-booking prior to verification)
+        $event_start = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time}"));
+        $event_end   = date('Y-m-d H:i:s', strtotime("{$event_date} {$event_time} + 5 hours"));
+        if (function_exists('check_booking_conflict')) {
+            $conflict = check_booking_conflict($conn, $event_start, $event_end);
+            if (!empty($conflict['conflict'])) {
+                $friendly_date = date('F j, Y', strtotime($event_date));
+                $friendly_start = date('g:i A', strtotime($event_start));
+                $friendly_end = date('g:i A', strtotime($event_end));
+                return [
+                    'success'       => false,
+                    'conflict'      => true,
+                    'is_conflict'   => true,
+                    'conflict_type' => 'schedule_overlap',
+                    'event_date'    => $event_date,
+                    'event_time'    => $event_time,
+                    'friendly_date' => $friendly_date,
+                    'friendly_time' => "{$friendly_start} – {$friendly_end}",
+                    'message'       => "Schedule Conflict: Our event calendar already has a confirmed celebration booked for {$friendly_date} ({$friendly_start} – {$friendly_end}). Tyoy Creation limits concurrent events to guarantee full crew dedication. Please select a different date or schedule for your event."
+                ];
+            }
+        }
+
+        // 8. Generate secure 6-digit OTP code & verification token
         $code  = sprintf("%06d", random_int(100000, 999999));
         $token = bin2hex(random_bytes(16));
         $masked_email = self::maskEmail($client_email);
@@ -344,12 +367,15 @@ class BookingVerificationHelper {
 
         // Code is VALID! Commit to main database table via create_booking_inquiry
         $payload = $pending['payload'];
+        $payload['check_conflict'] = true;
         $commitResult = create_booking_inquiry($conn, $payload);
 
         if (!$commitResult['success']) {
             return [
-                'success' => false,
-                'message' => 'Verification confirmed, but database commit failed: ' . ($commitResult['message'] ?? 'Unknown error.')
+                'success'     => false,
+                'conflict'    => !empty($commitResult['conflict']),
+                'is_conflict' => !empty($commitResult['conflict']),
+                'message'     => 'Verification confirmed, but database commit failed: ' . ($commitResult['message'] ?? 'Unknown error.')
             ];
         }
 
