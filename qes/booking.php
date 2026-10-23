@@ -50,6 +50,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Book an Event - <?= htmlspecialchars($business_name) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <link rel="icon" type="image/png" href="assets/favicon.png?v=<?= filemtime(__DIR__ . '/assets/favicon.png') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -698,6 +701,27 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
             z-index: 80;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(24, 57, 43, 0.25) transparent;
+        }
+
+        .summary-card-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .summary-card-sidebar::-webkit-scrollbar-track {
+            background: transparent;
+            margin-top: 56px;
+            margin-bottom: 12px;
+        }
+
+        .summary-card-sidebar::-webkit-scrollbar-thumb {
+            background-color: rgba(24, 57, 43, 0.25);
+            border-radius: 10px;
+        }
+
+        .summary-card-sidebar::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(24, 57, 43, 0.45);
         }
 
         /* Mobile / Small Screen Floating Sticky Total Bar */
@@ -812,7 +836,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
             background: rgba(255, 255, 255, 0.18) !important;
             color: #ffffff !important;
             border: 1px solid rgba(255, 255, 255, 0.3) !important;
@@ -820,6 +844,9 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             border-radius: 9999px;
             display: inline-flex;
             align-items: center;
+            white-space: nowrap;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         .summary-body {

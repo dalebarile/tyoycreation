@@ -102,4 +102,18 @@ class SmokeTest extends TestCase
         $indexContent = file_get_contents($baseDir . '/index.php');
         $this->assertStringContainsString('startQesProgress', $indexContent);
     }
+
+    public function test_navbar_logout_contrast_and_booking_summary_scrollbar(): void
+    {
+        $baseDir = dirname(__DIR__, 2);
+
+        $indexContent = file_get_contents($baseDir . '/index.php');
+        $this->assertStringContainsString('class="client-logout-nav"', $indexContent);
+        $this->assertStringContainsString('color: #cbd5e1', $indexContent);
+
+        $bookingContent = file_get_contents($baseDir . '/booking.php');
+        $this->assertStringContainsString('.summary-card-sidebar::-webkit-scrollbar', $bookingContent);
+        $this->assertStringContainsString('scrollbar-width: thin', $bookingContent);
+        $this->assertStringContainsString('rel="preconnect" href="https://fonts.googleapis.com"', $bookingContent);
+    }
 }

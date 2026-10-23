@@ -1715,7 +1715,7 @@ if ($has_wedding) {
                         <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
                         <?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?>
                     </span>
-                    <a href="logout.php?redirect=index.php" style="font-size: 12.5px; color: #6b7280; text-decoration: none;" title="Sign Out">
+                    <a href="logout.php?redirect=index.php" class="client-logout-nav" style="font-size: 13px; color: #cbd5e1; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='#cbd5e1'" title="Sign Out">
                         <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
                     </a>
                 <?php else: ?>
