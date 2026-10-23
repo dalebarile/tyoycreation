@@ -203,7 +203,7 @@ class BookingVerificationHelper {
                     'event_time'    => $event_time,
                     'friendly_date' => $friendly_date,
                     'friendly_time' => "{$friendly_start} – {$friendly_end}",
-                    'message'       => "Schedule Conflict: Our event calendar already has a confirmed celebration booked for {$friendly_date} ({$friendly_start} – {$friendly_end}). Tyoy Creation limits concurrent events to guarantee full crew dedication. Please select a different date or schedule for your event."
+                    'message'       => "Schedule Conflict: Our event calendar already has a confirmed celebration booked for {$friendly_date}. Tyoy Creation limits events to only one confirmed celebration per calendar day to guarantee full crew dedication. You need to change the date to proceed with email verification."
                 ];
             }
         }

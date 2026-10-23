@@ -3477,6 +3477,29 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 message: ''
             });
 
+            // Double-booking detection helper: Triggers reminder modal and blocks verification flow
+            const triggerDoubleBookingModal = (dateStr, customMsg) => {
+                let friendly = dateStr;
+                try {
+                    if (dateStr) {
+                        friendly = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                    }
+                } catch (e) {}
+
+                // Ensure verification modals are closed
+                setVerifyModal(prev => ({ ...prev, isOpen: false }));
+                setEmailWarningModal({ isOpen: false, email: '', typoWarning: null });
+
+                setConflictModal({
+                    isOpen: true,
+                    eventDate: dateStr,
+                    eventTime: eventTime,
+                    friendlyDate: friendly,
+                    friendlyTime: '',
+                    message: customMsg || `Double Booking Detected: ${friendly} is already fully booked. Tyoy Creation permits only one confirmed celebration per calendar day to ensure full crew dedication. You need to change the date to proceed with email verification.`
+                });
+            };
+
             // Live Database-Driven Availability State (One confirmed event per day)
             const [bookedDates, setBookedDates] = useState([]);
             const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(true);
@@ -3553,8 +3576,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     const handleDayClick = () => {
                         if (isPast) return;
                         if (isBooked) {
-                            const formatted = new Date(dStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                            setErrors(prev => ({ ...prev, eventDate: `${formatted} is already fully booked. Please select another date.` }));
+                            triggerDoubleBookingModal(dStr);
                             return;
                         }
                         setEventDate(dStr);
@@ -4357,7 +4379,30 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 if (e && e.preventDefault) e.preventDefault();
                 setSubmitError('');
 
-                // 1. If guest count exceeds catering capacity limit, immediately focus and alert user
+                // 1. Mandatory Double-Booking Pre-Check: Block verification if date is already confirmed
+                if (eventDate) {
+                    if (bookedDates.includes(eventDate)) {
+                        triggerDoubleBookingModal(eventDate);
+                        return;
+                    }
+
+                    // Live pre-flight check to catch real-time double bookings before verification
+                    try {
+                        const checkRes = await fetch(`booking_availability.php?date=${encodeURIComponent(eventDate)}`);
+                        if (checkRes.ok) {
+                            const checkData = await checkRes.json();
+                            if (checkData.success && checkData.available === false) {
+                                if (!bookedDates.includes(eventDate)) {
+                                    setBookedDates(prev => [...prev, eventDate]);
+                                }
+                                triggerDoubleBookingModal(eventDate, checkData.message);
+                                return;
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                // 2. If guest count exceeds catering capacity limit, immediately focus and alert user
                 if (isGuestExceeded) {
                     const limitMsg = selectedPackageLimit 
                         ? `Cannot proceed: Expected guest count (${numGuests}) exceeds your selected catering service package limit (${selectedPackageLimit} pax). Please adjust your guest count or choose a higher catering package.`
@@ -4371,9 +4416,15 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     return;
                 }
 
-                // 2. Validate all required form fields
+                // 3. Validate all required form fields
                 const isValid = validate();
                 if (!isValid) {
+                    // If error is double booking on date, trigger modal immediately
+                    if (errors.eventDate && bookedDates.includes(eventDate)) {
+                        triggerDoubleBookingModal(eventDate);
+                        return;
+                    }
+
                     setSubmitError('Cannot proceed: Please fill in all required fields highlighted in red below.');
                     
                     // Priority list to smoothly scroll and focus the very first invalid field
@@ -4401,7 +4452,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     return;
                 }
 
-                // 3. Prevent typo misconception: Check for common domain typos
+                // 4. Prevent typo misconception: Check for common domain typos
                 const typo = detectEmailIssues(clientEmail);
 
                 // Open Email Confirmation & Misconception Prevention Modal before dispatching code
@@ -4422,6 +4473,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     friendlyTime: '',
                     message: ''
                 });
+                setErrors(prev => ({
+                    ...prev,
+                    eventDate: 'Please select an open calendar date to proceed with email verification.'
+                }));
                 setTimeout(() => {
                     const dateInput = document.getElementById('event_date_input');
                     if (dateInput) {
@@ -4433,6 +4488,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             const handleProceedWithEmail = () => {
                 setEmailWarningModal({ isOpen: false, email: '', typoWarning: null });
+                if (eventDate && bookedDates.includes(eventDate)) {
+                    triggerDoubleBookingModal(eventDate);
+                    return;
+                }
                 executeBookingSubmit();
             };
 
@@ -4528,14 +4587,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     } else {
                         resetTurnstileWidget(mainTurnstileWidgetId);
                         if (data.is_conflict || data.conflict) {
-                            setConflictModal({
-                                isOpen: true,
-                                eventDate: data.event_date || eventDate,
-                                eventTime: data.event_time || eventTime,
-                                friendlyDate: data.friendly_date || eventDate,
-                                friendlyTime: data.friendly_time || eventTime,
-                                message: data.message || 'The selected date and time overlaps with an existing confirmed celebration.'
-                            });
+                            triggerDoubleBookingModal(data.event_date || eventDate, data.message);
                         } else {
                             setSubmitError(data.message || 'Submission failed. Please check your inputs.');
                         }
@@ -5055,8 +5107,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                     if (val && val < minDateStr) {
                                                         setErrors(prev => ({ ...prev, eventDate: 'Event date cannot be in the past. Please select today or a future date.' }));
                                                     } else if (val && bookedDates.includes(val)) {
-                                                        const formatted = new Date(val + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                                                        setErrors(prev => ({ ...prev, eventDate: `${formatted} is already fully booked. Please select another date.` }));
+                                                        triggerDoubleBookingModal(val);
                                                     } else {
                                                         setErrors(prev => ({ ...prev, eventDate: null }));
                                                     }
@@ -6231,17 +6282,17 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     </div>
 
                                     <h3 id="conflictReminderTitle" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
-                                        Schedule Conflict Detected
+                                        Double Booking Detected
                                     </h3>
 
                                     <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.45, margin: '0 0 14px 0' }}>
-                                        We are unable to reserve this slot because our calendar already has a confirmed celebration booked for this schedule.
+                                        We cannot proceed with email verification because this calendar date already has a confirmed celebration in our system.
                                     </p>
 
                                     <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', borderRadius: '10px', padding: '12px 14px', textAlign: 'left', marginBottom: '16px', fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
                                         <div style={{ fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: '#78350f' }}>
-                                            <i className="fa-solid fa-circle-exclamation" style={{ color: '#d97706' }}></i>
-                                            <span>Unavailable Event Schedule:</span>
+                                            <i className="fa-solid fa-triangle-exclamation" style={{ color: '#d97706' }}></i>
+                                            <span>Action Required:</span>
                                         </div>
                                         <div style={{ marginBottom: '4px' }}>
                                             <strong>Requested Date:</strong> {conflictModal.friendlyDate || conflictModal.eventDate}
@@ -6251,9 +6302,12 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 <strong>Time Window:</strong> {conflictModal.friendlyTime}
                                             </div>
                                         )}
-                                        <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '6px', borderTop: '1px dashed #fcd34d', paddingTop: '6px' }}>
+                                        <div style={{ fontSize: '12px', color: '#78350f', marginTop: '6px', borderTop: '1px dashed #fcd34d', paddingTop: '6px' }}>
                                             <i className="fa-solid fa-circle-info" style={{ marginRight: '4px' }}></i>
-                                            To ensure the highest styling excellence and dedicated crew focus, Tyoy Creation limits concurrent events to guarantee full crew dedication. Please select a different date or schedule for your event.
+                                            Tyoy Creation limits bookings to <strong>only one confirmed celebration per calendar day</strong> to guarantee full crew dedication.
+                                            <div style={{ marginTop: '6px', fontWeight: 700, color: '#b45309' }}>
+                                                You need to change the date to proceed with email verification.
+                                            </div>
                                         </div>
                                     </div>
 
@@ -6262,10 +6316,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             type="button"
                                             className="btn-stay-booking"
                                             onClick={handleResolveConflictChangeDate}
-                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 22px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
                                         >
                                             <i className="fa-solid fa-calendar-days"></i>
-                                            <span>Change Event Date / Time</span>
+                                            <span>Change Event Date to Proceed</span>
                                         </button>
                                     </div>
                                 </div>
