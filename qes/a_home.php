@@ -46,49 +46,53 @@ $approved_count = 0;
 $rejected_count = 0;
 $total_count = 0;
 
-$res = $conn->query("SELECT status, COUNT(*) as cnt FROM bookings GROUP BY status");
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        if ($row['status'] === 'pending') $pending_count = (int)$row['cnt'];
-        if ($row['status'] === 'approved') $approved_count = (int)$row['cnt'];
-        if ($row['status'] === 'rejected') $rejected_count = (int)$row['cnt'];
-        $total_count += (int)$row['cnt'];
+$upcoming_events = [];
+$pending_inquiries = [];
+$recent_bookings = [];
+$total_clients = 0;
+$event_days = [];
+
+// All dashboard data in ONE round trip (each query is a remote HTTP call when PDO is unavailable)
+$dash_sql = "
+    SELECT 'upcoming' AS k, to_jsonb(t) AS r FROM (SELECT * FROM bookings WHERE status = 'approved' AND event_start >= NOW() ORDER BY event_start ASC LIMIT 5) t
+    UNION ALL
+    SELECT 'pending', to_jsonb(t) FROM (SELECT * FROM bookings WHERE status = 'pending' ORDER BY created_at DESC LIMIT 5) t
+    UNION ALL
+    SELECT 'recent', to_jsonb(t) FROM (SELECT * FROM bookings ORDER BY created_at DESC LIMIT 6) t
+    UNION ALL
+    SELECT 'count', jsonb_build_object('status', status, 'cnt', cnt, 'clients', clients)
+      FROM (SELECT status, COUNT(*) AS cnt, (SELECT COUNT(DISTINCT client_email) FROM bookings) AS clients FROM bookings GROUP BY status) t
+    UNION ALL
+    SELECT 'calday', jsonb_build_object('d', EXTRACT(DAY FROM (event_start AT TIME ZONE 'Asia/Manila'))::int)
+      FROM bookings
+      WHERE status = 'approved'
+        AND EXTRACT(MONTH FROM (event_start AT TIME ZONE 'Asia/Manila')) = EXTRACT(MONTH FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'))
+        AND EXTRACT(YEAR FROM (event_start AT TIME ZONE 'Asia/Manila')) = EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'))
+";
+$dash_res = $conn->query($dash_sql);
+if ($dash_res) {
+    while ($drow = $dash_res->fetch_assoc()) {
+        $payload = $drow['r'];
+        if (is_string($payload)) {
+            $payload = json_decode($payload, true);
+        }
+        if (!is_array($payload)) continue;
+        switch ($drow['k']) {
+            case 'upcoming': $upcoming_events[] = qes_decrypt_booking($payload); break;
+            case 'pending':  $pending_inquiries[] = qes_decrypt_booking($payload); break;
+            case 'recent':   $recent_bookings[] = qes_decrypt_booking($payload); break;
+            case 'calday':   $event_days[] = (int)$payload['d']; break;
+            case 'count':
+                $cnt = (int)$payload['cnt'];
+                if ($payload['status'] === 'pending') $pending_count = $cnt;
+                if ($payload['status'] === 'approved') $approved_count = $cnt;
+                if ($payload['status'] === 'rejected') $rejected_count = $cnt;
+                $total_count += $cnt;
+                $total_clients = (int)$payload['clients'];
+                break;
+        }
     }
     $status_counts = ['pending' => $pending_count, 'approved' => $approved_count, 'rejected' => $rejected_count];
-}
-
-// Fetch upcoming approved events
-$upcoming_events = [];
-$up_stmt = $conn->query("SELECT * FROM bookings WHERE status = 'approved' AND event_start >= NOW() ORDER BY event_start ASC LIMIT 5");
-if ($up_stmt) {
-    while ($row = $up_stmt->fetch_assoc()) {
-        $upcoming_events[] = qes_decrypt_booking($row);
-    }
-}
-
-// Fetch recent pending inquiries requiring admin review
-$pending_inquiries = [];
-$pen_stmt = $conn->query("SELECT * FROM bookings WHERE status = 'pending' ORDER BY created_at DESC LIMIT 5");
-if ($pen_stmt) {
-    while ($row = $pen_stmt->fetch_assoc()) {
-        $pending_inquiries[] = qes_decrypt_booking($row);
-    }
-}
-
-// Fetch recent bookings for Panel 8 Recent Bookings table
-$recent_bookings = [];
-$rb_stmt = $conn->query("SELECT * FROM bookings ORDER BY created_at DESC LIMIT 6");
-if ($rb_stmt) {
-    while ($row = $rb_stmt->fetch_assoc()) {
-        $recent_bookings[] = qes_decrypt_booking($row);
-    }
-}
-
-// Fetch total clients count
-$total_clients = 0;
-$cl_res = $conn->query("SELECT COUNT(DISTINCT client_email) as cnt FROM bookings");
-if ($cl_res && $cl_row = $cl_res->fetch_assoc()) {
-    $total_clients = (int)$cl_row['cnt'];
 }
 if ($total_clients === 0) {
     $u_res = $conn->query("SELECT COUNT(*) as cnt FROM users");
@@ -559,14 +563,7 @@ $ai_status_label = $ai_pct >= 90 ? 'Critical' : ($ai_pct >= 70 ? 'Warning' : 'He
                         $first_day_of_month = (int)date('w', strtotime(date('Y-m-01')));
                         $today_day = (int)date('j');
 
-                        // Fetch active event days this month using standard SQL
-                        $event_days = [];
-                        $m_res = $conn->query("SELECT EXTRACT(DAY FROM (event_start AT TIME ZONE 'Asia/Manila'))::int as d FROM bookings WHERE status = 'approved' AND EXTRACT(MONTH FROM (event_start AT TIME ZONE 'Asia/Manila')) = EXTRACT(MONTH FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')) AND EXTRACT(YEAR FROM (event_start AT TIME ZONE 'Asia/Manila')) = EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'))");
-                        if ($m_res) {
-                            while ($r = $m_res->fetch_assoc()) {
-                                $event_days[] = (int)$r['d'];
-                            }
-                        }
+                        // $event_days is loaded with the dashboard batch query above
 
                         // Pad empty days
                         for ($pad = 0; $pad < $first_day_of_month; $pad++) {

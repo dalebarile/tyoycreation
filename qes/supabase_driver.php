@@ -160,7 +160,18 @@ class SupabaseConnection {
         $hasExt = extension_loaded('pdo_pgsql');
 
         // Check if direct PostgreSQL connection is configured with password
-        if ($hasPass && $hasExt) {
+        // Circuit breaker: after a failed PDO connect, skip retrying for a while so every
+        // request doesn't pay the connect timeout before falling back to the HTTP API.
+        $breakerFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qes_pdo_down.flag';
+        $breakerOpen = false;
+        if ($hasPass && $hasExt && is_file($breakerFile)) {
+            $breakerOpen = (time() - (int)@filemtime($breakerFile)) < 120;
+            if ($breakerOpen) {
+                $this->pdoError = 'breaker_open';
+            }
+        }
+
+        if ($hasPass && $hasExt && !$breakerOpen) {
             $host = defined('ENV_SUPABASE_DB_HOST') ? ENV_SUPABASE_DB_HOST : "aws-0-ap-southeast-1.pooler.supabase.com";
             $port = defined('ENV_SUPABASE_DB_PORT') ? (string)ENV_SUPABASE_DB_PORT : "6543";
             $user = defined('ENV_SUPABASE_DB_USER') ? ENV_SUPABASE_DB_USER : "postgres.{$this->projectRef}";
@@ -170,7 +181,7 @@ class SupabaseConnection {
             $pass = ENV_SUPABASE_DB_PASS;
             try {
                 $pStart = microtime(true);
-                $dsn = "pgsql:host={$host};port={$port};dbname=postgres;sslmode=require;connect_timeout=4";
+                $dsn = "pgsql:host={$host};port={$port};dbname=postgres;sslmode=require;connect_timeout=2";
                 $this->pdo = new PDO($dsn, $user, $pass, [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_EMULATE_PREPARES => true,
@@ -179,9 +190,11 @@ class SupabaseConnection {
                 ]);
                 $this->pdo->exec("SET timezone = 'Asia/Manila'");
                 $this->pdoConnectDuration = round((microtime(true) - $pStart) * 1000, 2);
+                @unlink($breakerFile);
             } catch (Exception $e) {
                 $this->pdo = null;
                 $this->pdoError = $e->getMessage();
+                @touch($breakerFile);
                 error_log('[SupabaseConnection PDO Error] ' . $e->getMessage());
             }
         } else {

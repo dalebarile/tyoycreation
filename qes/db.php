@@ -957,12 +957,23 @@ if (!function_exists('track_user_session')) {
         if (empty($session_id)) return;
 
         // Throttle session updates: only ping DB on login or if > 300 seconds since last tracked
+        // $_SESSION is lost between serverless instances, so the throttle also lives in a cookie.
         $now = time();
-        $last_tracked = $_SESSION['last_session_tracked_at'] ?? 0;
+        $last_tracked = max((int)($_SESSION['last_session_tracked_at'] ?? 0), (int)($_COOKIE['qes_trk'] ?? 0));
         if (!$is_login && ($now - $last_tracked) < 300) {
             return;
         }
         $_SESSION['last_session_tracked_at'] = $now;
+        if (!headers_sent() && php_sapi_name() !== 'cli') {
+            setcookie('qes_trk', (string)$now, [
+                'expires' => $now + 600,
+                'path' => '/',
+                'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'
+                    || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https'),
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
 
         $ip = qes_client_ip();
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown Browser';
