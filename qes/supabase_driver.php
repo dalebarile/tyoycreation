@@ -186,7 +186,8 @@ class SupabaseConnection {
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_EMULATE_PREPARES => true,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_TIMEOUT => 4
+                    PDO::ATTR_TIMEOUT => 4,
+                    PDO::ATTR_PERSISTENT => true
                 ]);
                 $this->pdo->exec("SET timezone = 'Asia/Manila'");
                 $this->pdoConnectDuration = round((microtime(true) - $pStart) * 1000, 2);
