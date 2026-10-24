@@ -49,16 +49,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = update_booking_status($conn, $booking_id, 'approve');
             $alert_message = $result['message'];
             $alert_type = $result['success'] ? 'success' : 'warning';
+            unset($_SESSION['admin_pending_badge_cnt'], $_SESSION['admin_pending_badge_at']);
         } elseif ($action === 'reject' && $booking_id > 0) {
             $reason = trim($_POST['rejection_reason'] ?? 'Requested schedule or venue is unavailable.');
             $result = update_booking_status($conn, $booking_id, 'reject', $reason);
             $alert_message = $result['message'];
             $alert_type = 'warning';
+            unset($_SESSION['admin_pending_badge_cnt'], $_SESSION['admin_pending_badge_at']);
         } elseif ($action === 'cancel' && $booking_id > 0) {
             $reason = trim($_POST['cancellation_reason'] ?? 'Booking was cancelled.');
             $result = update_booking_status($conn, $booking_id, 'cancel', $reason);
             $alert_message = $result['message'];
             $alert_type = $result['success'] ? 'success' : 'warning';
+            unset($_SESSION['admin_pending_badge_cnt'], $_SESSION['admin_pending_badge_at']);
         } elseif ($action === 'delete_rejected' && $booking_id > 0) {
             // Only allow permanent deletion of rejected bookings
             $stmt = $conn->prepare("DELETE FROM bookings WHERE id = ? AND status = 'rejected'");

@@ -7,13 +7,13 @@ require_login();
 
 $is_main_admin = in_array($_SESSION['role'] ?? '', ['main_admin', 'super_admin']);
 
-// Fetch pending count for badge (cached / reused if already computed on page)
+// Fetch pending count for badge (fast multi-admin synchronization)
 $pending_count = 0;
 if (isset($status_counts['pending'])) {
     $pending_count = (int)$status_counts['pending'];
     $_SESSION['admin_pending_badge_cnt'] = $pending_count;
     $_SESSION['admin_pending_badge_at'] = time();
-} elseif (isset($_SESSION['admin_pending_badge_cnt']) && (time() - ($_SESSION['admin_pending_badge_at'] ?? 0)) < 120) {
+} elseif (isset($_SESSION['admin_pending_badge_cnt']) && (time() - ($_SESSION['admin_pending_badge_at'] ?? 0)) < 10) {
     $pending_count = (int)$_SESSION['admin_pending_badge_cnt'];
 } else {
     $p_res = $conn->query("SELECT COUNT(*) as cnt FROM bookings WHERE status = 'pending'");
