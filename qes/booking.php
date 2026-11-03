@@ -3604,7 +3604,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             </div>
         </div>
         <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; opacity: 0.65;">
-            &copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved. &bull; <a href="loginadmin.php" style="color: inherit; text-decoration: none;"><i class="fa-solid fa-lock" style="font-size: 10px; margin-right: 4px;"></i>Staff Portal</a>
+            &copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved.
         </div>
     </footer>
 
@@ -4472,7 +4472,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         document.body.style.overflow = originalOverflow;
                     };
                 }
-            }, [verifyModal.isOpen, emailWarningModal.isOpen, exitWarningModal.isOpen, conflictModal.isOpen, !!confirmedBooking]);
+            }, [verifyModal.isOpen, emailWarningModal.isOpen, exitWarningModal.isOpen, conflictModal.isOpen, authModalOpen, !!confirmedBooking]);
 
             // Cloudflare Turnstile Manager
             const renderTurnstileWidget = (containerSelector, widgetRef) => {
@@ -7421,12 +7421,48 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         };
 
                         const modalContent = (
-                            <div className="package-view-overlay active" style={{ zIndex: 99999999, display: 'flex' }} onClick={(e) => {
-                                if (e.target.classList.contains('package-view-overlay')) {
-                                    setAuthModalOpen(false);
-                                }
-                            }}>
-                                <div className="package-view-modal" style={{ maxWidth: '460px', width: '92%', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 25px 60px rgba(15,30,20,0.5)', background: '#ffffff', margin: 'auto' }}>
+                            <div
+                                className="exit-warning-overlay"
+                                role="dialog"
+                                aria-modal="true"
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    width: '100vw',
+                                    height: '100vh',
+                                    minHeight: '100dvh',
+                                    background: 'rgba(10, 20, 14, 0.88)',
+                                    backdropFilter: 'blur(8px)',
+                                    WebkitBackdropFilter: 'blur(8px)',
+                                    zIndex: 99999999,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    padding: '16px',
+                                    boxSizing: 'border-box'
+                                }}
+                                onClick={(e) => {
+                                    if (e.target.classList.contains('exit-warning-overlay')) {
+                                        setAuthModalOpen(false);
+                                    }
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        maxWidth: '460px',
+                                        width: '100%',
+                                        maxHeight: 'calc(100dvh - 32px)',
+                                        borderRadius: '20px',
+                                        overflowY: 'auto',
+                                        boxShadow: '0 25px 60px rgba(0,0,0,0.55)',
+                                        background: '#ffffff',
+                                        margin: 'auto',
+                                        position: 'relative'
+                                    }}
+                                >
                                     {/* Header */}
                                     <div style={{ background: 'linear-gradient(135deg, #18392b 0%, #285440 100%)', padding: '20px 24px', color: '#ffffff', position: 'relative' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

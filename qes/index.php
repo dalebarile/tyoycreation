@@ -1954,8 +1954,7 @@ if ($has_wedding) {
                         <i class="fa-solid fa-user"></i> Sign In
                     </a>
                 <?php endif; ?>
-                <a href="booking.php" class="btn-nav-guest" style="color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 7px 12px; border: 1.5px solid rgba(255,255,255,0.4); border-radius: 8px; margin-right: 6px; display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.12);"><i class="fa-solid fa-eye"></i> View as Guest</a>
-                <a href="booking.php" class="btn-nav-book">Book Now</a>
+                                <a href="booking.php" class="btn-nav-book">Book Now</a>
             </div>
         </div>
     </nav>
@@ -1978,10 +1977,7 @@ if ($has_wedding) {
                     <a href="booking.php" class="btn-primary-hero" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
                         <i class="fa-solid fa-calendar-plus"></i> Book an Event
                     </a>
-                    <a href="booking.php" class="btn-secondary-hero" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; background: #ffffff; color: #18392b; font-weight: 700; border: 2px solid #ffffff;">
-                        <i class="fa-solid fa-eye"></i> View as Guest
-                    </a>
-                    <a href="#services" class="btn-secondary-hero" style="text-decoration: none;">
+                                        <a href="#services" class="btn-secondary-hero" style="text-decoration: none;">
                         Explore Services
                     </a>
                 </div>
@@ -2352,7 +2348,7 @@ if ($has_wedding) {
                 </div>
             </div>
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; text-align: center;">
-                <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.45);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved. &bull; <a href="loginadmin.php" style="color: rgba(255,255,255,0.45); text-decoration: none; font-size: 12px;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='rgba(255,255,255,0.45)'"><i class="fa-solid fa-lock" style="font-size: 10px; margin-right: 4px;"></i>Staff Portal</a></p>
+                <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.45);">&copy; <?= date('Y') ?> <?= htmlspecialchars($business_name) ?>. All rights reserved.</p>
             </div>
         </div>
     </footer>
@@ -2564,7 +2560,7 @@ if ($has_wedding) {
                         </div>
                         <div>
                             <h3 style="font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 700; margin: 0 0 2px 0; color: #ffffff;">Client Portal</h3>
-                            <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.85);">Sign in to your account, or view packages as a guest</p>
+                            <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.85);">Sign in or create an account to book your celebration</p>
                         </div>
                     </div>
                     <button type="button" onclick="closeClientSignModal()" style="background: none; border: none; color: rgba(255,255,255,0.8); font-size: 24px; line-height: 1; cursor: pointer; padding: 4px;" aria-label="Close modal">&times;</button>
@@ -2674,13 +2670,7 @@ if ($has_wedding) {
                     </button>
                 </div>
 
-                <!-- Continue as Guest Option -->
-                <div style="margin-top: 16px; padding-top: 14px; border-top: 1.5px dashed #e5e7eb; text-align: center;">
-                    <a href="booking.php" onclick="closeClientSignModal()" style="display: flex; width: 100%; box-sizing: border-box; background: #ecfdf5; border: 1.5px solid #10b981; color: #065f46; font-weight: 700; font-size: 14px; padding: 11px 16px; border-radius: 10px; text-decoration: none; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.12);">
-                        <i class="fa-solid fa-eye"></i> View as Guest (Browse Packages) &rarr;
-                    </a>
-                    <p style="margin: 6px 0 0 0; font-size: 11.5px; color: #6b7280;">See available dates and package options without logging in</p>
-                </div>
+
             </div>
         </div>
     </div>
