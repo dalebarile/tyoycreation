@@ -1,4 +1,6 @@
 <?php
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 require_once __DIR__ . '/db.php';
 
 $business_name = get_setting($conn, 'business_name', 'Tyoy Creation');
