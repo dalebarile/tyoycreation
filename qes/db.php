@@ -1662,11 +1662,11 @@ if (!function_exists('get_event_advance_notice_rule')) {
         } elseif (strpos($t, 'kid') !== false || strpos($t, 'birthday') !== false) {
             return [
                 'type'             => 'Kids Party',
-                'notice_label'     => '2 weeks',
-                'reminder_label'   => '2 Weeks Preparation Reminder',
+                'notice_label'     => '3-7 days',
+                'reminder_label'   => '3-7 Days Preparation Reminder',
                 'months'           => 0, // Restrictions removed: user is free to choose any date from today onwards
                 'days'             => 0,
-                'recommended_time' => '2 weeks'
+                'recommended_time' => '3-7 days'
             ];
         } elseif (strpos($t, 'corporate') !== false) {
             return [

@@ -399,7 +399,7 @@ class SupabaseConnection {
         return "sqc_{$ver}_{$hash}";
     }
 
-    private function invalidateQueryCache(?string $sql = null): void {
+    private function invalidateQueryCache(?string $sql = null, array $params = []): void {
         $this->queryCache = [];
         if (class_exists('QesCache')) {
             if ($sql !== null) {
@@ -410,6 +410,12 @@ class SupabaseConnection {
                     return;
                 }
                 if (stripos($sql, 'login_attempts') !== false) {
+                    return;
+                }
+                if (stripos($sql, 'gemini_daily_api_') !== false) {
+                    return;
+                }
+                if (!empty($params) && isset($params[0]) && is_string($params[0]) && stripos($params[0], 'gemini_daily_api_') !== false) {
                     return;
                 }
             }
@@ -454,7 +460,7 @@ class SupabaseConnection {
                 return new SupabaseResult($rows);
             }
             $this->affected_rows = $stmt->rowCount();
-            $this->invalidateQueryCache($sql);
+            $this->invalidateQueryCache($sql, $params);
             return true;
         } catch (Exception $e) {
             $this->error = $e->getMessage();
@@ -578,12 +584,12 @@ class SupabaseConnection {
             }
             $this->affected_rows = count($json);
             // Invalidate cache on write operations
-            $this->invalidateQueryCache($sql);
+            $this->invalidateQueryCache($sql, $originalParams);
             return true;
         }
 
         // Invalidate cache on non-select writes
-        $this->invalidateQueryCache($sql);
+        $this->invalidateQueryCache($sql, $originalParams);
         return true;
     }
 

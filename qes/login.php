@@ -24,7 +24,7 @@ if (!empty($_SESSION['id'])) {
         $dest = $default_dest;
     }
     if (stripos($dest, 'booking.php') !== false) {
-        header("Location: index.php?show_privacy=1&target=" . urlencode($dest));
+        header("Location: " . $dest);
         exit;
     }
     header("Location: " . $dest);
@@ -693,9 +693,6 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
 
                 if (data && data.success) {
                     let nextUrl = REDIRECT_TARGET;
-                    if (nextUrl.includes('booking.php')) {
-                        nextUrl = 'index.php?show_privacy=1&target=' + encodeURIComponent(nextUrl);
-                    }
                     showAlert('<i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i> Signed in! Redirecting...', 'success');
                     if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {
@@ -746,9 +743,6 @@ $active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'register') ? 'register' 
                 const data = await res.json();
                 if (data.success) {
                     let nextUrl = REDIRECT_TARGET;
-                    if (nextUrl.includes('booking.php')) {
-                        nextUrl = 'index.php?show_privacy=1&target=' + encodeURIComponent(nextUrl);
-                    }
                     showAlert('Login successful! Redirecting...', 'success');
                     if (typeof startQesProgress === 'function') startQesProgress();
                     setTimeout(() => {

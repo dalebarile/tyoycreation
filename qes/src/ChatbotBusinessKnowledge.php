@@ -18,7 +18,7 @@
 class ChatbotBusinessKnowledge {
 
     public static function isTagalog(string $msg): bool {
-        return (bool)preg_match('/\b(kumain|kain|kamusta|kumusta|musta|ano|anong|sino|bakit|paano|saan|san|meron|mayroon|wala|ulam|ka\s*na|kana|mo\s*ba|po|opo|ba|naman|tayo|lahat|ninyo|inyo|kita|ako|ikaw|siya|sila|magkano|presyo|kasal|binyag|kaarawan|luto|uulan|ganda|pangit|bata|tao|jowa|syota|babae|lalaki|taga|pa-?book|mag-?book)\b/i', $msg);
+        return (bool)preg_match('/\b(kumain|kain|kamusta|kumusta|musta|ano|anong|sino|sinong|bakit|paano|saan|san|meron|mayroon|wala|ulam|ka\s*na|kana|mo\s*ba|po|opo|ba|naman|tayo|lahat|ninyo|inyo|kita|ako|ikaw|siya|sila|namin|atin|nila|natin|pwede|pede|i-?track|magkano|presyo|kasal|binyag|kaarawan|luto|uulan|ganda|pangit|bata|jowa|syota|babae|lalaki|taga|pa-?book|mag-?book|petsa|bakante|kailan|kelan)\b/i', $msg);
     }
 
     /**
@@ -88,7 +88,7 @@ class ChatbotBusinessKnowledge {
                     . "Kahit ubos na ang API credits o walang internet, masasagot pa rin ng chatbot ang **lahat ng mahalagang impormasyon sa inyong okasyon**:\n\n"
                     . "1. 💍 **Mga Packages at Presyo:** Live pricing ng Wedding (Intimate, Grand, Arch, Entourage), Kids Parties, Debut, at Catering.\n"
                     . "2. 📋 **Staff Review Policy:** Bakit kailangang suriin ng coordinator ang booking bago magbayad ng downpayment.\n"
-                    . "3. ⏳ **Preparation Reminders:** Inirerekomenda ang 3 months para sa kasal at 2 weeks para sa kids party, ngunit malayang makakapili ng petsa ang kliyente simula ngayong araw.\n"
+                    . "3. ⏳ **Preparation Reminders:** Inirerekomenda ang 3 months para sa kasal at 3-7 days para sa kids party, ngunit malayang makakapili ng petsa ang kliyente simula ngayong araw.\n"
                     . "4. 💳 **Downpayment at Pagbabayad:** 30–50% reservation terms, GCash, Maya, BDO, BPI, at patakaran sa paniningil.\n"
                     . "5. 📍 **Lokasyon at Service Areas:** Metro Manila, Rizal, Cavite, Laguna, Batangas, Bulacan, at Tagaytay.\n"
                     . "6. 🗓️ **Rescheduling at Cancellation:** 30-day notice policy at weather backup para sa outdoor events.\n"
@@ -113,7 +113,7 @@ class ChatbotBusinessKnowledge {
                 . "Even when external AI credits are depleted, our chatbot answers **all essential event planning questions**:\n\n"
                 . "1. 💍 **Packages & Live Pricing:** Weddings (Intimate, Grand, Arch, Entourage), Kids Parties, Debut, and Catering tiers.\n"
                 . "2. 📋 **Staff Review Policy:** Why bookings require coordinator verification before downpayment is collected.\n"
-                . "3. ⏳ **Preparation Reminders:** Recommended 3 months for weddings and 2 weeks for kids parties, though clients have free will to choose any date from today onwards.\n"
+                . "3. ⏳ **Preparation Reminders:** Recommended 3 months for weddings and 3-7 days for kids parties, though clients have free will to choose any date from today onwards.\n"
                 . "4. 💳 **Payment & Downpayment:** 30–50% reservation terms, accepted channels (GCash, Maya, Bank Transfer, Cash).\n"
                 . "5. 📍 **Office & Service Coverage:** Metro Manila and nearby provinces (Cavite, Laguna, Batangas, Rizal, Bulacan, Tagaytay).\n"
                 . "6. 🗓️ **Rescheduling & Cancellations:** 30-day notice rules and outdoor weather contingency procedures.\n"
@@ -157,6 +157,38 @@ class ChatbotBusinessKnowledge {
                 . "• 🚫 **Cancellation & Deposit Terms:** Reservation deposits are non-refundable as they immediately lock your date on our calendar and fund custom material procurement. However, with advance notice, approved deposits can often be credited toward a future rescheduled celebration date upon coordinator review.\n"
                 . "• 🌧️ **Weather Contingency (Outdoor Events):** For outdoor garden or open-air celebrations, our coordination team prepares a pre-agreed weather backup plan (such as transferring to a covered pavilion or indoor hall) to protect fresh floral arches, balloon backdrops, and electrical equipment.\n\n"
                 . "For schedule adjustments or policy inquiries, please contact our team directly at **{$b_phone}** or **{$b_email}**.";
+        }
+
+        // ── 3B. COMBINED LEAD TIME & DOWNPAYMENT / GENERAL POLICIES ─────────
+        $has_lead_time_kw = (bool)preg_match('/\b(lead\s*time|advance\s*(?:notice|booking|reservation)?|preparation\s*(?:time|reminder)?|how\s*early|gaano\s*kaaga|notice\s*period)\b/i', $lower);
+        $has_downpayment_kw = (bool)preg_match('/\b(downpayment|deposit|payment|bayad|down\s*payment|terms\s*of\s*payment)\b/i', $lower);
+        $has_general_policies_kw = (bool)preg_match('/\b(policies|policy|patakaran|tuntunin|booking\s*rules?)\b/i', $lower);
+
+        if (($has_lead_time_kw && $has_downpayment_kw) || ($has_general_policies_kw && ($has_lead_time_kw || $has_downpayment_kw))) {
+            if ($is_tagalog) {
+                return "📜 **Patakaran sa Lead Time, Preparation Reminders, at Downpayment ({$b_name}):**\n\n"
+                    . "### ⏳ 1. Lead Time & Preparation Reminders:\n"
+                    . "• 💍 **Weddings (Kasal):** **3 Months Preparation Reminder** (inirerekomenda ang 3 buwang paghahanda para sa floral procurement at coordination).\n"
+                    . "• 🎈 **Kids Parties & Birthdays:** **3-7 Days Preparation Reminder** (inirerekomenda ang 3 hanggang 7 araw para sa backdrops, themed props, at balloons).\n"
+                    . "• 👑 **Debut & Celebrations:** **2 Weeks Preparation Reminder**.\n"
+                    . "• 📌 *Paalala:* Malaya kayong makapili ng petsa simula ngayong araw—walang lockout restrictions!\n\n"
+                    . "### 💳 2. Downpayment & Payment Terms:\n"
+                    . "• 🔒 **Proteksyon sa Chat:** HINDI kami tumatanggap ng bayad sa chat para sa inyong seguridad.\n"
+                    . "• 📑 **Reservation Deposit:** Karaniwang **30% hanggang 50% downpayment** pagkatapos maipasa ang opisyal na Staff Review upang ma-lock ang inyong petsa.\n"
+                    . "• 🏦 **Paraan ng Pagbabayad:** Bank Transfer (BDO, BPI, Metrobank), E-Wallets (GCash, Maya), o On-site cash settlement.\n\n"
+                    . "👉 Handa na bang mag-inquire? I-click ang **'Book Now'** button sa aming website!";
+            }
+            return "📜 **Lead Time, Preparation Reminders & Downpayment Policies ({$b_name}):**\n\n"
+                . "### ⏳ 1. Scheduling & Preparation Reminders:\n"
+                . "• 💍 **Weddings:** **3 Months Preparation Reminder** (recommended buffer for custom florals, fabrication, and coordination).\n"
+                . "• 🎈 **Kids Parties & Birthdays:** **3-7 Days Preparation Reminder** (recommended 3 to 7 days for balloons, props, and theme crafting).\n"
+                . "• 👑 **Debut & Milestone Events:** **2 Weeks Preparation Reminder**.\n"
+                . "• 📌 *Flexible Policy:* You have complete free will to select any date starting from today onwards.\n\n"
+                . "### 💳 2. Downpayment & Payment Terms:\n"
+                . "• 🔒 **Security Guarantee:** Payments are **NEVER collected inside this chat**.\n"
+                . "• 📑 **Reservation Downpayment:** A **30% to 50% reservation deposit** is required once your inquiry passes Staff Review to officially lock your slot.\n"
+                . "• 🏦 **Accepted Channels:** Online Bank Transfer (BDO, BPI, Metrobank), E-Wallets (GCash, Maya QR), and on-site cash settlement.\n\n"
+                . "👉 Ready to begin? Click the **'Book Now'** button on our website to submit your inquiry!";
         }
 
         // ── 4. PAYMENT TERMS, DOWNPAYMENT, DEPOSIT & SECURITY ─────────────────
@@ -205,7 +237,7 @@ class ChatbotBusinessKnowledge {
                 return "⏳ **Patakaran at Preparation Reminder ng {$b_name}:**\n\n"
                     . "Maaari kayong malayang pumili ng anumang petsa mula sa araw na ito! Upang magabayan kayo sa sapat na oras ng paghahanda, narito ang aming inirerekomendang preparation reminders:\n\n"
                     . "• 💍 **Weddings (Kasal):** **3 Months Preparation Reminder** (inirerekomenda ang 3 buwang paghahanda para sa floral procurement at coordination).\n"
-                    . "• 🎈 **Kids Parties & Birthdays:** **2 Weeks Preparation Reminder** (inirerekomenda ang 2 linggong paghahanda para sa backdrops at props).\n"
+                    . "• 🎈 **Kids Parties & Birthdays:** **3-7 Days Preparation Reminder** (inirerekomenda ang 3 hanggang 7 araw na preparasyon para sa backdrops at props).\n"
                     . "• 👑 **Debut & Milestone Celebrations:** **2 Weeks Preparation Reminder**.\n"
                     . "• 🏢 **Corporate & Special Events:** **2 Weeks Preparation Reminder**.\n\n"
                     . "📌 **Tandaan:** Malaya kayong pumili ng inyong target date sa aming booking form simula sa araw na ito.\n\n"
@@ -214,11 +246,28 @@ class ChatbotBusinessKnowledge {
             return "⏳ **Booking Preparation Reminders & Scheduling Policy ({$b_name}):**\n\n"
                 . "You have complete free will to select any event date from today onwards! To help you plan ahead, we observe the following preparation reminders:\n\n"
                 . "• 💍 **Weddings:** **3 Months Preparation Reminder** (recommended 3 months buffer for floral sourcing, custom fabrication, and coordination).\n"
-                . "• 🎈 **Kids Parties & Birthdays:** **2 Weeks Preparation Reminder** (recommended 2 weeks for props, balloons, and theme crafting).\n"
+                . "• 🎈 **Kids Parties & Birthdays:** **3-7 Days Preparation Reminder** (recommended 3 to 7 days for props, balloons, and theme crafting).\n"
                 . "• 👑 **Debut & Milestone Events:** **2 Weeks Preparation Reminder**.\n"
                 . "• 🏢 **Corporate & Special Events:** **2 Weeks Preparation Reminder**.\n\n"
                 . "📌 **Flexible Scheduling:** There are no lock-out restrictions—you are free to choose any celebration date starting from today onwards.\n\n"
                 . "👉 Ready to reserve? Click the **'Book Now'** button on our website to begin!";
+        }
+
+        // ── 6B. SPECIFIC DATE & MONTH CALENDAR AVAILABILITY (PRIORITIZED BEFORE PACKAGES) ──
+        $has_avail_intent = (bool)preg_match('/\b(avail[a-z]*|avaliab[a-z]*|avaiable|open\s*dates?|free\s*dates?|open\s*slots?|free\s*slots?|bakante|petsa|may\s*slot\s*pa|booked\s*dates?|kailan\s*available|calendar|schedule\s*check|can\s+i\s+book|pwede\s+(?:ba\s+)?(?:mag-?book|i-?book)|is\s+[a-z0-9,\s]+\s+available|dates?\s+this\s+month|dates?\s+next\s+month)\b/i', $lower);
+
+        // Check for specific date queries (e.g. "January 1, 2027", "Feb 14, 2027", "tomorrow", etc.)
+        $parsed_date = self::extractDateFromMessage($msg);
+        if ($parsed_date !== null && ($has_avail_intent || preg_match('/\b(book|reserve|wedding|kasal|birthday|party|event|debut)\b/i', $lower))) {
+            return self::resolveSpecificDateQuery($conn, $parsed_date, $msg, $is_tagalog, $b_name, $b_email);
+        }
+
+        // Check for "this month", "next month" or specific month query (e.g. "what are the available dates this month", "available in November 2026")
+        if (preg_match('/\b(this\s*month|current\s*month|ngayong\s*buwan|next\s*month|sunod\s*na\s*buwan)\b/i', $lower) || (preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})?\b/i', $lower) && ($has_avail_intent || preg_match('/\b(date|dates|schedule|slot|slots)\b/i', $lower)))) {
+            $month_result = self::resolveMonthAvailabilityQuery($conn, $msg, $is_tagalog, $b_name);
+            if ($month_result !== null) {
+                return $month_result;
+            }
         }
 
         // ── 7. WEDDING PACKAGES & FLORAL STYLING ──────────────────────────────
@@ -288,14 +337,14 @@ class ChatbotBusinessKnowledge {
                 return "🎈 **Kids Party at Birthday Styling Packages ({$b_name}):**\n\n"
                     . "Binibigyang-buhay namin ang inyong selebrasyon sa pamamagitan ng makukulay na organic balloon installations, custom backdrops, at paboritong character props:\n\n"
                     . $theme_text . "\n"
-                    . "⏳ **Preparation Reminder:** Inirerekomenda ang **2 linggo (14 days)** para sa paghahanda ng themed props at balloons (malayang makakapili ng petsa simula ngayong araw).\n"
+                    . "⏳ **Preparation Reminder:** Inirerekomenda ang **3-7 araw (3-7 days)** para sa paghahanda ng themed props at balloons (malayang makakapili ng petsa simula ngayong araw).\n"
                     . "📋 **Staff Review:** Susuriin ng aming coordination team ang inyong theme at character standees sa loob ng 24–48 oras.\n\n"
                     . "👉 Pindutin ang **'Book Now'** sa website upang pumili ng tema at makakuha ng instant quotation!";
             }
             return "🎈 **Kids Party & Birthday Styling Packages ({$b_name}):**\n\n"
                 . "We bring vibrant celebrations to life with bespoke organic balloon installations, custom backdrops, and festive character props:\n\n"
                 . $theme_text . "\n"
-                . "⏳ **Preparation Reminder:** Recommended **2 weeks preparation time** for kids parties and birthdays (clients are free to choose any date from today onwards).\n"
+                . "⏳ **Preparation Reminder:** Recommended **3-7 days preparation time** for kids parties and birthdays (clients are free to choose any date from today onwards).\n"
                 . "📋 **Staff Review Notice:** All packages and character details are reviewed by our coordination team within 24–48 hours.\n\n"
                 . "👉 Click **'Book Now'** on our website to choose your theme and get an instant quotation!";
         }
@@ -402,8 +451,8 @@ class ChatbotBusinessKnowledge {
                 . "👉 Add photo & video coverage directly when booking on our website!";
         }
 
-        // ── 15. CALENDAR AVAILABILITY & SPECIFIC DATE LOOKUP ───────────────────
-        $has_avail_intent = (bool)preg_match('/\b(availab[a-z]*|available|availability|open\s*dates?|petsa|may\s*slot\s*pa|booked\s*dates?|kailan\s*available|calendar|schedule\s*check|can\s+i\s+book|pwede\s+(?:ba\s+)?(?:mag-?book|i-?book)|is\s+[a-z0-9,\s]+\s+available)\b/i', $lower);
+        // ── 14. CALENDAR AVAILABILITY & SPECIFIC DATE LOOKUP ───────────────────
+        $has_avail_intent = (bool)preg_match('/\b(avail[a-z]*|avaliab[a-z]*|avaiable|open\s*dates?|free\s*dates?|open\s*slots?|free\s*slots?|bakante|petsa|may\s*slot\s*pa|booked\s*dates?|kailan\s*available|calendar|schedule\s*check|can\s+i\s+book|pwede\s+(?:ba\s+)?(?:mag-?book|i-?book)|is\s+[a-z0-9,\s]+\s+available|dates?\s+this\s+month|dates?\s+next\s+month)\b/i', $lower);
 
         // Check for specific date queries (e.g. "January 1, 2027", "Feb 14, 2027", "tomorrow", etc.)
         $parsed_date = self::extractDateFromMessage($msg);
@@ -411,8 +460,8 @@ class ChatbotBusinessKnowledge {
             return self::resolveSpecificDateQuery($conn, $parsed_date, $msg, $is_tagalog, $b_name, $b_email);
         }
 
-        // Check for "next month" or specific month query (e.g. "Which dates are available next month?", "available in November 2026")
-        if (preg_match('/\b(next\s*month|sunod\s*na\s*buwan)\b/i', $lower) || (preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})?\b/i', $lower) && $has_avail_intent)) {
+        // Check for "this month", "next month" or specific month query (e.g. "what are the availble dates this month", "available in November 2026")
+        if (preg_match('/\b(this\s*month|current\s*month|ngayong\s*buwan|next\s*month|sunod\s*na\s*buwan)\b/i', $lower) || (preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})?\b/i', $lower) && ($has_avail_intent || preg_match('/\b(date|dates|schedule|slot|slots|book)\b/i', $lower)))) {
             $month_result = self::resolveMonthAvailabilityQuery($conn, $msg, $is_tagalog, $b_name);
             if ($month_result !== null) {
                 return $month_result;
@@ -430,7 +479,7 @@ class ChatbotBusinessKnowledge {
                 . $booked_list
                 . "⏳ **Recommended Preparation Reminders:**\n"
                 . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
-                . "• 🎈 **Kids Party / Other Events:** 2 Weeks Preparation Reminder\n\n"
+                . "• 🎈 **Kids Party / Other Events:** 3-7 Days Preparation Reminder\n\n"
                 . "*(Note: Clients have free will to select any date from today onwards)*\n\n"
                 . "📋 **Staff Review Notice:** Because slot availability is dynamic, dates are officially secured once our coordinators complete Staff Review and your deposit is confirmed.\n\n"
                 . "👉 Would you like to check a specific date (e.g. *\"Is January 1, 2027 available?\"*) or start your inquiry via **'Book Now'**?";
@@ -526,6 +575,20 @@ class ChatbotBusinessKnowledge {
 
         // Check if database is unavailable
         if (!$conn || (isset($conn->connect_error) && !empty($conn->connect_error))) {
+            $cached_dates_map = class_exists('QesCache') ? QesCache::get('cb_booked_dates_map') : null;
+            if (is_array($cached_dates_map)) {
+                $is_booked_in_cache = isset($cached_dates_map[$targetDate]);
+                if ($is_booked_in_cache) {
+                    return $is_tagalog 
+                        ? "🔴 **Fully Booked:** Ang **{$friendly_date}** ay may nakalaan na pong kumpirmadong okasyon sa aming schedule.\n\n👉 Nais niyo po bang mag-inquire para sa ibang petsa gamit ang aming **'Book Now'** button sa website?"
+                        : "🔴 **Fully Booked:** **{$friendly_date}** is already booked on our schedule.\n\n👉 Would you like to select an alternate date via the **'Book Now'** form on our website?";
+                } else {
+                    return $is_tagalog
+                        ? "🟢 **Available ang {$friendly_date}!** Wala pa pong kumpirmadong okasyon sa petsang ito.\n\n👉 I-click ang **'Book Now'** sa aming website upang magsumite ng inquiry!"
+                        : "🟢 **{$friendly_date} is available!** There are currently no confirmed celebrations for this date.\n\n👉 Click **'Book Now'** on our website to submit your inquiry!";
+                }
+            }
+
             if ($is_tagalog) {
                 return "⚠️ **Pansamantalang Hindi Ma-verify ang Availability:**\n\n"
                     . "Hindi namin kasalukuyang makumpirma ang availability para sa **{$friendly_date}** dahil sa pansamantalang isyu sa database connection. Mangyaring sumubok muli sa ilang sandali o mag-email sa aming team sa {$b_email}.";
@@ -542,6 +605,21 @@ class ChatbotBusinessKnowledge {
             }
             return "⏳ **Past Date:**\n\n"
                 . "**{$friendly_date}** is already in the past. We only accept booking inquiries for today onwards. Please select an upcoming date!";
+        }
+
+        // Retrieve or set cached booked dates to guarantee instant resilience if DB is slow
+        $cached_dates_map = class_exists('QesCache') ? QesCache::get('cb_booked_dates_map') : null;
+        if (!is_array($cached_dates_map) && $conn && (!isset($conn->connect_error) || empty($conn->connect_error))) {
+            $cached_dates_map = [];
+            $res_map = $conn->query("SELECT DATE(event_start) as dt FROM bookings WHERE (status = 'approved' OR status = 'completed') AND event_start >= CURDATE()");
+            if ($res_map) {
+                while ($rm = $res_map->fetch_assoc()) {
+                    $cached_dates_map[trim((string)$rm['dt'])] = true;
+                }
+            }
+            if (class_exists('QesCache')) {
+                QesCache::set('cb_booked_dates_map', $cached_dates_map, 600);
+            }
         }
 
         // Check database conflict using shared function
@@ -588,7 +666,7 @@ class ChatbotBusinessKnowledge {
         $is_wedding = (bool)preg_match('/\b(wedding|kasal)\b/i', $msg);
         $lead_reminder = $is_wedding 
             ? "💍 **Weddings:** Inirerekomenda ang 3 buwang paghahanda para sa floral procurement at coordination."
-            : "🎈 **Preparation Reminder:** Inirerekomenda ang 2 linggong pasabi para sa flawless execution.";
+            : "🎈 **Preparation Reminder:** Inirerekomenda ang 3-7 araw na pasabi para sa flawless execution.";
 
         if ($is_tagalog) {
             return "🟢 **Magandang Balita! Available ang {$friendly_date}!**\n\n"
@@ -601,7 +679,7 @@ class ChatbotBusinessKnowledge {
 
         $lead_reminder_en = $is_wedding 
             ? "💍 **Weddings:** We recommend a 3-month preparation window for floral styling & full coordination."
-            : "🎈 **Preparation Reminder:** We recommend at least 2 weeks advance notice for seamless styling execution.";
+            : "🎈 **Preparation Reminder:** We recommend at least 3-7 days advance notice for seamless styling execution.";
 
         return "🟢 **Great News! {$friendly_date} is currently available!**\n\n"
             . "There are currently no confirmed celebrations booked on our Master Calendar for this calendar date.\n\n"
@@ -619,7 +697,10 @@ class ChatbotBusinessKnowledge {
         $targetYearMonth = null;
         $monthName = '';
 
-        if (preg_match('/\b(next\s*month|sunod\s*na\s*buwan)\b/i', $lower)) {
+        if (preg_match('/\b(this\s*month|current\s*month|ngayong\s*buwan)\b/i', $lower)) {
+            $targetYearMonth = date('Y-m');
+            $monthName = date('F Y');
+        } elseif (preg_match('/\b(next\s*month|sunod\s*na\s*buwan)\b/i', $lower)) {
             $targetYearMonth = date('Y-m', strtotime('+1 month'));
             $monthName = date('F Y', strtotime('+1 month'));
         } elseif (preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})?\b/i', $lower, $m)) {

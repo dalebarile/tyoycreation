@@ -2763,6 +2763,7 @@ if ($has_wedding) {
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Gusto ko po makausap ang human coordinator')"><i class="fa-solid fa-headset" style="color: #10b981;"></i><span>Talk to human coordinator</span></button>
                     </div>
                 </div>
             </div>
@@ -3289,6 +3290,7 @@ if ($has_wedding) {
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Gusto ko po makausap ang human coordinator')"><i class="fa-solid fa-headset" style="color: #10b981;"></i><span>Talk to human coordinator</span></button>
                     </div>
                 </div>
             `;
@@ -3334,6 +3336,7 @@ if ($has_wedding) {
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Gusto ko po makausap ang human coordinator')"><i class="fa-solid fa-headset" style="color: #10b981;"></i><span>Talk to human coordinator</span></button>
                         </div>
                     </div>
                 `;
@@ -3474,13 +3477,19 @@ if ($has_wedding) {
                     : "Hello! I'm Anton, the AI assistant for Tyoy Creation. I can help you with event packages, live pricing, date availability, and booking guidance. What celebration are you planning?";
             }
 
-            if (/\b(date|dates|availab|open|slot|schedule|petsa|calendar|kailan|kelan)\b/i.test(m)) {
+            if (/\b(lead\s*time|downpayment|down\s*payment|deposit|bayad|policy|policies|patakaran|reminder|preparation)\b/i.test(m)) {
+                return isTl
+                    ? "📜 **Lead Time & Downpayment Policies:**\n\n• ⏳ **Preparation Reminders:** Weddings: 3 buwan (3 months), Kids Party: 3-7 araw (3-7 days), Debut: 2 linggo (2 weeks). Malaya kayong makapili ng petsa simula ngayon!\n• 💳 **Downpayment:** 30% hanggang 50% reservation deposit matapos maipasa ang Staff Review (hindi kami tumatanggap ng bayad sa chat para sa seguridad).\n\n👉 I-click ang **'Book Now'** upang simulan ang inyong inquiry!"
+                    : "📜 **Lead Time & Downpayment Policies:**\n\n• ⏳ **Preparation Reminders:** Weddings: 3 Months, Kids Parties: 3-7 Days, Debut: 2 Weeks. Clients have complete free will to select any date starting today!\n• 💳 **Downpayment:** 30% to 50% reservation deposit required once your booking passes Staff Review (payments are never collected inside this chat).\n\n👉 Click the **'Book Now'** button on our website to begin your inquiry!";
+            }
+
+            if (/\b(date|dates|avail|bakante|open|slot|schedule|petsa|calendar|kailan|kelan)\b/i.test(m)) {
                 return isTl
                     ? "🗓️ **Date Availability:** Upang makita ang live calendar ng mga available na petsa, maaari niyo pong buksan ang aming **'Book Now'** form sa website. Ipinapatupad po namin ang *One Confirmed Event Per Day* policy. Nais niyo po bang mag-inquire para sa partikular na petsa?"
                     : "🗓️ **Date Availability:** You can check our live calendar anytime by clicking the **'Book Now'** button on our website. We maintain a strict *One Confirmed Event Per Day* policy. Would you like to inquire about a specific celebration date?";
             }
 
-            if (/\b(package|packages|price|prices|rate|rates|cost|magkano|presyo|bayad|wedding|kasal|party|debut)\b/i.test(m)) {
+            if (/\b(package|packages|price|prices|rate|rates|cost|magkano|presyo|wedding|kasal|party|debut)\b/i.test(m)) {
                 return isTl
                     ? "💍🎈 **Packages at Presyo:** Mayroon kaming kumpletong packages para sa Kasal (Weddings), Kids Parties, Debut, at Catering add-ons. I-click ang **'Book Now'** upang makita ang buong price breakdown at makabuo ng inyong instant quotation!"
                     : "💍🎈 **Packages & Pricing:** We offer complete styling packages for Weddings, Kids Parties, Debut, and Catering add-ons. Click the **'Book Now'** button on our website to explore our interactive package builder and live pricing!";
@@ -3525,7 +3534,7 @@ if ($has_wedding) {
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
             const abortCtrl = new AbortController();
-            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 4000); // 4-second responsive SLA
+            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 10000); // 10-second SLA ceiling
 
             try {
                 const res = await fetch('chatbot.php', {
@@ -3614,44 +3623,39 @@ if ($has_wedding) {
                 try { history.replaceState(null, '', window.location.pathname); } catch(e){}
             } else if (urlParams.get('booking') === '1') {
                 const target = urlParams.get('target') || 'booking.php';
-                if (IS_USER_LOGGED_IN) {
+                const hasAgreedPrivacy = (() => {
+                    try { return sessionStorage.getItem('tyoy_privacy_agreed') === '1'; } catch(err) { return false; }
+                })();
+                if (!hasAgreedPrivacy) {
                     openIndexPrivacyModal(target);
                 } else {
-                    openClientSignModal(target);
+                    window.location.href = target;
                 }
                 try { history.replaceState(null, '', window.location.pathname); } catch(e){}
             }
 
             // Booking Flow Controller:
-            // 1. Landing Page -> Click Book
-            // 2. If already signed in -> allow proceed directly to Data Privacy Act (or booking page if already agreed)
-            // 3. If NOT signed in -> Opens Log In / Sign Up or Connect Google modal -> once signed* -> Data Privacy Act -> booking page
+            // 1. Landing Page -> Click Book (Allows Guest or Signed-In users to view packages and availability)
+            // 2. Check Data Privacy consent before navigating (if not agreed yet, show privacy modal)
+            // 3. Guest can freely configure selections; authentication is handled seamlessly upon pushing "Submit" on booking.php
             document.querySelectorAll('a[href^="booking.php"]').forEach(link => {
                 link.addEventListener('click', (e) => {
                     const targetHref = link.getAttribute('href') || 'booking.php';
+                    const hasAgreedPrivacy = (() => {
+                        try { return sessionStorage.getItem('tyoy_privacy_agreed') === '1'; } catch(err) { return false; }
+                    })();
 
-                    // If user is ALREADY signed in: remove/skip sign-in modal completely
-                    if (IS_USER_LOGGED_IN) {
-                        const hasAgreedPrivacy = (() => {
-                            try { return sessionStorage.getItem('tyoy_privacy_agreed') === '1'; } catch(err) { return false; }
-                        })();
-
-                        if (!hasAgreedPrivacy) {
-                            e.preventDefault();
-                            openIndexPrivacyModal(targetHref);
-                            return;
-                        }
-                        // Already agreed: allow direct navigation to booking page
-                        return;
-                    }
-
-                    // Not signed in: open Client Sign In / Google connect modal
-                    e.preventDefault();
                     const isInsidePricingModal = !!link.closest('#birthdayPackageModal, #weddingPackageModal, .package-view-modal');
                     if (isInsidePricingModal) {
                         closePackageModal();
                     }
-                    openClientSignModal(targetHref);
+
+                    if (!hasAgreedPrivacy) {
+                        e.preventDefault();
+                        openIndexPrivacyModal(targetHref);
+                        return;
+                    }
+                    // Already agreed: allow direct navigation to booking page as guest or signed-in user
                 });
             });
         });

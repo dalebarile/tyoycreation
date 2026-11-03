@@ -19,13 +19,8 @@ if (empty($_SESSION['id'])) {
 $is_client_logged_in = !empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user');
 $is_admin_logged_in = !empty($_SESSION['id']) && isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'super_admin', 'main_admin'], true);
 
-// Client MUST be logged in or signed up in order to book
-if (!$is_client_logged_in && !$is_admin_logged_in) {
-    $queryString = !empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '';
-    $redirect_url = 'index.php?booking=1' . (!empty($_SERVER['QUERY_STRING']) ? '&' . $_SERVER['QUERY_STRING'] : '');
-    header('Location: ' . $redirect_url);
-    exit;
-}
+// Guest mode allowed: Visitors can view event packages, check calendar availability, and customize options.
+// Authentication is enforced when pushing the "Submit" button, retaining all package selections.
 
 // Database-driven pricing packages
 $pricing_theme = get_packages_pricing($conn, 'theme_party');
@@ -57,7 +52,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     $initial_family = 'theme_party';
     $initial_min_date = $today_date;
     $initial_min_formatted = $today_formatted;
-    $initial_notice_label = '2 Weeks Preparation Reminder';
+    $initial_notice_label = '3-7 Days Preparation Reminder';
 }
 ?>
 <!DOCTYPE html>
@@ -3559,7 +3554,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
                     </a>
                 <?php else: ?>
-                    <a href="login.php?redirect=booking.php" class="btn-nav-client-signin">
+                    <a href="login.php?redirect=booking.php" class="btn-nav-client-signin" id="bookingNavSignInBtn" onclick="if(window.qesOpenBookingAuthModal){ event.preventDefault(); window.qesOpenBookingAuthModal(); }">
                         <i class="fa-solid fa-user"></i> Sign In
                     </a>
                 <?php endif; ?>
@@ -3703,6 +3698,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Gusto ko po makausap ang human coordinator')"><i class="fa-solid fa-headset" style="color: #10b981;"></i><span>Talk to human coordinator</span></button>
                     </div>
                 </div>
             </div>
@@ -3779,7 +3775,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const todayFormatted = config.todayFormatted || '';
             const minDateStr = todayStr;
             const minDateFormatted = todayFormatted;
-            const reminderLabel = isWedding ? '3 Months Preparation Reminder' : '2 Weeks Preparation Reminder';
+            const reminderLabel = isWedding ? '3 Months Preparation Reminder' : '3-7 Days Preparation Reminder';
 
             // Active catalog based on family (theme_party or wedding)
             const currentCatalog = useMemo(() => isWedding ? (config.pricingWedding || {}) : (config.pricingTheme || {}), [isWedding, config]);
@@ -3806,13 +3802,87 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const [eventDate, setEventDate] = useState(todayStr);
             const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
 
-            // Restore preserved draft on mount if user was redirected from a session expiry
+            // Authentication & Guest State
+            const [isUserLoggedIn, setIsUserLoggedIn] = useState(config.userLoggedIn || false);
+            const [authModalOpen, setAuthModalOpen] = useState(false);
+            const [authTab, setAuthTab] = useState('login'); // 'login' | 'register'
+            const [authAlert, setAuthAlert] = useState({ text: '', type: 'error' });
+            const [authLoading, setAuthLoading] = useState(false);
+            const [loginIdentifier, setLoginIdentifier] = useState('');
+            const [loginPassword, setLoginPassword] = useState('');
+            const [regFullName, setRegFullName] = useState('');
+            const [regUsername, setRegUsername] = useState('');
+            const [regPhone, setRegPhone] = useState('');
+            const [regEmail, setRegEmail] = useState('');
+            const [regPassword, setRegPassword] = useState('');
+            const [regConfirmPassword, setRegConfirmPassword] = useState('');
+            const [regPrivacy, setRegPrivacy] = useState(false);
+            const [showLoginPassword, setShowLoginPassword] = useState(false);
+            const [showRegPassword, setShowRegPassword] = useState(false);
+            const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
+            const [justSignedInNotice, setJustSignedInNotice] = useState(false);
+
+            // Comprehensive Draft Saver (preserves checked packages and all form fields)
+            const saveCurrentDraft = () => {
+                try {
+                    const draft = {
+                        family,
+                        eventType,
+                        eventTitle,
+                        eventDate,
+                        eventTime,
+                        guestCount,
+                        locationVenue,
+                        specialNotes,
+                        activeStep3GroupKey,
+                        selectedItems, // Retains all checked packages
+                        clientName,
+                        clientEmail,
+                        clientPhone,
+                        clientAddress,
+                        selectedRegion,
+                        selectedCity,
+                        selectedBarangay,
+                        streetDetail,
+                        isManualAddress
+                    };
+                    const str = JSON.stringify(draft);
+                    sessionStorage.setItem('qes_booking_saved_draft', str);
+                    localStorage.setItem('qes_booking_saved_draft', str);
+                } catch (e) {}
+            };
+
+            // Auto-save draft on any change so packages remain checked and data is retained
+            useEffect(() => {
+                saveCurrentDraft();
+            }, [family, eventType, eventTitle, eventDate, eventTime, guestCount, locationVenue, specialNotes, activeStep3GroupKey, selectedItems, clientName, clientEmail, clientPhone, clientAddress, selectedRegion, selectedCity, selectedBarangay, streetDetail, isManualAddress]);
+
+            // Expose modal opener to window for navbar Sign In button
+            useEffect(() => {
+                window.qesOpenBookingAuthModal = () => {
+                    saveCurrentDraft();
+                    setAuthModalOpen(true);
+                    setAuthTab('login');
+                    setAuthAlert({ text: '', type: 'error' });
+                };
+                return () => {
+                    delete window.qesOpenBookingAuthModal;
+                };
+            });
+
+            // Restore preserved draft on mount (retaining checked packages & all details)
             useEffect(() => {
                 try {
-                    const saved = sessionStorage.getItem('qes_booking_saved_draft');
+                    const saved = sessionStorage.getItem('qes_booking_saved_draft') || localStorage.getItem('qes_booking_saved_draft');
                     if (saved) {
                         const d = JSON.parse(saved);
                         if (d && typeof d === 'object') {
+                            if (d.family) setFamily(d.family);
+                            if (d.eventType) setEventType(d.eventType);
+                            if (d.activeStep3GroupKey) setActiveStep3GroupKey(d.activeStep3GroupKey);
+                            if (d.selectedItems && typeof d.selectedItems === 'object') {
+                                setSelectedItems(d.selectedItems); // Retains checked packages
+                            }
                             if (d.clientName) setClientName(d.clientName);
                             if (d.clientEmail) setClientEmail(d.clientEmail);
                             if (d.clientPhone) setClientPhone(d.clientPhone);
@@ -3823,7 +3893,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             if (d.guestCount) setGuestCount(String(d.guestCount));
                             if (d.locationVenue) setLocationVenue(d.locationVenue);
                             if (d.specialNotes) setSpecialNotes(d.specialNotes);
-                            sessionStorage.removeItem('qes_booking_saved_draft');
+                            if (d.selectedRegion) setSelectedRegion(d.selectedRegion);
+                            if (d.selectedCity) setSelectedCity(d.selectedCity);
+                            if (d.selectedBarangay) setSelectedBarangay(d.selectedBarangay);
+                            if (d.streetDetail) setStreetDetail(d.streetDetail);
+                            if (typeof d.isManualAddress === 'boolean') setIsManualAddress(d.isManualAddress);
                         }
                     }
                 } catch (e) {}
@@ -3832,10 +3906,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 fetch('booking_submit.php?action=whoami')
                     .then(r => r.json())
                     .then(data => {
-                        if (data && data.loggedIn && data.user) {
-                            setClientName(prev => prev || data.user.full_name || '');
-                            setClientEmail(prev => prev || data.user.email || '');
-                            setClientPhone(prev => prev || data.user.phone || '');
+                        if (data && data.loggedIn) {
+                            setIsUserLoggedIn(true);
+                            if (data.user) {
+                                setClientName(prev => prev || data.user.full_name || '');
+                                setClientEmail(prev => prev || data.user.email || '');
+                                setClientPhone(prev => prev || data.user.phone || '');
+                            }
                         }
                     })
                     .catch(() => {});
@@ -4385,7 +4462,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
             // Lock body scroll when any modal is open
             useEffect(() => {
-                const isAnyModalOpen = verifyModal.isOpen || emailWarningModal.isOpen || exitWarningModal.isOpen || conflictModal.isOpen || !!confirmedBooking;
+                const isAnyModalOpen = verifyModal.isOpen || emailWarningModal.isOpen || exitWarningModal.isOpen || conflictModal.isOpen || authModalOpen || !!confirmedBooking;
                 if (isAnyModalOpen) {
                     const originalOverflow = document.body.style.overflow;
                     document.body.style.overflow = 'hidden';
@@ -4974,10 +5051,22 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 return Object.keys(errs).length === 0;
             };
 
-            // Intercept submit to show Email Warning & Typo Check Modal
+            // Intercept submit to check guest authentication & show Email Warning Modal
             const handleSubmit = async (e) => {
                 if (e && e.preventDefault) e.preventDefault();
                 setSubmitError('');
+
+                // 0. Ensure complete draft is saved immediately so all selections and inputs are retained
+                saveCurrentDraft();
+
+                // GUEST AUTHENTICATION GATE:
+                // If viewing as guest, prompt user to sign in or create an account
+                if (!isUserLoggedIn) {
+                    setAuthModalOpen(true);
+                    setAuthTab('login');
+                    setAuthAlert({ text: '', type: 'error' });
+                    return;
+                }
 
                 // 1. Mandatory Double-Booking Pre-Check: Block verification if date is already confirmed
                 if (eventDate) {
@@ -5185,25 +5274,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         if (data.is_conflict || data.conflict) {
                             triggerDoubleBookingModal(data.event_date || eventDate, data.message);
                         } else if (res.status === 401 || data.code === 'auth_required' || data.requires_auth) {
-                            try {
-                                const draft = {
-                                    clientName, clientEmail, clientPhone, clientAddress,
-                                    eventTitle, eventType, eventDate, eventTime, guestCount,
-                                    locationVenue, specialNotes
-                                };
-                                sessionStorage.setItem('qes_booking_saved_draft', JSON.stringify(draft));
-                            } catch (e) {}
-
-                            const currentUrl = window.location.pathname + window.location.search;
-                            const loginUrl = 'login.php?redirect=' + encodeURIComponent(currentUrl);
-                            setSubmitError(
-                                <span>
-                                    {data.message || 'Your session has expired. Please sign in again.'}{' '}
-                                    <a href={loginUrl} style={{ textDecoration: 'underline', fontWeight: 700, color: '#166534', marginLeft: '6px' }}>
-                                        Sign In Here &rarr;
-                                    </a>
-                                </span>
-                            );
+                            saveCurrentDraft();
+                            setIsUserLoggedIn(false);
+                            setAuthModalOpen(true);
+                            setAuthTab('login');
+                            setAuthAlert({ text: data.message || 'Please sign in or create an account to finalize your booking. Your selections are safely retained.', type: 'error' });
                         } else {
                             setSubmitError(data.message || 'Submission failed. Please check your inputs.');
                         }
@@ -5642,7 +5717,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 </div>
                                                 <div className="event-type-info">
                                                     <div className="event-type-name">Kids Party &amp; Birthdays</div>
-                                                    <div className="event-type-meta">Themed Styling, Characters, Food Carts &bull; <strong style={{ color: '#15803d' }}>2 Weeks Preparation Reminder</strong></div>
+                                                    <div className="event-type-meta">Themed Styling, Characters, Food Carts &bull; <strong style={{ color: '#15803d' }}>3-7 Days Preparation Reminder</strong></div>
                                                 </div>
                                                 <div className="event-type-check">
                                                     {!isWedding ? (
@@ -6181,6 +6256,46 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                         {config.turnstileEnabled && config.turnstileSiteKey && (
                                             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
                                                 <div id="mainBookingTurnstile"></div>
+                                            </div>
+                                        )}
+
+                                        {justSignedInNotice && (
+                                            <div style={{
+                                                background: '#ecfdf5',
+                                                border: '1.5px solid #10b981',
+                                                borderRadius: '10px',
+                                                padding: '12px 14px',
+                                                marginBottom: '14px',
+                                                fontSize: '13px',
+                                                color: '#065f46',
+                                                lineHeight: 1.45,
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: '10px'
+                                            }}>
+                                                <i className="fa-solid fa-circle-check" style={{ fontSize: '18px', color: '#059669', marginTop: '2px', flexShrink: 0 }}></i>
+                                                <div>
+                                                    <div style={{ fontWeight: 800, color: '#047857' }}>Signed in successfully!</div>
+                                                    <div>Your package selections and customized details are retained. Click <strong>Submit Booking Request</strong> below to finalize your booking.</div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!isUserLoggedIn && (
+                                            <div style={{
+                                                background: '#f8fafc',
+                                                border: '1px solid #e2e8f0',
+                                                borderRadius: '8px',
+                                                padding: '8px 12px',
+                                                marginBottom: '12px',
+                                                fontSize: '12px',
+                                                color: '#64748b',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '8px'
+                                            }}>
+                                                <i className="fa-solid fa-circle-info" style={{ color: '#0284c7' }}></i>
+                                                <span>Viewing as Guest &bull; You will be prompted to sign in when clicking Submit.</span>
                                             </div>
                                         )}
 
@@ -7212,6 +7327,375 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             </div>
                         </div>
                     )}
+
+                    {/* 6. Guest Sign In & Registration Modal (Retains Package Selections) */}
+                    {authModalOpen && (() => {
+                        const handleAuthModalSubmit = async (e) => {
+                            if (e && e.preventDefault) e.preventDefault();
+                            setAuthLoading(true);
+                            setAuthAlert({ text: '', type: 'error' });
+
+                            const isLogin = (authTab === 'login');
+                            const endpoint = isLogin ? 'auth_action.php?action=login' : 'auth_action.php?action=register';
+
+                            if (!isLogin) {
+                                if (regPassword !== regConfirmPassword) {
+                                    setAuthLoading(false);
+                                    setAuthAlert({ text: 'Passwords do not match. Please re-enter.', type: 'error' });
+                                    return;
+                                }
+                                if (!regPrivacy) {
+                                    setAuthLoading(false);
+                                    setAuthAlert({ text: 'Please agree to the Philippine Data Privacy Notice to register.', type: 'error' });
+                                    return;
+                                }
+                            }
+
+                            const fd = new FormData();
+                            fd.append('action', isLogin ? 'login' : 'register');
+                            fd.append('csrf_token', config.csrfToken || '');
+
+                            if (isLogin) {
+                                fd.append('identifier', loginIdentifier.trim());
+                                fd.append('password', loginPassword);
+                            } else {
+                                fd.append('full_name', regFullName.trim());
+                                fd.append('username', regUsername.trim());
+                                fd.append('phone', regPhone.trim());
+                                fd.append('email', regEmail.trim());
+                                fd.append('password', regPassword);
+                                fd.append('confirm_password', regConfirmPassword);
+                                fd.append('privacy_consent', '1');
+                            }
+
+                            try {
+                                const res = await fetch(endpoint, {
+                                    method: 'POST',
+                                    body: fd
+                                });
+                                const data = await res.json();
+                                if (data && data.success) {
+                                    setIsUserLoggedIn(true);
+                                    const user = data.user || {};
+                                    if (user.full_name) setClientName(prev => prev || user.full_name);
+                                    if (user.email) setClientEmail(prev => prev || user.email);
+                                    if (user.phone) setClientPhone(prev => prev || user.phone);
+
+                                    // Dynamically update top navbar
+                                    const navSignInBtn = document.getElementById('bookingNavSignInBtn');
+                                    if (navSignInBtn) {
+                                        const displayName = user.full_name || user.username || 'User';
+                                        navSignInBtn.outerHTML = `
+                                            <span class="client-user-badge">
+                                                <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
+                                                <span>${displayName}</span>
+                                            </span>
+                                            <a href="logout.php?redirect=booking.php" class="client-logout-nav" title="Sign Out">
+                                                <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                                            </a>
+                                        `;
+                                    }
+
+                                    setAuthModalOpen(false);
+                                    setAuthLoading(false);
+                                    setJustSignedInNotice(true);
+
+                                    // Auto-save retained draft with user credentials
+                                    setTimeout(() => {
+                                        saveCurrentDraft();
+                                        const submitBtn = document.querySelector('.btn-submit-booking');
+                                        if (submitBtn) {
+                                            submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        }
+                                    }, 100);
+                                } else {
+                                    setAuthLoading(false);
+                                    setAuthAlert({ text: (data && data.message) ? data.message : 'Authentication failed. Please check your credentials.', type: 'error' });
+                                }
+                            } catch (err) {
+                                setAuthLoading(false);
+                                setAuthAlert({ text: 'Connection or network error occurred. Please try again.', type: 'error' });
+                            }
+                        };
+
+                        const modalContent = (
+                            <div className="package-view-overlay active" style={{ zIndex: 99999999, display: 'flex' }} onClick={(e) => {
+                                if (e.target.classList.contains('package-view-overlay')) {
+                                    setAuthModalOpen(false);
+                                }
+                            }}>
+                                <div className="package-view-modal" style={{ maxWidth: '460px', width: '92%', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 25px 60px rgba(15,30,20,0.5)', background: '#ffffff', margin: 'auto' }}>
+                                    {/* Header */}
+                                    <div style={{ background: 'linear-gradient(135deg, #18392b 0%, #285440 100%)', padding: '20px 24px', color: '#ffffff', position: 'relative' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
+                                                    <i className="fa-solid fa-user-lock"></i>
+                                                </div>
+                                                <div>
+                                                    <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: '19px', fontWeight: 700, margin: '0 0 2px 0', color: '#ffffff' }}>
+                                                        Sign In to Submit Booking
+                                                    </h3>
+                                                    <p style={{ margin: 0, fontSize: '11.5px', color: 'rgba(255,255,255,0.85)' }}>
+                                                        Sign in or create an account to finalize your booking
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button type="button" onClick={() => setAuthModalOpen(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.8)', fontSize: '24px', cursor: 'pointer', lineHeight: 1, padding: '4px' }} aria-label="Close modal">&times;</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Retained Data Confirmation Pill */}
+                                    <div style={{ background: '#ecfdf5', borderBottom: '1px solid #a7f3d0', padding: '9px 24px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#065f46', fontWeight: 600 }}>
+                                        <i className="fa-solid fa-check-circle" style={{ color: '#059669' }}></i>
+                                        <span>Your checked packages &amp; event details are safely retained!</span>
+                                    </div>
+
+                                    {/* Modal Body */}
+                                    <div style={{ padding: '20px 24px', maxHeight: '75vh', overflowY: 'auto' }}>
+                                        {/* Alert Message */}
+                                        {authAlert.text && (
+                                            <div style={{
+                                                padding: '10px 14px',
+                                                borderRadius: '8px',
+                                                fontSize: '12.5px',
+                                                marginBottom: '16px',
+                                                background: authAlert.type === 'success' ? '#ecfdf5' : '#fff1f2',
+                                                color: authAlert.type === 'success' ? '#065f46' : '#991b1b',
+                                                border: `1px solid ${authAlert.type === 'success' ? '#a7f3d0' : '#fecdd3'}`,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '8px'
+                                            }}>
+                                                <i className={authAlert.type === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'}></i>
+                                                <span>{authAlert.text}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Tab Switcher */}
+                                        <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: '10px', padding: '4px', marginBottom: '18px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setAuthTab('login'); setAuthAlert({ text: '', type: 'error' }); }}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '8px',
+                                                    fontSize: '13px',
+                                                    fontWeight: 700,
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    background: authTab === 'login' ? '#ffffff' : 'transparent',
+                                                    color: authTab === 'login' ? '#18392b' : '#6b7280',
+                                                    boxShadow: authTab === 'login' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <i className="fa-solid fa-right-to-bracket" style={{ marginRight: '6px' }}></i> Sign In
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setAuthTab('register'); setAuthAlert({ text: '', type: 'error' }); }}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '8px',
+                                                    fontSize: '13px',
+                                                    fontWeight: 700,
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    background: authTab === 'register' ? '#ffffff' : 'transparent',
+                                                    color: authTab === 'register' ? '#18392b' : '#6b7280',
+                                                    boxShadow: authTab === 'register' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <i className="fa-solid fa-user-plus" style={{ marginRight: '6px' }}></i> Create Account
+                                            </button>
+                                        </div>
+
+                                        {/* Forms */}
+                                        <form onSubmit={handleAuthModalSubmit}>
+                                            {authTab === 'login' ? (
+                                                <div>
+                                                    <div style={{ marginBottom: '14px' }}>
+                                                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '5px' }}>Username or Email</label>
+                                                        <div style={{ position: 'relative' }}>
+                                                            <i className="fa-solid fa-user" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: '13px' }}></i>
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                value={loginIdentifier}
+                                                                onChange={(e) => setLoginIdentifier(e.target.value)}
+                                                                placeholder="Enter username or email"
+                                                                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px 10px 36px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '13.5px', outline: 'none' }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ marginBottom: '16px' }}>
+                                                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '5px' }}>Password</label>
+                                                        <div style={{ position: 'relative' }}>
+                                                            <i className="fa-solid fa-lock" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: '13px' }}></i>
+                                                            <input
+                                                                type={showLoginPassword ? 'text' : 'password'}
+                                                                required
+                                                                value={loginPassword}
+                                                                onChange={(e) => setLoginPassword(e.target.value)}
+                                                                placeholder="Enter password"
+                                                                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 36px 10px 36px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '13.5px', outline: 'none' }}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowLoginPassword(p => !p)}
+                                                                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '4px' }}
+                                                                aria-label="Toggle password visibility"
+                                                            >
+                                                                <i className={showLoginPassword ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="submit"
+                                                        disabled={authLoading}
+                                                        style={{ width: '100%', background: '#18392b', color: '#ffffff', fontWeight: 700, fontSize: '13.5px', padding: '11px', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                                    >
+                                                        {authLoading ? (
+                                                            <><i className="fa-solid fa-spinner fa-spin"></i> Signing In...</>
+                                                        ) : (
+                                                            <><i className="fa-solid fa-right-to-bracket"></i> Sign In &amp; Continue</>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <div style={{ marginBottom: '10px' }}>
+                                                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>Full Name</label>
+                                                        <input
+                                                            type="text"
+                                                            required
+                                                            value={regFullName}
+                                                            onChange={(e) => setRegFullName(e.target.value)}
+                                                            placeholder="e.g. Maria Clara"
+                                                            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '13px', outline: 'none' }}
+                                                        />
+                                                    </div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>Username</label>
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                value={regUsername}
+                                                                onChange={(e) => setRegUsername(e.target.value)}
+                                                                placeholder="username"
+                                                                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '13px', outline: 'none' }}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>Phone Number</label>
+                                                            <input
+                                                                type="tel"
+                                                                required
+                                                                value={regPhone}
+                                                                onChange={(e) => setRegPhone(e.target.value)}
+                                                                placeholder="0912 345 6789"
+                                                                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '13px', outline: 'none' }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ marginBottom: '10px' }}>
+                                                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>Email Address</label>
+                                                        <input
+                                                            type="email"
+                                                            required
+                                                            value={regEmail}
+                                                            onChange={(e) => setRegEmail(e.target.value)}
+                                                            placeholder="you@example.com"
+                                                            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '13px', outline: 'none' }}
+                                                        />
+                                                    </div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>Password</label>
+                                                            <div style={{ position: 'relative' }}>
+                                                                <input
+                                                                    type={showRegPassword ? 'text' : 'password'}
+                                                                    required
+                                                                    value={regPassword}
+                                                                    onChange={(e) => setRegPassword(e.target.value)}
+                                                                    placeholder="Min 6 chars"
+                                                                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 30px 9px 10px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '12.5px', outline: 'none' }}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setShowRegPassword(p => !p)}
+                                                                    style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '2px' }}
+                                                                ><i className={showRegPassword ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i></button>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>Confirm Pass</label>
+                                                            <div style={{ position: 'relative' }}>
+                                                                <input
+                                                                    type={showRegConfirmPassword ? 'text' : 'password'}
+                                                                    required
+                                                                    value={regConfirmPassword}
+                                                                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                                                                    placeholder="Repeat pass"
+                                                                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 30px 9px 10px', border: '1.5px solid #d1d5db', borderRadius: '8px', fontSize: '12.5px', outline: 'none' }}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setShowRegConfirmPassword(p => !p)}
+                                                                    style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '2px' }}
+                                                                ><i className={showRegConfirmPassword ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i></button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ marginBottom: '14px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '8px 10px' }}>
+                                                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '11px', color: '#065f46', lineHeight: 1.4 }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                required
+                                                                checked={regPrivacy}
+                                                                onChange={(e) => setRegPrivacy(e.target.checked)}
+                                                                style={{ marginTop: '2px', accentColor: '#059669' }}
+                                                            />
+                                                            <span>I agree to the <strong>Philippine Data Privacy Notice (RA 10173)</strong>.</span>
+                                                        </label>
+                                                    </div>
+                                                    <button
+                                                        type="submit"
+                                                        disabled={authLoading}
+                                                        style={{ width: '100%', background: '#18392b', color: '#ffffff', fontWeight: 700, fontSize: '13.5px', padding: '11px', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                                    >
+                                                        {authLoading ? (
+                                                            <><i className="fa-solid fa-spinner fa-spin"></i> Creating Account...</>
+                                                        ) : (
+                                                            <><i className="fa-solid fa-user-plus"></i> Create Account &amp; Continue</>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </form>
+
+                                        <div style={{ textAlign: 'center', marginTop: '14px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAuthModalOpen(false)}
+                                                style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+                                            >
+                                                Continue reviewing as Guest
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                        return (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal)
+                            ? ReactDOM.createPortal(modalContent, document.body)
+                            : modalContent;
+                    })()}
                 </div>
             );
         }
@@ -7344,6 +7828,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
                         <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Gusto ko po makausap ang human coordinator')"><i class="fa-solid fa-headset" style="color: #10b981;"></i><span>Talk to human coordinator</span></button>
                     </div>
                 </div>
             `;
@@ -7389,6 +7874,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('How does the booking process work?')"><i class="fa-solid fa-calendar-check"></i><span>How does booking work?</span></button>
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('What are your lead time and downpayment policies?')"><i class="fa-solid fa-clock"></i><span>Lead time &amp; downpayment</span></button>
                             <button type="button" class="quick-chip" onclick="sendQuickPrompt('Where is your office and what areas do you service?')"><i class="fa-solid fa-location-dot"></i><span>Office location &amp; service areas</span></button>
+                        <button type="button" class="quick-chip" onclick="sendQuickPrompt('Gusto ko po makausap ang human coordinator')"><i class="fa-solid fa-headset" style="color: #10b981;"></i><span>Talk to human coordinator</span></button>
                         </div>
                     </div>
                 `;
@@ -7515,19 +8001,37 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             const m = (userMsg || '').toLowerCase().trim();
             const isTl = /\b(po|opo|kamusta|kumusta|ano|anong|magkano|paano|saan|meron|kailan|kelan|kasal|binyag|petsa)\b/i.test(m);
 
+            if (/\b(tangina|putangina|gago|gaga|tarantado|ulol|bwisit|buwisit|punyeta|leche|fuck|shit|bitch|asshole|bastard|idiot|stupid|pakyu)\b/i.test(m)) {
+                return isTl
+                    ? "Hindi ko po maunawaan ang inyong ginamit na pananalita. Mangyaring maging pormal at magalang po tayo (please be formal) upang maayos ko po kayong matulungan sa inyong event styling inquiry."
+                    : "I can't understand your language or inappropriate words. Please be formal and respectful so I can assist you with your event styling and booking inquiries.";
+            }
+
+            if (/\b(limit|limits|limitation|limitations|scope|boundary|boundaries|kaya mong gawin|di mo kaya|hindi mo kaya)\b/i.test(m)) {
+                return isTl
+                    ? "🤖 **Sakop at mga Limitasyon ni Anton:**\n\n✨ **Kaya kong gawin:** Magpaliwanag ng packages at presyo (Kasal, Kids Party, Debut), mag-check ng date availability, magturo kung paano mag-book sa website, at mag-track ng booking gamit ang Reference Number.\n\n⚠️ **Hindi ko kayang gawin:** Hindi po ako direktang nagbu-book o tumatanggap ng bayad sa chat (lahat ay sa website 'Book Now' form), hindi naglalabas ng private data alinsunod sa RA 10173, at hindi coordinator na tao.\n\n👉 Paano po kita matutulungan sa inyong okasyon ngayon?"
+                    : "🤖 **Anton's Scope & Limitations:**\n\n✨ **What I CAN do:** Explain event packages and live pricing (Weddings, Kids Parties, Debut), check date availability, guide you through our website booking form, and track booking status via Reference Number.\n\n⚠️ **What I CANNOT do:** Cannot directly book or process payments in chat (use our 'Book Now' form), cannot reveal private customer info under RA 10173, and cannot sign contracts without staff review.\n\n👉 How may I assist you with your celebration today?";
+            }
+
             if (/^(hi|hello|hey|good\s*(morning|afternoon|evening)|kamusta|kumusta)\b/i.test(m)) {
                 return isTl
                     ? "Kumusta po! Ako si Anton, ang AI concierge ng Tyoy Creation. Nandito po ako upang gabayan kayo sa aming event packages, live pricing, date availability, at pag-book. Anong okasyon po ang inyong pinaplano?"
                     : "Hello! I'm Anton, the AI assistant for Tyoy Creation. I can help you with event packages, live pricing, date availability, and booking guidance. What celebration are you planning?";
             }
 
-            if (/\b(date|dates|availab|open|slot|schedule|petsa|calendar|kailan|kelan)\b/i.test(m)) {
+            if (/\b(lead\s*time|downpayment|down\s*payment|deposit|bayad|policy|policies|patakaran|reminder|preparation)\b/i.test(m)) {
+                return isTl
+                    ? "📜 **Lead Time & Downpayment Policies:**\n\n• ⏳ **Preparation Reminders:** Weddings: 3 buwan (3 months), Kids Party: 3-7 araw (3-7 days), Debut: 2 linggo (2 weeks). Malaya kayong makapili ng petsa simula ngayon!\n• 💳 **Downpayment:** 30% hanggang 50% reservation deposit matapos maipasa ang Staff Review (hindi kami tumatanggap ng bayad sa chat para sa seguridad).\n\n👉 I-click ang **'Book Now'** upang simulan ang inyong inquiry!"
+                    : "📜 **Lead Time & Downpayment Policies:**\n\n• ⏳ **Preparation Reminders:** Weddings: 3 Months, Kids Parties: 3-7 Days, Debut: 2 Weeks. Clients have complete free will to select any date starting today!\n• 💳 **Downpayment:** 30% to 50% reservation deposit required once your booking passes Staff Review (payments are never collected inside this chat).\n\n👉 Click the **'Book Now'** button on our website to begin your inquiry!";
+            }
+
+            if (/\b(date|dates|avail|bakante|open|slot|schedule|petsa|calendar|kailan|kelan)\b/i.test(m)) {
                 return isTl
                     ? "🗓️ **Date Availability:** Upang makita ang live calendar ng mga available na petsa, maaari niyo pong buksan ang aming **'Book Now'** form sa website. Ipinapatupad po namin ang *One Confirmed Event Per Day* policy. Nais niyo po bang mag-inquire para sa partikular na petsa?"
                     : "🗓️ **Date Availability:** You can check our live calendar anytime by clicking the **'Book Now'** button on our website. We maintain a strict *One Confirmed Event Per Day* policy. Would you like to inquire about a specific celebration date?";
             }
 
-            if (/\b(package|packages|price|prices|rate|rates|cost|magkano|presyo|bayad|wedding|kasal|party|debut)\b/i.test(m)) {
+            if (/\b(package|packages|price|prices|rate|rates|cost|magkano|presyo|wedding|kasal|party|debut)\b/i.test(m)) {
                 return isTl
                     ? "💍🎈 **Packages at Presyo:** Mayroon kaming kumpletong packages para sa Kasal (Weddings), Kids Parties, Debut, at Catering add-ons. I-click ang **'Book Now'** upang makita ang buong price breakdown at makabuo ng inyong instant quotation!"
                     : "💍🎈 **Packages & Pricing:** We offer complete styling packages for Weddings, Kids Parties, Debut, and Catering add-ons. Click the **'Book Now'** button on our website to explore our interactive package builder and live pricing!";
@@ -7572,7 +8076,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
             const abortCtrl = new AbortController();
-            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 12000);
+            const timeoutHandle = setTimeout(() => abortCtrl.abort(), 10000); // 10-second SLA ceiling
 
             try {
                 const res = await fetch('chatbot.php', {

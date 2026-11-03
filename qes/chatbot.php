@@ -21,43 +21,69 @@ header('Content-Type: application/json; charset=utf-8');
 $GLOBAL_DAILY_LIMIT = 1400; // System-wide daily maximum
 $RPM_LIMIT = 12;            // Burst rate limit per minute
 $USER_SESSION_LIMIT = 30;   // Fair-share limit per individual browser session
+$IP_RPM_LIMIT = 15;         // Hard burst ceiling per IP address per minute
+$IP_DAILY_LIMIT = 45;       // Daily ceiling per IP address across all tabs/incognito
+
+$client_ip = function_exists('qes_client_ip') ? qes_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 
 function getGlobalDailyApiCount($conn) {
+    $today = date('Y-m-d');
+    if (class_exists('QesCache')) {
+        $tracker = QesCache::get('gemini_daily_api_tracker');
+        if (is_array($tracker) && ($tracker['date'] ?? '') === $today && isset($tracker['count'])) {
+            return (int)$tracker['count'];
+        }
+    }
     try {
-        $today = date('Y-m-d');
         $stored_date = get_setting($conn, 'gemini_daily_api_date', '');
         if ($stored_date !== $today) {
-            set_setting($conn, 'gemini_daily_api_date', $today);
-            set_setting($conn, 'gemini_daily_api_count', '0');
+            if (class_exists('QesCache')) {
+                QesCache::set('gemini_daily_api_tracker', ['date' => $today, 'count' => 0], 86400);
+            }
             return 0;
         }
-        return (int)get_setting($conn, 'gemini_daily_api_count', 0);
+        $cnt = (int)get_setting($conn, 'gemini_daily_api_count', 0);
+        if (class_exists('QesCache')) {
+            QesCache::set('gemini_daily_api_tracker', ['date' => $today, 'count' => $cnt], 86400);
+        }
+        return $cnt;
     } catch (\Throwable $e) {
         return (int)($_SESSION['gemini_fallback_count'] ?? 0);
     }
 }
 
-function incrementGlobalDailyApiCount($conn) {
+function incrementGlobalDailyApiCount($conn, ?int $knownCurrent = null): int {
+    $today = date('Y-m-d');
+    $current = $knownCurrent ?? getGlobalDailyApiCount($conn);
+    $next = $current + 1;
+    if (class_exists('QesCache')) {
+        QesCache::set('gemini_daily_api_tracker', ['date' => $today, 'count' => $next], 86400);
+    }
     try {
-        $today = date('Y-m-d');
-        $stored_date = get_setting($conn, 'gemini_daily_api_date', '');
-        if ($stored_date !== $today) {
-            set_setting($conn, 'gemini_daily_api_date', $today);
-            set_setting($conn, 'gemini_daily_api_count', '1');
-            return;
+        if (is_object($conn) && method_exists($conn, 'prepare')) {
+            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+            if ($stmt) {
+                $kDate = 'gemini_daily_api_date';
+                $stmt->bind_param("ss", $kDate, $today);
+                $stmt->execute();
+                $kCnt = 'gemini_daily_api_count';
+                $vCnt = (string)$next;
+                $stmt->bind_param("ss", $kCnt, $vCnt);
+                $stmt->execute();
+                $stmt->close();
+            }
         }
-        $current = (int)get_setting($conn, 'gemini_daily_api_count', 0);
-        set_setting($conn, 'gemini_daily_api_count', (string)($current + 1));
     } catch (\Throwable $e) {
         $_SESSION['gemini_fallback_count'] = ((int)($_SESSION['gemini_fallback_count'] ?? 0)) + 1;
     }
+    return $next;
 }
 
 // ============================================================================
 // CONCIERGE INTENT & SCOPE HELPERS (TAGALOG / ENGLISH)
 // ============================================================================
 function qes_detect_tagalog(string $msg): bool {
-    return (bool)preg_match('/\b(kumain|kain|kamusta|kumusta|musta|ano|anong|sino|sinong|bakit|paano|saan|san|meron|mayroon|wala|ulam|ka\s*na|kana|mo\s*ba|po|opo|ba|naman|tayo|lahat|ninyo|inyo|kita|ako|ikaw|siya|sila|ko|mo|ang|ng|mga|namin|atin|nila|natin|din|rin|pwede|pede|i-?track|magkano|presyo|kasal|binyag|kaarawan|luto|uulan|ganda|pangit|bata|tao|jowa|syota|babae|lalaki|taga|pa-?book|mag-?book)\b/i', $msg);
+    return (bool)preg_match('/\b(kumain|kain|kamusta|kumusta|musta|ano|anong|sino|sinong|bakit|paano|saan|san|meron|mayroon|wala|ulam|ka\s*na|kana|mo\s*ba|po|opo|ba|naman|tayo|lahat|ninyo|inyo|kita|ako|ikaw|siya|sila|namin|atin|nila|natin|pwede|pede|i-?track|magkano|presyo|kasal|binyag|kaarawan|luto|uulan|ganda|pangit|bata|jowa|syota|babae|lalaki|taga|pa-?book|mag-?book|petsa|bakante|kailan|kelan)\b/i', $msg);
 }
 
 function qes_is_pure_greeting(string $msg): bool {
@@ -137,13 +163,18 @@ function qes_is_gibberish(string $msg): bool {
     $clean = trim($msg);
     if (empty($clean)) return true;
 
-    // Don't flag valid short queries or greetings
-    if (strlen($clean) <= 2) {
-        return !preg_match('/^(hi|ha|ok|oo|no|yo|uy|up|in|on|at|by|to|we|me|my|he|pa|ba|po|ha|eh|di)$/i', $clean);
+    // Never flag recognized event-related inquiries as gibberish
+    if (qes_is_event_related($clean)) {
+        return false;
     }
 
-    // Repeated identical character 4+ times (e.g. "aaaaa", ".....", "?????")
-    if (preg_match('/(.)\1{3,}/u', $clean)) {
+    // Don't flag valid short queries, numbers, or greetings
+    if (strlen($clean) <= 2) {
+        return !preg_match('/^(hi|ha|ok|oo|no|yo|uy|up|in|on|at|by|to|we|me|my|he|pa|ba|po|eh|di|ty|\d+|\?)$/i', $clean);
+    }
+
+    // Repeated identical alphabetic character 4+ times (e.g. "aaaaa", "zzzzz" — allows numbers like 10000 and punctuation like ...)
+    if (preg_match('/([a-zA-Z])\1{3,}/u', $clean)) {
         return true;
     }
 
@@ -166,7 +197,7 @@ function qes_is_gibberish(string $msg): bool {
         $w = preg_replace('/[^a-zA-Z]/', '', strtolower($w));
         $len = strlen($w);
         if ($len >= 6) {
-            $vowels = preg_match_all('/[aeiou]/i', $w);
+            $vowels = preg_match_all('/[aeiouy]/i', $w);
             $consonants = $len - $vowels;
 
             // Zero vowels in 6+ letter word (e.g. "sdfghj", "brbbrb")
@@ -175,15 +206,15 @@ function qes_is_gibberish(string $msg): bool {
                 continue;
             }
 
-            // Extreme consonant ratio: e.g. 14 letters with only 1-2 vowels, or >80% consonants
-            if ($consonants > 0 && ($consonants / $len) > 0.80 && $vowels <= 2) {
+            // Extreme consonant ratio: e.g. 14 letters with only 1-2 vowels, or >85% consonants
+            if ($consonants > 0 && ($consonants / $len) > 0.85 && $vowels <= 1) {
                 $gibberish_words++;
                 continue;
             }
 
-            // 4+ impossible consecutive consonants (excluding legitimate English clusters like "ngth", "str", "rthr", "nstr", "ndst")
-            if (preg_match('/[bcdfghjklmnpqrstvwxyz]{4,}/i', $w)) {
-                if (!preg_match('/(ngth|str|rthr|nstr|ndst|mpstr|ghts)/i', $w)) {
+            // 5+ impossible consecutive consonants (avoids false positives on 4-consonant English words like "birthday", "backdrops", "months", "cocktail")
+            if (preg_match('/[bcdfghjklmnpqrstvwxz]{5,}/i', $w)) {
+                if (!preg_match('/(ngths|mpstr|ghtst|tchstr)/i', $w)) {
                     $gibberish_words++;
                     continue;
                 }
@@ -198,7 +229,7 @@ function qes_is_gibberish(string $msg): bool {
     }
 
     // If all or majority of words are gibberish
-    if ($total_words > 0 && ($gibberish_words / $total_words) >= 0.5) {
+    if ($total_words > 0 && ($gibberish_words / $total_words) >= 0.6) {
         return true;
     }
 
@@ -397,6 +428,38 @@ if ($action === 'clear_history' || strtolower($message) === 'clear' || strtolowe
 // Local Business Knowledge Engine CONTINUES to serve all business inquiries seamlessly!
 $is_daily_api_exhausted = ($global_daily_used >= $GLOBAL_DAILY_LIMIT);
 
+// 1B. Check Hard IP-Level Rate Limits (Anti-Spam & Quota Shield)
+if (function_exists('qes_rate_limit_check')) {
+    $ip_burst_check = qes_rate_limit_check('chat_ip_burst', $client_ip, $IP_RPM_LIMIT, 60, $conn);
+    if (!empty($ip_burst_check) && !$ip_burst_check['allowed']) {
+        ob_clean();
+        echo json_encode([
+            'reply' => "⏳ **Teka lamang po:** Masyadong mabilis ang pagpapadala ng mensahe mula sa inyong koneksyon. Mangyaring maghintay ng ilang segundo bago magtanong muli.",
+            'response' => "Please wait a moment before sending another message.",
+            'chat_count' => (int)($_SESSION['chat_count'] ?? 0),
+            'remaining_chats' => max(0, $USER_SESSION_LIMIT - (int)($_SESSION['chat_count'] ?? 0)),
+            'max_chats' => $USER_SESSION_LIMIT,
+            'limit_reached' => false,
+            'cooldown' => true
+        ], JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $ip_daily_check = qes_rate_limit_check('chat_ip_daily', $client_ip, $IP_DAILY_LIMIT, 86400, $conn);
+    if (!empty($ip_daily_check) && !$ip_daily_check['allowed']) {
+        ob_clean();
+        echo json_encode([
+            'reply' => "Naabot na po ang pang-araw-araw na limitasyon sa pag-chat mula sa inyong network. Upang magsumite ng inyong booking o inquiry, mangyaring gamitin ang **'Book Now'** button sa aming website!",
+            'response' => "Daily inquiry limit reached for this network. Please click Book Now to submit your event details.",
+            'chat_count' => $USER_SESSION_LIMIT,
+            'remaining_chats' => 0,
+            'max_chats' => $USER_SESSION_LIMIT,
+            'limit_reached' => true
+        ], JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 // 2. Check Individual User Session Limit
 if ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT) {
     ob_clean();
@@ -447,6 +510,10 @@ if (empty($message)) {
 // Increment chat usage counts for this valid message
 $_SESSION['chat_count']++;
 $_SESSION['chat_timestamps'][] = time();
+if (function_exists('qes_rate_limit_record_fail')) {
+    qes_rate_limit_record_fail('chat_ip_burst', $client_ip, $IP_RPM_LIMIT, 60, $conn);
+    qes_rate_limit_record_fail('chat_ip_daily', $client_ip, $IP_DAILY_LIMIT, 86400, $conn);
+}
 
 if (!isset($_SESSION['chat_history']) || !is_array($_SESSION['chat_history'])) {
     $_SESSION['chat_history'] = [];
@@ -640,6 +707,13 @@ CRITICAL THIRD-PARTY AI SERVICE DEPENDENCY & MANDATORY STAFF REVIEW (AUDIT RULE)
 - When users ask about bookings, packages, or pricing: Always remind them that quotes are estimates and that our human coordination team will review all venue logistics, date availability, and final styling choices before issuing an official contract and payment instructions.
 - Never state or imply that an event has been finalized or confirmed directly inside this chat.
 
+CRITICAL ANTI-HALLUCINATION & PRICING GUARDRAILS (STRICT):
+- Answer ONLY using the explicit services, packages, and pricing inclusions provided in your knowledge base.
+- NEVER invent, promise, or assume services that are not in the list (such as drone shows, free extra dishes, celebrity performers, or custom unlisted equipment).
+- NEVER promise discounts, special promos, or free waivers. If asked for discounts, explain politely: 'Ang lahat po ng aming package pricing ay standardized, subalit maaari po ninyong talakayin ang customized options sa aming coordinator habang nasa Staff Review.'
+- If asked about an unlisted service, say politely: 'Wala po ito sa aming standard packages sa ngayon, subalit maaari po ninyong ilagay bilang special note sa Book Now form upang masuri ng aming styling team kung feasible ito sa inyong venue.'
+- If the user asks to talk to a human coordinator, agent, or representative, immediately offer our contact phone and Facebook page.
+
 CRITICAL ROLE CONSTRAINT — YOU CANNOT BOOK DIRECTLY IN CHAT:
 - You DO NOT have the capability to book, create, reserve, or schedule events directly inside this chat!
 - NEVER ask the user to provide their full details to book through you.
@@ -682,6 +756,38 @@ if (empty($raw_reply) && qes_is_bad_words($message)) {
 // ─── FAST-PATH CHECK 1C: SCOPE & LIMITATIONS INTELLIGENCE ───────────────────
 if (empty($raw_reply) && qes_is_scope_and_limitations_query($message)) {
     $raw_reply = qes_get_scope_and_limitations_response($message, $ai_b_name);
+}
+
+// ─── FAST-PATH CHECK 1D: TALK TO HUMAN COORDINATOR HANDOFF ─────────────
+if (empty($raw_reply) && preg_match('/\b(human|representative|agent|coordinator|tao|makausap|kausap|staff|admin|person|call\s*me|contact\s*me|tawagan|tawag|phone\s*call|live\s*agent|human\s*staff)\b/i', $lower_msg) && (
+    strpos($lower_msg, 'kausap') !== false ||
+    strpos($lower_msg, 'makausap') !== false ||
+    strpos($lower_msg, 'talk to') !== false ||
+    strpos($lower_msg, 'speak with') !== false ||
+    strpos($lower_msg, 'speak to') !== false ||
+    strpos($lower_msg, 'real person') !== false ||
+    strpos($lower_msg, 'human agent') !== false ||
+    strpos($lower_msg, 'human coordinator') !== false ||
+    strpos($lower_msg, 'totoong tao') !== false ||
+    strpos($lower_msg, 'customer service') !== false
+)) {
+    if (qes_detect_tagalog($message)) {
+        $raw_reply = "👩‍💼 **Pakikipag-ugnayan sa Aming Human Event Coordinator:**\n\n"
+            . "Nais niyo po bang direktang makausap ang aming senior event coordinator? Narito ang aming mga opisyal na linya:\n\n"
+            . "• 📞 **Direct Call / Mobile:** **{$ai_b_phone}**\n"
+            . "• ✉️ **Email Inquiry:** **{$ai_b_email}**\n"
+            . "• 🌐 **Official Facebook Messenger:** [facebook.com/tyoycreation](https://www.facebook.com/tyoycreation)\n"
+            . "• 🕒 **Operating Hours:** Lunes hanggang Sabado, 8:00 AM – 6:00 PM\n\n"
+            . "📌 **Mabilisang Hakbang:** Maaari rin kayong magsumite ng inyong event details gamit ang **'Book Now'** button sa aming website. Awtomatikong makakatanggap ang coordinator ng alerto at direktang tatawag sa inyo sa loob ng 24–48 oras!";
+    } else {
+        $raw_reply = "👩‍💼 **Speak Directly With Our Human Event Coordinator:**\n\n"
+            . "Would you like to connect directly with a dedicated event coordinator from {$ai_b_name}? Here is how to reach our human team:\n\n"
+            . "• 📞 **Direct Mobile:** **{$ai_b_phone}**\n"
+            . "• ✉️ **Official Email:** **{$ai_b_email}**\n"
+            . "• 🌐 **Facebook Messenger:** [facebook.com/tyoycreation](https://www.facebook.com/tyoycreation)\n"
+            . "• 🕒 **Business Hours:** Monday to Saturday, 8:00 AM – 6:00 PM\n\n"
+            . "📌 **Fast-Track Option:** You can also submit your desired celebration via the **'Book Now'** form on our website. Our lead coordinator will review your schedule and contact you directly within 24 to 48 hours!";
+    }
 }
 
 // ─── FAST-PATH CHECK 2: GREETING ───────────────────────────────────────────
@@ -744,51 +850,62 @@ if (empty($raw_reply) && (
 }
 
 // ─── FAST-PATH CHECK 4B: CALENDAR AVAILABILITY & RESERVED DATES ───────────
-if (empty($raw_reply) && (
-    strpos($lower_msg, 'available date') !== false ||
-    strpos($lower_msg, 'available dates') !== false ||
-    strpos($lower_msg, 'what are the available') !== false ||
-    strpos($lower_msg, 'what are available') !== false ||
-    strpos($lower_msg, 'kailan available') !== false ||
-    strpos($lower_msg, 'bakanteng petsa') !== false ||
-    strpos($lower_msg, 'mga available na petsa') !== false ||
-    strpos($lower_msg, 'open date') !== false ||
-    strpos($lower_msg, 'open dates') !== false ||
-    strpos($lower_msg, 'reserved date') !== false ||
-    strpos($lower_msg, 'reserved dates') !== false ||
-    strpos($lower_msg, 'calendar availability') !== false ||
-    strpos($lower_msg, 'schedule availability') !== false ||
-    (strpos($lower_msg, 'date') !== false && strpos($lower_msg, 'availab') !== false) ||
-    (strpos($lower_msg, 'petsa') !== false && strpos($lower_msg, 'pwede') !== false)
+if (empty($raw_reply) && !preg_match('/\b(reschedule|rescheduling|cancel|cancellation|refund|refunds|lipat|palit|postpone)\b/i', $lower_msg) && (
+    preg_match('/\b(avail[a-z]*|avaliab[a-z]*|avaiable|open\s*dates?|free\s*dates?|open\s*slots?|free\s*slots?|bakanteng\s*petsa|may\s*slot\s*pa|booked\s*dates?|kailan\s*available|calendar\s*availability|schedule\s*availability|dates?\s+this\s+month|dates?\s+next\s+month)\b/i', $lower_msg) ||
+    (strpos($lower_msg, 'date') !== false && (strpos($lower_msg, 'avail') !== false || strpos($lower_msg, 'open') !== false || strpos($lower_msg, 'free') !== false)) ||
+    (strpos($lower_msg, 'petsa') !== false && (strpos($lower_msg, 'pwede') !== false || strpos($lower_msg, 'bakante') !== false || strpos($lower_msg, 'avail') !== false))
 )) {
-    if (qes_detect_tagalog($message)) {
-        $booked_list = !empty($booked_dates)
-            ? "• " . implode("\n• ", $booked_dates) . "\n\n"
-            : "Lahat ng darating na petsa ay kasalukuyang bukas para sa inquiry!\n\n";
-        $raw_reply = "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
-            . "Ipinapatupad sa **{$ai_b_name}** ang **isang kumpirmadong okasyon bawat araw** (One Confirmed Event Per Day Policy) upang masiguro ang 100% dedikasyon ng aming senior styling crew at kagamitan.\n\n"
-            . "Kasalukuyang may nakareserbang okasyon sa mga sumusunod na petsa:\n"
-            . $booked_list
-            . "⏳ **Inirerekomendang Oras ng Paghahanda:**\n"
-            . "• 💍 **Kasal (Weddings):** 3 Buwang Preparation Reminder\n"
-            . "• 🎈 **Kids Party / Iba pang Events:** 2 Linggong Preparation Reminder\n\n"
-            . "*(Paalala: Malaya kayong makakapili ng anumang petsa mula sa araw na ito simula sa aming 'Book Now' form)*\n\n"
-            . "📋 **Staff Review Notice:** Sinisiyasat ng aming coordinator ang bawat booking sa loob ng 24–48 oras upang mai-lock ang inyong slot.\n\n"
-            . "👉 Nais niyo po bang mag-inquire para sa partikular na petsa o simulan ang booking sa **'Book Now'**?";
-    } else {
-        $booked_list = !empty($booked_dates)
-            ? "• " . implode("\n• ", $booked_dates) . "\n\n"
-            : "All upcoming dates are currently open for booking inquiry!\n\n";
-        $raw_reply = "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
-            . "At **{$ai_b_name}**, we maintain a strict **one confirmed celebration per calendar day** rule to guarantee full equipment allocation and dedicated crew attention.\n\n"
-            . "Currently reserved celebration dates:\n"
-            . $booked_list
-            . "⏳ **Recommended Preparation Reminders:**\n"
-            . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
-            . "• 🎈 **Kids Party / Other Events:** 2 Weeks Preparation Reminder\n\n"
-            . "*(Note: Clients have free will to select any date from today onwards)*\n\n"
-            . "📋 **Staff Review Notice:** Because slot availability is dynamic, dates are officially secured once our coordinators complete Staff Review and your deposit is confirmed.\n\n"
-            . "👉 Would you like to check a specific date (e.g. *\"Is January 1, 2027 available?\"*) or start your inquiry via **'Book Now'**?";
+    // 1. Check if the user is asking about a specific calendar date first (e.g. "Is January 15, 2027 available?")
+    $parsed_specific_date = ChatbotBusinessKnowledge::extractDateFromMessage($message);
+    if ($parsed_specific_date !== null) {
+        $raw_reply = ChatbotBusinessKnowledge::resolveSpecificDateQuery(
+            $conn,
+            $parsed_specific_date,
+            $message,
+            qes_detect_tagalog($message),
+            $ai_b_name,
+            $ai_b_email
+        );
+    }
+
+    // 2. Otherwise, if asking about this month or a specific month, delegate to month availability query
+    if (empty($raw_reply) && preg_match('/\b(this\s*month|current\s*month|ngayong\s*buwan|next\s*month|sunod\s*na\s*buwan|january|february|march|april|may|june|july|august|september|october|november|december)\b/i', $lower_msg)) {
+        $month_res = ChatbotBusinessKnowledge::resolveMonthAvailabilityQuery($conn, $message, qes_detect_tagalog($message), $ai_b_name);
+        if ($month_res) {
+            $raw_reply = $month_res;
+        }
+    }
+
+    if (empty($raw_reply)) {
+        if (qes_detect_tagalog($message)) {
+            $booked_list = !empty($booked_dates)
+                ? "• " . implode("\n• ", $booked_dates) . "\n\n"
+                : "Lahat ng darating na petsa ay kasalukuyang bukas para sa inquiry!\n\n";
+            $raw_reply = "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
+                . "Ipinapatupad sa **{$ai_b_name}** ang **isang kumpirmadong okasyon bawat araw** (One Confirmed Event Per Day Policy) upang masiguro ang 100% dedikasyon ng aming senior styling crew at kagamitan.\n\n"
+                . "Kasalukuyang may nakareserbang okasyon sa mga sumusunod na petsa:\n"
+                . $booked_list
+                . "⏳ **Inirerekomendang Oras ng Paghahanda:**\n"
+                . "• 💍 **Kasal (Weddings):** 3 Buwang Preparation Reminder\n"
+                . "• 🎈 **Kids Party / Iba pang Events:** 3-7 Araw Preparation Reminder\n\n"
+                . "*(Paalala: Malaya kayong makakapili ng anumang petsa mula sa araw na ito simula sa aming 'Book Now' form)*\n\n"
+                . "📋 **Staff Review Notice:** Sinisiyasat ng aming coordinator ang bawat booking sa loob ng 24–48 oras upang mai-lock ang inyong slot.\n\n"
+                . "👉 Nais niyo po bang mag-inquire para sa partikular na petsa o simulan ang booking sa **'Book Now'**?";
+        } else {
+            $booked_list = !empty($booked_dates)
+                ? "• " . implode("\n• ", $booked_dates) . "\n\n"
+                : "All upcoming dates are currently open for booking inquiry!\n\n";
+            $raw_reply = "🗓️ **Real-Time Calendar Availability & Reserved Dates:**\n\n"
+                . "At **{$ai_b_name}**, we maintain a strict **one confirmed celebration per calendar day** rule to guarantee full equipment allocation and dedicated crew attention.\n\n"
+                . "Currently reserved celebration dates:\n"
+                . $booked_list
+                . "⏳ **Recommended Preparation Reminders:**\n"
+                . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
+                . "• 🎈 **Kids Party / Other Events:** 3-7 Days Preparation Reminder\n\n"
+                . "*(Note: Clients have free will to select any date from today onwards)*\n\n"
+                . "📋 **Staff Review Notice:** Because slot availability is dynamic, dates are officially secured once our coordinators complete Staff Review and your deposit is confirmed.\n\n"
+                . "👉 Would you like to check a specific date (e.g. *\"Is January 1, 2027 available?\"*) or start your inquiry via **'Book Now'**?";
+        }
     }
 }
 
@@ -1158,56 +1275,113 @@ if (empty($raw_reply)) {
     }
 }
 
+// 2B. Smart Context Extraction (Preserves Core Event Facts Across Extended Conversations)
+if (!isset($_SESSION['chat_context']) || !is_array($_SESSION['chat_context'])) {
+    $_SESSION['chat_context'] = [];
+}
+if (preg_match('/\b(wedding|weddings|kasal)\b/i', $lower_msg)) {
+    $_SESSION['chat_context']['event_type'] = 'Wedding';
+} elseif (preg_match('/\b(birthday|bday|kids\s*party|kaarawan)\b/i', $lower_msg)) {
+    $_SESSION['chat_context']['event_type'] = 'Birthday / Kids Party';
+} elseif (preg_match('/\b(debut|debutante|18th)\b/i', $lower_msg)) {
+    $_SESSION['chat_context']['event_type'] = 'Debut';
+} elseif (preg_match('/\b(corporate|company|seminar)\b/i', $lower_msg)) {
+    $_SESSION['chat_context']['event_type'] = 'Corporate Event';
+}
+$extracted_ctx_date = ChatbotBusinessKnowledge::extractDateFromMessage($message);
+if ($extracted_ctx_date !== null) {
+    $_SESSION['chat_context']['target_date'] = $extracted_ctx_date;
+}
+
+$context_summary = "";
+if (!empty($_SESSION['chat_context'])) {
+    $ctx_items = [];
+    if (!empty($_SESSION['chat_context']['event_type'])) $ctx_items[] = "Event Type: " . $_SESSION['chat_context']['event_type'];
+    if (!empty($_SESSION['chat_context']['target_date'])) $ctx_items[] = "Target Date: " . $_SESSION['chat_context']['target_date'];
+    if (!empty($ctx_items)) {
+        $context_summary = "\nCLIENT EVENT PROFILE SO FAR: " . implode(" | ", $ctx_items) . "\n";
+    }
+}
+$system_prompt .= $context_summary;
+
 // 3. Update Conversation History in Session
 $_SESSION['chat_history'][] = ['role' => 'user', 'content' => $message];
 if (count($_SESSION['chat_history']) > 6) {
     $_SESSION['chat_history'] = array_slice($_SESSION['chat_history'], -6);
 }
 
-// Format conversation history for Gemini API
+$current_chat_count = (int)($_SESSION['chat_count'] ?? 1);
+$updated_daily_count = $global_daily_used;
+
+// Build structured multi-turn contents and fallback text history for Gemini API
+$gemini_contents = [];
 $history_text = "";
 foreach ($_SESSION['chat_history'] as $item) {
     $role_label = ($item['role'] === 'user') ? 'User' : 'Assistant';
     $history_text .= "{$role_label}: {$item['content']}\n";
+    $g_role = ($item['role'] === 'user') ? 'user' : 'model';
+    if (!empty($gemini_contents) && $gemini_contents[count($gemini_contents) - 1]['role'] === $g_role) {
+        $gemini_contents[count($gemini_contents) - 1]['parts'][0]['text'] .= "\n" . $item['content'];
+    } else {
+        $gemini_contents[] = [
+            'role'  => $g_role,
+            'parts' => [['text' => $item['content']]]
+        ];
+    }
+}
+// Gemini API requires the first turn in contents to be 'user'
+if (!empty($gemini_contents) && $gemini_contents[0]['role'] !== 'user') {
+    array_shift($gemini_contents);
+}
+if (empty($gemini_contents)) {
+    $gemini_contents[] = [
+        'role'  => 'user',
+        'parts' => [['text' => $message]]
+    ];
 }
 
-$prompt_with_context = $system_prompt . "\n\nConversation So Far:\n" . $history_text . "\nAssistant:";
-
-// 4. Query Google Gemini API with High-Speed Flash-Lite Model (Strict <=4s SLA)
+// 4. Query Google Gemini API with High-Speed Flash-Lite Model
 if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || defined('GEMINI_API_KEY'))) {
+    // Release PHP session lock before external network I/O so follow-up requests never hang
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+
     $api_key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : GEMINI_KEY;
 
     $payload = [
-        'contents' => [
-            [
-                'parts' => [
-                    ['text' => $prompt_with_context]
-                ]
+        'systemInstruction' => [
+            'parts' => [
+                ['text' => $system_prompt]
             ]
         ],
+        'contents' => $gemini_contents,
         'generationConfig' => [
             'temperature'     => 0.7,
-            'maxOutputTokens' => 160
+            'maxOutputTokens' => 400
         ]
     ];
     $payload_json = json_encode($payload);
 
-    // Multi-model resilience prioritizing ultra-fast flash-lite with high-availability fallbacks
-    $preferred_model = defined('GEMINI_MODEL') && !empty(GEMINI_MODEL) ? GEMINI_MODEL : 'gemini-3.5-flash-lite';
+    // Multi-model resilience prioritizing valid, ultra-fast Gemini Flash-Lite models
+    $preferred_model = defined('GEMINI_MODEL') && !empty(GEMINI_MODEL) ? GEMINI_MODEL : 'gemini-2.5-flash';
+    if (in_array($preferred_model, ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'], true)) {
+        $preferred_model = 'gemini-2.5-flash-lite';
+    }
     $models_to_try = array_values(array_unique([
         $preferred_model,
-        'gemini-3.5-flash-lite',
-        'gemini-3.5-flash',
-        'gemini-flash-lite-latest',
-        'gemini-3.1-flash-lite'
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.0-flash-lite',
+        'gemini-flash-lite-latest'
     ]));
     $gemini_loop_start = microtime(true);
-    $total_timeout_budget = 2.8; // Guaranteed sub-4s SLA budget for responsive replies
+    $total_timeout_budget = 5.5;
 
     foreach ($models_to_try as $model_name) {
         $elapsed = microtime(true) - $gemini_loop_start;
         $remaining_budget = $total_timeout_budget - $elapsed;
-        if ($remaining_budget < 0.5) {
+        if ($remaining_budget < 0.6) {
             // Drop immediately to local knowledge engine if budget cannot sustain another round-trip
             break;
         }
@@ -1217,8 +1391,8 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_name}:generateContent";
         $ch = curl_init($url);
 
-        $timeout_ms = (int)round(min(2400, $remaining_budget * 1000));
-        $connect_timeout_ms = min(1000, (int)round($remaining_budget * 400));
+        $timeout_ms = (int)round(min(3500, $remaining_budget * 1000));
+        $connect_timeout_ms = min(1200, (int)round($remaining_budget * 400));
 
         $curl_options = [
             CURLOPT_RETURNTRANSFER => true,
@@ -1280,9 +1454,12 @@ if (empty($raw_reply) && !$is_daily_api_exhausted && (defined('GEMINI_KEY') || d
             }
             if (!empty($ai_text)) {
                 $raw_reply = trim($ai_text);
-                incrementGlobalDailyApiCount($conn);
+                $updated_daily_count = incrementGlobalDailyApiCount($conn, $global_daily_used);
                 break; // Succeeded!
             }
+        } elseif ($http_code === 400 || $http_code === 401 || $http_code === 403) {
+            // Invalid key or bad request; no need to retry other models
+            break;
         }
         // If 429, 503, 404, or timeout, loop continues to the next model in $models_to_try
     }
@@ -1304,22 +1481,47 @@ if (empty($raw_reply)) {
     }
 }
 if (empty($raw_reply)) {
-    if (strpos($lower_msg, 'lead time') !== false || strpos($lower_msg, 'advance') !== false || strpos($lower_msg, 'notice') !== false || strpos($lower_msg, 'reminder') !== false || strpos($lower_msg, 'preparation') !== false || strpos($lower_msg, 'kailan') !== false) {
+    $has_lead_kw = (bool)preg_match('/\b(lead\s*time|advance|notice|reminder|preparation|how\s*early|gaano\s*kaaga|kailan)\b/i', $lower_msg);
+    $has_pay_kw = (bool)preg_match('/\b(downpayment|deposit|payment|bayad|down\s*payment|terms\s*of\s*payment)\b/i', $lower_msg);
+    $has_pol_kw = (bool)preg_match('/\b(policies|policy|patakaran|rules?)\b/i', $lower_msg);
+
+    if (($has_lead_kw && $has_pay_kw) || ($has_pol_kw && ($has_lead_kw || $has_pay_kw))) {
+        $raw_reply = "📜 **Lead Time, Preparation Reminders & Downpayment Policies:**\n\n"
+            . "• ⏳ **Preparation Reminders:** Weddings: 3 Months, Kids Parties: 3-7 Days, Debut: 2 Weeks. (Clients have free will to select any date starting from today onwards!)\n"
+            . "• 💳 **Downpayment:** 30% to 50% reservation deposit required once your booking passes Staff Review (payments are never collected inside this chat).\n"
+            . "• 🏦 **Accepted Channels:** Online Bank Transfer (BDO, BPI, Metrobank), E-Wallets (GCash, Maya QR), and on-site cash settlement.\n\n"
+            . "👉 Ready to begin? Click the **'Book Now'** button on our website to submit your inquiry!";
+    } elseif ($has_lead_kw) {
         $raw_reply = "⏳ **Booking Preparation Reminders & Policy:**\n\n"
             . "Clients have free will to select any event date from today onwards! Here are our recommended preparation reminders:\n\n"
             . "• 💍 **Weddings:** 3 Months Preparation Reminder\n"
-            . "• 🎈 **Kids Parties & Birthdays:** 2 Weeks Preparation Reminder\n"
+            . "• 🎈 **Kids Parties & Birthdays:** 3-7 Days Preparation Reminder\n"
             . "• 👑 **Debut & Milestone Events:** 2 Weeks Preparation Reminder\n"
             . "• 🏢 **Corporate & Special Events:** 2 Weeks Preparation Reminder\n\n"
             . "👉 Would you like to check date availability or submit your inquiry through our **'Book Now'** form?";
-    } elseif (strpos($lower_msg, 'availab') !== false || strpos($lower_msg, 'booked date') !== false || strpos($lower_msg, 'upcoming') !== false || (strpos($lower_msg, 'booked') !== false && strpos($lower_msg, 'date') !== false)) {
-        $raw_reply = "🗓️ **Upcoming Reserved Dates & Availability:**\n\n"
-            . "Here are our currently reserved event dates:\n"
-            . (!empty($booked_dates) ? "• " . implode("\n• ", $booked_dates) . "\n\n" : "No approved events booked yet in upcoming months! All dates are currently open.\n\n")
-            . "Recommended preparation reminders (free date selection from today onwards):\n"
-            . "• **Weddings:** 3 Months Preparation Reminder\n"
-            . "• **Kids Party / Other Events:** 2 Weeks Preparation Reminder\n\n"
-            . "Ready to reserve your celebration? Click the **'Book Now'** button on our website to begin!";
+    } elseif (
+        preg_match('/\b(avail[a-z]*|avaliab[a-z]*|avaiable|bakante|open\s*dates?|free\s*dates?|open\s*slots?|free\s*slots?|booked\s*dates?|dates?\s+this\s+month|dates?\s+next\s+month)\b/i', $lower_msg) ||
+        (strpos($lower_msg, 'date') !== false && (strpos($lower_msg, 'avail') !== false || strpos($lower_msg, 'open') !== false || strpos($lower_msg, 'free') !== false))
+    ) {
+        $parsed_fb_date = ChatbotBusinessKnowledge::extractDateFromMessage($message);
+        if ($parsed_fb_date !== null) {
+            $raw_reply = ChatbotBusinessKnowledge::resolveSpecificDateQuery($conn, $parsed_fb_date, $message, qes_detect_tagalog($message), $ai_b_name, $ai_b_email);
+        }
+        if (empty($raw_reply) && preg_match('/\b(this\s*month|current\s*month|ngayong\s*buwan|next\s*month|sunod\s*na\s*buwan|january|february|march|april|may|june|july|august|september|october|november|december)\b/i', $lower_msg)) {
+            $month_res = ChatbotBusinessKnowledge::resolveMonthAvailabilityQuery($conn, $message, qes_detect_tagalog($message), $ai_b_name);
+            if ($month_res) {
+                $raw_reply = $month_res;
+            }
+        }
+        if (empty($raw_reply)) {
+            $raw_reply = "🗓️ **Upcoming Reserved Dates & Availability:**\n\n"
+                . "Here are our currently reserved event dates:\n"
+                . (!empty($booked_dates) ? "• " . implode("\n• ", $booked_dates) . "\n\n" : "No approved events booked yet in upcoming months! All dates are currently open.\n\n")
+                . "Recommended preparation reminders (free date selection from today onwards):\n"
+                . "• **Weddings:** 3 Months Preparation Reminder\n"
+                . "• **Kids Party / Other Events:** 3-7 Days Preparation Reminder\n\n"
+                . "Ready to reserve your celebration? Click the **'Book Now'** button on our website to begin!";
+        }
     } elseif (strpos($lower_msg, 'package') !== false || strpos($lower_msg, 'offer') !== false || strpos($lower_msg, 'service') !== false || strpos($lower_msg, 'presyo') !== false || strpos($lower_msg, 'price') !== false) {
         $raw_reply = "🌸🎈 **Our Event Packages & Styling Services:**\n\n"
             . "We offer comprehensive styling and event coordination for:\n"
@@ -1334,7 +1536,7 @@ if (empty($raw_reply)) {
             . "• **Weddings:** Ceremony floral arches, bridal bouquets, entourage styling, aisle decor, and reception styling\n"
             . "• **Kids Party:** Organic balloon garlands, character backdrops, cake table styling, and themed setups\n\n"
             . "To customize and book your setup, click the **'Book Now'** button on our website!";
-    } elseif (strpos($lower_msg, 'pay') !== false || strpos($lower_msg, 'downpayment') !== false || strpos($lower_msg, 'bayad') !== false || strpos($lower_msg, 'deposit') !== false) {
+    } elseif ($has_pay_kw) {
         $raw_reply = "💳 **Payment & Downpayment Information:**\n\n"
             . "• **No Direct Payments in Chat:** For client security, downpayments and payments are **never collected in this chat**.\n"
             . "• **Coordination Process:** Once you submit your inquiry via the **'Book Now'** form, our official event coordinator will review your schedule and reach out to you directly via Email/Phone within 24–48 hours.\n"
@@ -1354,6 +1556,11 @@ if (empty($raw_reply)) {
     }
 }
 
+// Re-open session briefly if closed during external API call to persist assistant reply
+if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() !== 'cli') {
+    @session_start();
+}
+
 // 6. Prepend Quota Exhausted / Offline Notice if first time in session
 if ($is_daily_api_exhausted && empty($_SESSION['notified_quota_exhausted'])) {
     $_SESSION['notified_quota_exhausted'] = true;
@@ -1368,17 +1575,18 @@ $clean_reply = preg_replace('/```(?:json)?\s*\{\s*"action"\s*:\s*".*?"\s*\}\s*``
 $clean_reply = trim($clean_reply);
 
 $_SESSION['chat_history'][] = ['role' => 'assistant', 'content' => $clean_reply];
-
-$updated_daily_count = getGlobalDailyApiCount($conn);
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 $output = [
     'reply'                  => $clean_reply,
     'response'               => $clean_reply,
     'booking_created'        => false,
-    'chat_count'             => $_SESSION['chat_count'],
-    'remaining_chats'        => max(0, $USER_SESSION_LIMIT - $_SESSION['chat_count']),
+    'chat_count'             => $current_chat_count,
+    'remaining_chats'        => max(0, $USER_SESSION_LIMIT - $current_chat_count),
     'max_chats'              => $USER_SESSION_LIMIT,
-    'limit_reached'          => ($_SESSION['chat_count'] >= $USER_SESSION_LIMIT),
+    'limit_reached'          => ($current_chat_count >= $USER_SESSION_LIMIT),
     'daily_remaining'        => max(0, $GLOBAL_DAILY_LIMIT - $updated_daily_count),
     'is_offline_mode'        => $is_daily_api_exhausted,
     'is_api_quota_exhausted' => ($updated_daily_count >= $GLOBAL_DAILY_LIMIT),
