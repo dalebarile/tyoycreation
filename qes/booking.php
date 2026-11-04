@@ -3772,9 +3772,21 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
         function BookingApp() {
             const config = window.BOOKING_CONFIG || {};
 
+            // Synchronously retrieve saved draft from storage so that on mount/page return ALL data and checked packages are instantly retained
+            const initialDraft = (() => {
+                try {
+                    const raw = sessionStorage.getItem('qes_booking_saved_draft') || localStorage.getItem('qes_booking_saved_draft');
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed && typeof parsed === 'object') return parsed;
+                    }
+                } catch (e) {}
+                return null;
+            })();
+
             // Celebration family & event type state
-            const [family, setFamily] = useState(config.initialFamily || 'theme_party');
-            const [eventType, setEventType] = useState(config.initialType || 'Kids Party');
+            const [family, setFamily] = useState(initialDraft?.family || config.initialFamily || 'theme_party');
+            const [eventType, setEventType] = useState(initialDraft?.eventType || config.initialType || 'Kids Party');
 
             // Dynamic preparation reminder rules based on active family (free will to choose date from today onwards)
             const isWedding = (family === 'wedding');
@@ -3787,27 +3799,36 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             // Active catalog based on family (theme_party or wedding)
             const currentCatalog = useMemo(() => isWedding ? (config.pricingWedding || {}) : (config.pricingTheme || {}), [isWedding, config]);
 
-            // Form inputs state (Pre-filled if logged in as client)
-            const [clientName, setClientName] = useState(config.userFullName || '');
-            const [clientEmail, setClientEmail] = useState(config.userEmail || '');
-            const [clientPhone, setClientPhone] = useState(config.userPhone || '');
-            const [clientAddress, setClientAddress] = useState('');
+            // Form inputs state (Pre-filled if logged in as client or from retained draft)
+            const [clientName, setClientName] = useState(initialDraft?.clientName || config.userFullName || '');
+            const [clientEmail, setClientEmail] = useState(initialDraft?.clientEmail || config.userEmail || '');
+            const [clientPhone, setClientPhone] = useState(initialDraft?.clientPhone || config.userPhone || '');
+            const [clientAddress, setClientAddress] = useState(initialDraft?.clientAddress || '');
 
             // Address API State (Philippine Standard Geographic Code: Regions, Cities/Municipalities, Barangays)
             const [regionsList, setRegionsList] = useState([]);
-            const [selectedRegion, setSelectedRegion] = useState('');
+            const [selectedRegion, setSelectedRegion] = useState(initialDraft?.selectedRegion || '');
             const [citiesList, setCitiesList] = useState([]);
-            const [selectedCity, setSelectedCity] = useState('');
+            const [selectedCity, setSelectedCity] = useState(initialDraft?.selectedCity || '');
             const [barangaysList, setBarangaysList] = useState([]);
-            const [selectedBarangay, setSelectedBarangay] = useState('');
-            const [streetDetail, setStreetDetail] = useState('');
+            const [selectedBarangay, setSelectedBarangay] = useState(initialDraft?.selectedBarangay || '');
+            const [streetDetail, setStreetDetail] = useState(initialDraft?.streetDetail || '');
             const [addressLoading, setAddressLoading] = useState(false);
-            const [isManualAddress, setIsManualAddress] = useState(false);
+            const [isManualAddress, setIsManualAddress] = useState(typeof initialDraft?.isManualAddress === 'boolean' ? initialDraft.isManualAddress : false);
 
-            const [eventTitle, setEventTitle] = useState('');
-            const [guestCount, setGuestCount] = useState('100');
-            const [eventDate, setEventDate] = useState(todayStr);
+            const [eventTitle, setEventTitle] = useState(initialDraft?.eventTitle || '');
+            const [guestCount, setGuestCount] = useState(initialDraft?.guestCount ? String(initialDraft.guestCount) : '100');
+            const [eventDate, setEventDate] = useState(initialDraft?.eventDate || todayStr);
+            const [eventTime, setEventTime] = useState(initialDraft?.eventTime || '14:00');
+            const [locationVenue, setLocationVenue] = useState(initialDraft?.locationVenue || '');
+            const [specialNotes, setSpecialNotes] = useState(initialDraft?.specialNotes || '');
             const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+
+            // Selected packages/addons state: { [itemId]: { id, catKey, catTitle, label, price, value, isRadio } }
+            const [selectedItems, setSelectedItems] = useState((initialDraft?.selectedItems && typeof initialDraft.selectedItems === 'object') ? initialDraft.selectedItems : {});
+
+            // Package Category Selection State (null initially until customer picks 1 of the 3)
+            const [activeStep3GroupKey, setActiveStep3GroupKey] = useState(initialDraft?.activeStep3GroupKey || null);
 
             // Authentication & Guest State
             const [isUserLoggedIn, setIsUserLoggedIn] = useState(config.userLoggedIn || false);
@@ -3832,6 +3853,22 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             // Comprehensive Draft Saver (preserves checked packages and all form fields)
             const saveCurrentDraft = () => {
                 try {
+                    const hasSelected = selectedItems && Object.keys(selectedItems).length > 0;
+                    const hasFormContent = !!eventTitle || !!locationVenue || !!specialNotes || !!clientName;
+
+                    // Safety guard: Never overwrite non-empty saved packages in storage with an empty draft
+                    if (!hasSelected && !hasFormContent) {
+                        const existingRaw = localStorage.getItem('qes_booking_saved_draft');
+                        if (existingRaw) {
+                            try {
+                                const existing = JSON.parse(existingRaw);
+                                if (existing && existing.selectedItems && Object.keys(existing.selectedItems).length > 0) {
+                                    return; // Retain existing checked packages
+                                }
+                            } catch (e) {}
+                        }
+                    }
+
                     const draft = {
                         family,
                         eventType,
@@ -3851,7 +3888,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                         selectedCity,
                         selectedBarangay,
                         streetDetail,
-                        isManualAddress
+                        isManualAddress,
+                        savedAt: Date.now()
                     };
                     const str = JSON.stringify(draft);
                     sessionStorage.setItem('qes_booking_saved_draft', str);
@@ -3859,9 +3897,34 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 } catch (e) {}
             };
 
-            // Auto-save draft on any change so packages remain checked and data is retained
+            // Auto-save draft on user changes, skipping empty initial mount overwrite
+            const isInitialMount = useRef(true);
             useEffect(() => {
+                if (isInitialMount.current) {
+                    isInitialMount.current = false;
+                    return;
+                }
                 saveCurrentDraft();
+            }, [family, eventType, eventTitle, eventDate, eventTime, guestCount, locationVenue, specialNotes, activeStep3GroupKey, selectedItems, clientName, clientEmail, clientPhone, clientAddress, selectedRegion, selectedCity, selectedBarangay, streetDetail, isManualAddress]);
+
+            // Persist draft immediately when leaving the page to log in, switching tabs, or navigating away
+            useEffect(() => {
+                const handleLeave = () => {
+                    saveCurrentDraft();
+                };
+                window.addEventListener('beforeunload', handleLeave);
+                window.addEventListener('pagehide', handleLeave);
+                const handleVisibility = () => {
+                    if (document.visibilityState === 'hidden') {
+                        saveCurrentDraft();
+                    }
+                };
+                document.addEventListener('visibilitychange', handleVisibility);
+                return () => {
+                    window.removeEventListener('beforeunload', handleLeave);
+                    window.removeEventListener('pagehide', handleLeave);
+                    document.removeEventListener('visibilitychange', handleVisibility);
+                };
             }, [family, eventType, eventTitle, eventDate, eventTime, guestCount, locationVenue, specialNotes, activeStep3GroupKey, selectedItems, clientName, clientEmail, clientPhone, clientAddress, selectedRegion, selectedCity, selectedBarangay, streetDetail, isManualAddress]);
 
             // Expose modal opener to window for navbar Sign In button
@@ -4049,15 +4112,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     return eventDate;
                 }
             }, [eventDate]);
-            const [eventTime, setEventTime] = useState('14:00');
-            const [locationVenue, setLocationVenue] = useState('');
-            const [specialNotes, setSpecialNotes] = useState('');
-
-            // Selected packages/addons state: { [itemId]: { id, catKey, catTitle, label, price, value, isRadio } }
-            const [selectedItems, setSelectedItems] = useState({});
-
-            // Package Category Selection State (null initially until customer picks 1 of the 3)
-            const [activeStep3GroupKey, setActiveStep3GroupKey] = useState(null);
+            // Selected packages state and Step 3 group key are declared at the top initialized with initialDraft
 
             // Lightweight Package Group Mapping (Dynamically mapped to existing catalog keys)
             const PACKAGE_GROUPS = useMemo(() => ({
