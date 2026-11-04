@@ -63,6 +63,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Book an Event - <?= htmlspecialchars($business_name) ?></title>
+    <link rel="preconnect" href="https://kanotzhwqsscejqecqom.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="https://kanotzhwqsscejqecqom.supabase.co">
+    <link rel="preconnect" href="https://accounts.google.com">
+    <link rel="dns-prefetch" href="https://accounts.google.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -3753,6 +3757,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
             isTypeLocked: <?= json_encode($is_type_locked_from_url) ?>,
             turnstileEnabled: <?= json_encode(qes_is_turnstile_enabled($conn)) ?>,
             turnstileSiteKey: <?= json_encode(qes_get_turnstile_site_key($conn)) ?>,
+            supabaseAuthUrl: <?= json_encode(defined('ENV_SUPABASE_URL') ? rtrim(ENV_SUPABASE_URL, '/') : 'https://kanotzhwqsscejqecqom.supabase.co') ?>,
             userLoggedIn: <?= json_encode(!empty($_SESSION['id']) && (!isset($_SESSION['role']) || $_SESSION['role'] === 'user')) ?>,
             userFullName: <?= json_encode($_SESSION['full_name'] ?? '') ?>,
             userEmail: <?= json_encode($_SESSION['email'] ?? '') ?>,
@@ -3871,6 +3876,92 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     delete window.qesOpenBookingAuthModal;
                 };
             });
+
+            // Handle Supabase Google OAuth callback if redirected back with hash or query token
+            useEffect(() => {
+                const hash = window.location.hash.substring(1);
+                const search = window.location.search.substring(1);
+                if (!hash && !search) return;
+
+                if (hash.includes('error=') || search.includes('error=')) {
+                    const errParams = new URLSearchParams(hash.includes('error=') ? hash : search);
+                    const errMsg = errParams.get('error_description') || errParams.get('error') || 'Google sign-in was cancelled or failed.';
+                    setAuthModalOpen(true);
+                    setAuthAlert({ text: decodeURIComponent(errMsg.replace(/\+/g, ' ')), type: 'error' });
+                    try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
+                    return;
+                }
+
+                let accessToken = null;
+                if (hash.includes('access_token=')) {
+                    const hashParams = new URLSearchParams(hash);
+                    accessToken = hashParams.get('access_token');
+                } else if (search.includes('access_token=')) {
+                    const searchParams = new URLSearchParams(search);
+                    accessToken = searchParams.get('access_token');
+                }
+
+                if (!accessToken) return;
+
+                // Clear hash immediately from address bar
+                try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+
+                setAuthModalOpen(true);
+                setAuthLoading(true);
+                setAuthAlert({ text: 'Signing you in with Google...', type: 'success' });
+
+                const fd = new FormData();
+                fd.append('csrf_token', config.csrfToken);
+                fd.append('action', 'supabase_login');
+                fd.append('access_token', accessToken);
+
+                fetch('auth_action.php?action=supabase_login', {
+                    method: 'POST',
+                    body: fd
+                })
+                .then(r => r.json())
+                .then(data => {
+                    setAuthLoading(false);
+                    if (data && data.success) {
+                        setIsUserLoggedIn(true);
+                        const user = data.user || {};
+                        if (user.full_name) setClientName(prev => prev || user.full_name);
+                        if (user.email) setClientEmail(prev => prev || user.email);
+                        if (user.phone) setClientPhone(prev => prev || user.phone);
+
+                        const navSignInBtn = document.getElementById('bookingNavSignInBtn');
+                        if (navSignInBtn) {
+                            const displayName = user.full_name || user.username || 'User';
+                            navSignInBtn.outerHTML = `
+                                <span class="client-user-badge">
+                                    <i class="fa-solid fa-circle-user" style="color: #285440; font-size: 15px;"></i>
+                                    <span>${displayName}</span>
+                                </span>
+                                <a href="logout.php?redirect=booking.php" class="client-logout-nav" title="Sign Out">
+                                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                                </a>
+                            `;
+                        }
+
+                        setAuthModalOpen(false);
+                        setJustSignedInNotice(true);
+
+                        setTimeout(() => {
+                            saveCurrentDraft();
+                            const submitBtn = document.querySelector('.btn-submit-booking');
+                            if (submitBtn) {
+                                submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }, 100);
+                    } else {
+                        setAuthAlert({ text: (data && data.message) ? data.message : 'Google sign-in could not be completed.', type: 'error' });
+                    }
+                })
+                .catch(() => {
+                    setAuthLoading(false);
+                    setAuthAlert({ text: 'Connection error during Google sign-in. Please try again.', type: 'error' });
+                });
+            }, []);
 
             // Restore preserved draft on mount (retaining checked packages & all details)
             useEffect(() => {
@@ -6638,6 +6729,15 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
 
                     {/* 2. Two-Step Verification Modal */}
                     {verifyModal.isOpen && (() => {
+                        const handleGoogleSignIn = () => {
+                            saveCurrentDraft();
+                            setAuthLoading(true);
+                            setAuthAlert({ text: 'Connecting to Google...', type: 'success' });
+                            const supabaseUrl = config.supabaseAuthUrl || 'https://kanotzhwqsscejqecqom.supabase.co';
+                            const redirectUrl = window.location.origin + window.location.pathname;
+                            window.location.href = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+                        };
+
                         const modalContent = (
                             <div className="verify-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verifyModalTitle">
                                 <div className="verify-modal-card">
@@ -7420,6 +7520,15 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             }
                         };
 
+                        const handleGoogleSignIn = () => {
+                            saveCurrentDraft();
+                            setAuthLoading(true);
+                            setAuthAlert({ text: 'Connecting to Google...', type: 'success' });
+                            const supabaseUrl = config.supabaseAuthUrl || 'https://kanotzhwqsscejqecqom.supabase.co';
+                            const redirectUrl = window.location.origin + window.location.pathname;
+                            window.location.href = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+                        };
+
                         const modalContent = (
                             <div
                                 className="exit-warning-overlay"
@@ -7454,9 +7563,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     style={{
                                         maxWidth: '460px',
                                         width: '100%',
-                                        maxHeight: 'calc(100dvh - 32px)',
+                                        maxHeight: 'min(92vh, 640px)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
                                         borderRadius: '20px',
-                                        overflowY: 'auto',
+                                        overflow: 'hidden',
                                         boxShadow: '0 25px 60px rgba(0,0,0,0.55)',
                                         background: '#ffffff',
                                         margin: 'auto',
@@ -7464,7 +7575,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     }}
                                 >
                                     {/* Header */}
-                                    <div style={{ background: 'linear-gradient(135deg, #18392b 0%, #285440 100%)', padding: '20px 24px', color: '#ffffff', position: 'relative' }}>
+                                    <div style={{ background: 'linear-gradient(135deg, #18392b 0%, #285440 100%)', padding: '20px 24px', color: '#ffffff', position: 'relative', flexShrink: 0 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                 <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
@@ -7484,7 +7595,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                     </div>
 
                                     {/* Retained Data Confirmation Pill */}
-                                    <div style={{ background: '#ecfdf5', borderBottom: '1px solid #a7f3d0', padding: '9px 24px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#065f46', fontWeight: 600 }}>
+                                    <div style={{ background: '#ecfdf5', borderBottom: '1px solid #a7f3d0', padding: '9px 24px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#065f46', fontWeight: 600, flexShrink: 0 }}>
                                         <i className="fa-solid fa-check-circle" style={{ color: '#059669' }}></i>
                                         <span>Your checked packages &amp; event details are safely retained!</span>
                                     </div>
@@ -7717,7 +7828,52 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             )}
                                         </form>
 
-                                        <div style={{ textAlign: 'center', marginTop: '14px' }}>
+                                        {/* Divider (Google Connect placed below) */}
+                                        <div style={{ display: 'flex', alignItems: 'center', textAlign: 'center', margin: '18px 0 14px', color: '#9ca3af', fontSize: '11.5px', fontWeight: 600 }}>
+                                            <div style={{ flex: 1, borderBottom: '1px solid #e5e7eb' }}></div>
+                                            <span style={{ padding: '0 12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#9ca3af' }}>or continue with Google</span>
+                                            <div style={{ flex: 1, borderBottom: '1px solid #e5e7eb' }}></div>
+                                        </div>
+
+                                        {/* Google Connect Button */}
+                                        <div style={{ marginBottom: '14px' }}>
+                                            <button
+                                                type="button"
+                                                id="bookingGoogleBtn"
+                                                onClick={handleGoogleSignIn}
+                                                disabled={authLoading}
+                                                style={{
+                                                    display: 'flex',
+                                                    width: '100%',
+                                                    boxSizing: 'border-box',
+                                                    border: '1.5px solid #d1d5db',
+                                                    background: '#ffffff',
+                                                    color: '#374151',
+                                                    fontWeight: 600,
+                                                    fontSize: '13.5px',
+                                                    padding: '10px 16px',
+                                                    borderRadius: '10px',
+                                                    cursor: authLoading ? 'not-allowed' : 'pointer',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '10px',
+                                                    transition: 'all 0.2s',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                                }}
+                                                onMouseOver={(e) => { e.currentTarget.style.borderColor = '#9ca3af'; e.currentTarget.style.background = '#f9fafb'; }}
+                                                onMouseOut={(e) => { e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.background = '#ffffff'; }}
+                                            >
+                                                <svg width="18" height="18" viewBox="0 0 24 24">
+                                                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                                                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                                                </svg>
+                                                <span>Continue with Google</span>
+                                            </button>
+                                        </div>
+
+                                        <div style={{ textAlign: 'center', marginTop: '10px' }}>
                                             <button
                                                 type="button"
                                                 onClick={() => setAuthModalOpen(false)}
