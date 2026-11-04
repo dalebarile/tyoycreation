@@ -4758,14 +4758,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                             }
                         }));
 
-                        // If preselected package is catering, sync guest count so it doesn't default to 100 and exceed
-                        const isCateringCat = (foundCatKey === 'catering');
-                        if (isCateringCat && foundItem.label) {
-                            const match = foundItem.label.match(/(\d+)\s*pax/i);
-                            if (match) {
-                                setGuestCount(String(parseInt(match[1], 10)));
-                            }
-                        }
+
 
                         // If preselected package is found, automatically activate its category group
                         const matchedGroup = currentGroups.find(g => g.categories && g.categories.includes(foundCatKey));
@@ -4948,9 +4941,10 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 return selectedPackageLimit || maxCatalogCateringPax;
             }, [selectedPackageLimit, maxCatalogCateringPax]);
 
-            // Real-time numeric guest count and exceeded status
+            // Real-time numeric guest count and catering mismatch / exceeded status
             const numGuests = useMemo(() => parseInt(guestCount, 10) || 0, [guestCount]);
-            const isGuestExceeded = Boolean(totalGuestLimit && numGuests > totalGuestLimit);
+            const isGuestExceeded = Boolean(selectedPackageLimit && numGuests > selectedPackageLimit);
+            const isCateringMismatch = Boolean(selectedPackageLimit && numGuests !== selectedPackageLimit);
 
             // Handle guest count input changes (strips non-digits and removes leading zeros)
             const handleGuestCountChange = (e) => {
@@ -4974,18 +4968,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                 const price = parseInt(item.price, 10) || 0;
                 const itemVal = item.value || ((catInfo.category_title || catKey) + ': ' + item.label);
 
-                // Auto-sync guest count suggestion when selecting a catering package
-                const isCateringCat = (catKey === 'catering');
-                if (isCateringCat) {
-                    const match = item.label.match(/(\d+)\s*pax/i);
-                    if (match) {
-                        const newPax = parseInt(match[1], 10);
-                        // If selecting (not deselecting), sync guest count
-                        if (!selectedItems[itemId]) {
-                            setGuestCount(String(newPax));
-                        }
-                    }
-                }
+
 
                 setSelectedItems(prev => {
                     const next = { ...prev };
@@ -5058,11 +5041,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                 <span>{title}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {catKey === 'catering' && (
-                                    <span style={{ fontSize: '11px', background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '12px', fontWeight: 600 }}>
-                                        <i className="fa-solid fa-users"></i> Sets Guest Limit
-                                    </span>
-                                )}
+
                                 <span className={`badge-type ${isCheckbox ? 'badge-check' : 'badge-radio'}`}>
                                     {customBadge || (isCheckbox ? 'Pick Any' : 'Pick One')}
                                 </span>
@@ -5123,7 +5102,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     return (
                         <div>
                             {/* 1. Pax Capacity */}
-                            {renderCatalogCategory('catering', cateringCat, 'Pax Capacity', paxItems, 'Pick One • Sets Guest Limit')}
+                            {renderCatalogCategory('catering', cateringCat, 'Pax Capacity', paxItems, 'Pick One')}
                             
                             {/* 2. Food Menu Options */}
                             {renderCatalogCategory('catering_addons', addonsCat, 'Food Menu Selection', foodItems, 'Pick Any • Included')}
@@ -5190,6 +5169,8 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     errs.guestCount = 'Please enter a valid Expected Guest Count (minimum 1 attendee).';
                 } else if (selectedPackageLimit && num > selectedPackageLimit) {
                     errs.guestCount = `Cannot proceed: Expected guest count (${num}) exceeds your selected Catering Service package limit (${selectedPackageLimit} pax). Please adjust your guest count or choose a higher catering package below.`;
+                } else if (selectedPackageLimit && num < selectedPackageLimit) {
+                    errs.guestCount = `Cannot proceed: Expected guest count (${num}) does not match your selected Catering Service package (${selectedPackageLimit} pax). Please change your guest count to ${selectedPackageLimit} or choose the matching catering package below.`;
                 } else if (!selectedPackageLimit && num > maxCatalogCateringPax) {
                     errs.guestCount = `Cannot proceed: Expected guest count (${num}) exceeds our maximum catering service capacity (${maxCatalogCateringPax} pax). Please adjust your guest count or select an available package.`;
                 }
@@ -5239,11 +5220,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                     } catch (e) {}
                 }
 
-                // 2. If guest count exceeds catering capacity limit, immediately focus and alert user
-                if (isGuestExceeded) {
-                    const limitMsg = selectedPackageLimit 
+                // 2. If guest count does not match or exceeds catering package, reject and alert user
+                if (isCateringMismatch) {
+                    const limitMsg = isGuestExceeded 
                         ? `Cannot proceed: Expected guest count (${numGuests}) exceeds your selected catering service package limit (${selectedPackageLimit} pax). Please adjust your guest count or choose a higher catering package.`
-                        : `Cannot proceed: Expected guest count (${numGuests}) exceeds our maximum catering service capacity (${maxCatalogCateringPax} pax). Please adjust your guest count or choose an available catering package.`;
+                        : `Cannot proceed: Expected guest count (${numGuests}) does not match your selected catering service package (${selectedPackageLimit} pax). Please change your guest count to ${selectedPackageLimit} or choose the matching catering package.`;
                     setSubmitError(limitMsg);
                     const guestEl = document.getElementById('guest_count_input');
                     if (guestEl) {
@@ -6014,17 +5995,17 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                         <div className="form-group">
                                             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
                                                 <span>Expected Guest Count <span className="required">*</span></span>
-                                                {totalGuestLimit ? (
+                                                {selectedPackageLimit ? (
                                                     <span style={{ 
                                                         fontSize: '11px', 
-                                                        color: isGuestExceeded ? '#dc2626' : '#15803d', 
-                                                        background: isGuestExceeded ? '#fee2e2' : '#dcfce7', 
-                                                        border: isGuestExceeded ? '1px solid #fca5a5' : '1px solid transparent',
+                                                        color: isCateringMismatch ? '#dc2626' : '#15803d', 
+                                                        background: isCateringMismatch ? '#fee2e2' : '#dcfce7', 
+                                                        border: isCateringMismatch ? '1px solid #fca5a5' : '1px solid transparent',
                                                         padding: '2px 8px', 
                                                         borderRadius: '12px', 
                                                         fontWeight: 700 
                                                     }}>
-                                                        <i className={`fa-solid ${isGuestExceeded ? 'fa-triangle-exclamation' : 'fa-users'}`}></i> {selectedPackageLimit ? `Package Limit: ${selectedPackageLimit} pax` : `Max Capacity: ${maxCatalogCateringPax} pax`}
+                                                        <i className={`fa-solid ${isCateringMismatch ? 'fa-triangle-exclamation' : 'fa-check'}`}></i> {isCateringMismatch ? `Catering: ${selectedPackageLimit} pax (Mismatch)` : `Catering: ${selectedPackageLimit} pax`}
                                                     </span>
                                                 ) : null}
                                             </label>
@@ -6033,13 +6014,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 inputMode="numeric"
                                                 pattern="[0-9]*"
                                                 id="guest_count_input"
-                                                className={`form-control ${isGuestExceeded || errors.guestCount ? 'is-invalid' : ''}`}
+                                                className={`form-control ${isCateringMismatch || errors.guestCount ? 'is-invalid' : ''}`}
                                                 value={guestCount}
                                                 placeholder="e.g. 100"
                                                 onChange={handleGuestCountChange}
                                                 required
                                             />
-                                            {isGuestExceeded ? (
+                                            {isCateringMismatch ? (
                                                 <div style={{
                                                     marginTop: '8px',
                                                     background: '#fff1f2',
@@ -6054,21 +6035,41 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                     boxShadow: '0 2px 6px rgba(244, 63, 94, 0.12)'
                                                 }}>
                                                     <i className="fa-solid fa-triangle-exclamation" style={{ color: '#e11d48', fontSize: '16px', marginTop: '2px', flexShrink: 0 }}></i>
-                                                    <div>
+                                                    <div style={{ flex: 1 }}>
                                                         <strong style={{ display: 'block', marginBottom: '2px', fontSize: '13px' }}>
-                                                            {selectedPackageLimit 
-                                                                ? `Catering Package Limit Exceeded (${numGuests} / ${selectedPackageLimit} pax)`
-                                                                : `Catering Maximum Capacity Exceeded (${numGuests} / ${maxCatalogCateringPax} pax)`}
+                                                            {isGuestExceeded 
+                                                                ? `Guest Count Exceeds Catering Package (${numGuests} / ${selectedPackageLimit} pax)`
+                                                                : `Guest Count Mismatch (${numGuests} guests vs ${selectedPackageLimit} pax Catering)`}
                                                         </strong>
-                                                        {selectedPackageLimit ? (
-                                                            <span>Your expected guest count (<strong>{numGuests} guests</strong>) exceeds your selected Catering Service package limit (<strong>{selectedPackageLimit} pax</strong>).</span>
+                                                        {isGuestExceeded ? (
+                                                            <span>Your expected guest count (<strong>{numGuests} guests</strong>) exceeds your selected Catering Service package (<strong>{selectedPackageLimit} pax</strong>).</span>
                                                         ) : (
-                                                            <span>Your expected guest count (<strong>{numGuests} guests</strong>) exceeds our maximum catering service capacity (<strong>{maxCatalogCateringPax} pax</strong>).</span>
+                                                            <span>Your expected guest count (<strong>{numGuests} guests</strong>) does not match your selected Catering Service package (<strong>{selectedPackageLimit} pax</strong>).</span>
                                                         )}
-                                                        <div style={{ color: '#be123c', fontWeight: 700, marginTop: '4px' }}>
-                                                            <i className="fa-solid fa-ban"></i> {selectedPackageLimit 
-                                                                ? 'You cannot proceed with this booking unless you adjust the guest count or choose a higher catering package below.'
-                                                                : 'You cannot proceed with this booking unless you reduce the guest count to match available catering packages.'}
+                                                        <div style={{ color: '#be123c', fontWeight: 700, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                            <span><i className="fa-solid fa-ban"></i> Please change your guest count to {selectedPackageLimit} to match your catering package, or select a matching package below.</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setGuestCount(String(selectedPackageLimit));
+                                                                    setSubmitError('');
+                                                                    if (errors.guestCount) {
+                                                                        setErrors(prev => ({ ...prev, guestCount: null }));
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    background: '#e11d48',
+                                                                    color: '#ffffff',
+                                                                    border: 'none',
+                                                                    borderRadius: '6px',
+                                                                    padding: '3px 8px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 700,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                <i className="fa-solid fa-check"></i> Set to {selectedPackageLimit} Pax
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -6076,11 +6077,11 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                                 <div className="field-error-text" style={{ display: 'block' }}>{errors.guestCount}</div>
                                             ) : (
                                                 <small style={{ color: '#6b7280', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                                                    <i className="fa-solid fa-utensils" style={{ color: totalGuestLimit ? '#15803d' : '#9ca3af' }}></i>
+                                                    <i className="fa-solid fa-utensils" style={{ color: selectedPackageLimit ? '#15803d' : '#9ca3af' }}></i>
                                                     {selectedPackageLimit ? (
-                                                        <span>Limit synced with selected Catering Service (<strong>{selectedPackageLimit} pax max</strong>).</span>
+                                                        <span style={{ color: '#15803d', fontWeight: 600 }}>✓ Guest count matches selected Catering Service (<strong>{selectedPackageLimit} pax</strong>).</span>
                                                     ) : (
-                                                        <span>Catering service capacity up to <strong>{maxCatalogCateringPax} pax max</strong> (select a catering package below).</span>
+                                                        <span>Enter your expected number of attendees.</span>
                                                     )}
                                                 </small>
                                             )}
@@ -6288,7 +6289,7 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             </div>
                                         </div>
 
-                                        {isGuestExceeded && (
+                                        {isCateringMismatch && (
                                             <div style={{
                                                 background: '#fff1f2',
                                                 border: '1.5px solid #fecdd3',
@@ -6304,25 +6305,25 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             }}>
                                                 <i className="fa-solid fa-ban" style={{ color: '#e11d48', fontSize: '16px', flexShrink: 0, marginTop: '2px' }}></i>
                                                 <div style={{ flex: 1 }}>
-                                                    <strong style={{ display: 'block', marginBottom: '4px' }}>Cannot Proceed with Current Guest Count:</strong>
-                                                    {selectedPackageLimit ? (
+                                                    <strong style={{ display: 'block', marginBottom: '4px' }}>Cannot Proceed: Guest Count Mismatch</strong>
+                                                    {isGuestExceeded ? (
                                                         <span>Expected guests (<strong>{numGuests} pax</strong>) exceeds your selected catering package limit (<strong>{selectedPackageLimit} pax</strong>).</span>
                                                     ) : (
-                                                        <span>Expected guests (<strong>{numGuests} pax</strong>) exceeds our maximum catering service capacity (<strong>{maxCatalogCateringPax} pax</strong>).</span>
+                                                        <span>Expected guests (<strong>{numGuests} pax</strong>) does not match your selected catering package (<strong>{selectedPackageLimit} pax</strong>).</span>
                                                     )}
                                                     <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                         <button 
                                                             type="button" 
                                                             className="btn-quick-fix-pax"
                                                             onClick={() => {
-                                                                setGuestCount(String(totalGuestLimit));
+                                                                setGuestCount(String(selectedPackageLimit));
                                                                 setSubmitError('');
                                                                 if (errors.guestCount) {
                                                                     setErrors(prev => ({ ...prev, guestCount: null }));
                                                                 }
                                                             }}
                                                         >
-                                                            <i className="fa-solid fa-check"></i> Set Guests to {totalGuestLimit} Pax
+                                                            <i className="fa-solid fa-check"></i> Set Guests to {selectedPackageLimit} Pax
                                                         </button>
                                                         <button 
                                                             type="button" 
@@ -6451,13 +6452,13 @@ if (stripos($requested_type, 'wedding') !== false || stripos($requested_package,
                                             type="submit" 
                                             className="btn-submit-booking"
                                             disabled={isSubmitting}
-                                            style={isGuestExceeded ? { background: '#dc2626', borderColor: '#b91c1c', cursor: 'pointer', boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)' } : {}}
+                                            style={isCateringMismatch ? { background: '#dc2626', borderColor: '#b91c1c', cursor: 'pointer', boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)' } : {}}
                                         >
                                             {isSubmitting ? (
                                                 <>
                                                     <i className="fa-solid fa-spinner fa-spin"></i> Processing Booking...
                                                 </>
-                                            ) : isGuestExceeded ? (
+                                            ) : isCateringMismatch ? (
                                                 <>
                                                     <i className="fa-solid fa-triangle-exclamation"></i> Adjust Guest Count to Proceed
                                                 </>
